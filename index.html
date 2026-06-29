@@ -177,6 +177,19 @@ tr:hover td{background:#fafafa}
   </div>
 </div>
 
+
+<!-- RESET PASSWORD SCREEN -->
+<div id="reset-screen" style="display:none;position:fixed;inset:0;background:linear-gradient(135deg,#1a1a2e 0%,#2d2d5e 100%);align-items:center;justify-content:center;z-index:9999">
+  <div class="login-box">
+    <div class="logo"><strong>🔥 BFS Contrôle</strong><small>BRETAGNE FORMATION SÉCURITÉ</small></div>
+    <h2>Nouveau mot de passe</h2>
+    <div class="login-err" id="reset-err"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Nouveau mot de passe</label><input type="password" id="reset-pwd" placeholder="Minimum 8 caractères"></div>
+    <div class="fg" style="margin-bottom:20px"><label>Confirmer le mot de passe</label><input type="password" id="reset-pwd2"></div>
+    <button class="btn btn-p" style="width:100%;justify-content:center" onclick="doResetPassword()">Enregistrer le mot de passe</button>
+  </div>
+</div>
+
 <!-- APP -->
 <div id="app">
   <!-- SIDEBAR -->
@@ -578,8 +591,51 @@ async function doLogout(){
   $('login-pwd').value='';
 }
 
+
+// ============================================================
+// GESTION RESET PASSWORD (lien email)
+// ============================================================
+async function checkResetToken(){
+  // Supabase met le token dans le hash de l'URL
+  const hash = window.location.hash;
+  if(hash && hash.includes('type=recovery')){
+    // Afficher l'écran de reset
+    $('login-screen').style.display='none';
+    const rs=$('reset-screen');rs.style.display='flex';
+    return true;
+  }
+  // Supabase v2 : écouter l'event onAuthStateChange
+  return false;
+}
+
+async function doResetPassword(){
+  const pwd=$('reset-pwd').value;
+  const pwd2=$('reset-pwd2').value;
+  const err=$('reset-err');err.style.display='none';
+  if(pwd.length<8){err.textContent='Le mot de passe doit contenir au moins 8 caractères.';err.style.display='block';return}
+  if(pwd!==pwd2){err.textContent='Les mots de passe ne correspondent pas.';err.style.display='block';return}
+  const {error}=await db.auth.updateUser({password:pwd});
+  if(error){err.textContent='Erreur: '+error.message;err.style.display='block';return}
+  $('reset-screen').style.display='none';
+  toast('Mot de passe modifié avec succès !');
+  // Rediriger vers login
+  setTimeout(()=>{window.location.hash='';window.location.reload()},1500);
+}
+
+// Écouter les changements d'auth (capte le token de recovery)
+db.auth.onAuthStateChange(async(event, session)=>{
+  if(event==='PASSWORD_RECOVERY'){
+    $('login-screen').style.display='none';
+    $('app').classList.remove('logged');
+    const rs=$('reset-screen');rs.style.display='flex';
+  }
+  if(event==='SIGNED_IN' && session && !$('reset-screen').style.display.includes('flex')){
+    if(!ME) await onLogin(session.user);
+  }
+});
+
 // Vérifier session au chargement
-db.auth.getSession().then(async({data:{session}})=>{if(session)await onLogin(session.user)});
+db.auth.getSession().then(async({data:{session}})=>{if(session&&!window.location.hash.includes("type=recovery"))await onLogin(session.user)});
 
 // ============================================================
 // NAVIGATION PAR RÔLE
