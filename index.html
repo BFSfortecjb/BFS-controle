@@ -1506,7 +1506,7 @@ function ajouterChampPerso(label, value){
   const div = document.createElement('div');
   div.id = 'cp-row-'+i;
   div.style.cssText = 'display:grid;grid-template-columns:1fr 2fr auto;gap:8px;align-items:center;margin-bottom:6px';
-  div.innerHTML = '<input type="text" id="cp-label-'+i+'" placeholder="Libellé (ex: Couleur)" value="'+label+'" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px"><input type="text" id="cp-value-'+i+'" placeholder="Valeur" value="'+value+'" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px"><button type="button" onclick="document.getElementById('cp-row-'+i+'').remove()" style="padding:5px 8px;background:#fee2e2;color:#dc2626;border:none;border-radius:6px;cursor:pointer;font-size:16px">✕</button>';
+  div.innerHTML = `<input type="text" id="cp-label-${i}" placeholder="Libellé (ex: Couleur)" value="${label}" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px"><input type="text" id="cp-value-${i}" placeholder="Valeur" value="${value}" style="padding:6px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px"><button type="button" onclick="document.getElementById('cp-row-${i}').remove()" style="padding:5px 8px;background:#fee2e2;color:#dc2626;border:none;border-radius:6px;cursor:pointer;font-size:16px">✕</button>`;
   zone.appendChild(div);
 }
 
