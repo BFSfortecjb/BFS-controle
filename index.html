@@ -203,7 +203,10 @@ tr:hover td{background:#fafafa}
     <nav id="sb-nav">
       <!-- Injecté dynamiquement selon le rôle -->
     </nav>
-    <div class="sb-logout"><button onclick="doLogout()">🚪 <span>Déconnexion</span></button></div>
+    <div class="sb-logout">
+      <button onclick="openProfilModal()" style="margin-bottom:6px;width:100%;padding:7px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.6);border:none;border-radius:var(--r);cursor:pointer;font-size:12px;text-align:left">👤 <span>Mon profil</span></button>
+      <button onclick="doLogout()">🚪 <span>Déconnexion</span></button>
+    </div>
   </aside>
 
   <!-- MAIN -->
@@ -625,12 +628,23 @@ async function doResetPassword(){
 // Écouter les changements d'auth (capte le token de recovery)
 db.auth.onAuthStateChange(async(event, session)=>{
   if(event==='PASSWORD_RECOVERY'){
+    // Priorité absolue — afficher reset, masquer tout le reste
     $('login-screen').style.display='none';
     $('app').classList.remove('logged');
+    ME=null;
     const rs=$('reset-screen');rs.style.display='flex';
+    return; // Ne pas continuer
   }
-  if(event==='SIGNED_IN' && session && !$('reset-screen').style.display.includes('flex')){
+  if(event==='SIGNED_IN' && session){
+    // Ne pas connecter si on est en mode reset
+    const rs=$('reset-screen');
+    if(rs && rs.style.display==='flex') return;
     if(!ME) await onLogin(session.user);
+  }
+  if(event==='SIGNED_OUT'){
+    ME=null;
+    $('app').classList.remove('logged');
+    $('login-screen').style.display='flex';
   }
 });
 
@@ -1385,5 +1399,24 @@ async function savePoint(){
 async function togglePoint(id,actif){await db.from('points_controle').update({actif:!actif}).eq('id',id);toast(actif?'Désactivé':'Activé');loadConfigPage()}
 async function deletePoint(id){if(!confirm('Supprimer ?'))return;await db.from('points_controle').delete().eq('id',id);toast('Supprimé');loadConfigPage()}
 </script>
+
+<!-- Modal Mon Profil -->
+<div class="mo" id="mo-profil">
+  <div class="modal" style="max-width:440px">
+    <div class="mh"><h3>👤 Mon profil</h3><button class="mclose" onclick="CM('mo-profil')">✕</button></div>
+    <div class="mc">
+      <div id="profil-info" style="background:var(--bg);padding:12px 16px;border-radius:var(--r);margin-bottom:16px;font-size:13px"></div>
+      <div class="sec-title">Modifier le mot de passe</div>
+      <div class="fg"><label>Nouveau mot de passe</label><input type="password" id="profil-pwd" placeholder="Minimum 8 caractères"></div>
+      <div class="fg"><label>Confirmer</label><input type="password" id="profil-pwd2"></div>
+      <div class="login-err" id="profil-err" style="margin-bottom:12px"></div>
+      <div class="fa">
+        <button class="btn btn-s" onclick="CM('mo-profil')">Fermer</button>
+        <button class="btn btn-p" onclick="saveProfilPwd()">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
