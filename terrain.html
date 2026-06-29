@@ -395,6 +395,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     </div>
     <div class="fg"><label>Marque</label><input type="text" id="ef-marque"></div>
     <div class="fg"><label>Modèle</label><input type="text" id="ef-modele"></div>
+    <div class="fg"><label>Date de fabrication</label><input type="date" id="ef-fab"></div>
+    <div class="fg"><label>Mise en service</label><input type="date" id="ef-mis"></div>
 
     <!-- Champs conditionnels -->
     <div id="ef-champs-specifiques"></div>
@@ -1265,58 +1267,46 @@ const CHAMPS_TYPE_TERRAIN = {
     {id:'ef-cap',label:'Capacité',type:'number',placeholder:'6',step:'0.5'},
     {id:'ef-unite',label:'Unité',type:'select',opts:['kg','L']},
     {id:'ef-pression',label:'Pression nominale (bar)',type:'number',placeholder:'15',step:'0.5'},
-    {id:'ef-fab',label:'Date fabrication',type:'date'},
-    {id:'ef-mis',label:'Mise en service',type:'date'},
   ],
   ria: [
     {id:'ef-diametre',label:'Diamètre tuyau (mm)',type:'select',opts:['19','25','33']},
     {id:'ef-longueur',label:'Longueur tuyau (m)',type:'select',opts:['20','30']},
     {id:'ef-dmf',label:'Type de DMF',type:'select',opts:['A','B','A/HT','Sans DMF']},
     {id:'ef-pression',label:'Pression réseau (bar)',type:'number',placeholder:'3.5',step:'0.1'},
-    {id:'ef-mis',label:'Mise en service',type:'date'},
   ],
   baes: [
     {id:'ef-type-baes',label:'Type BAES',type:'select',opts:['BAES standard','BAEH (habitation)','BAES SA (autotest)','Bloc de secours']},
     {id:'ef-autonomie',label:'Autonomie',type:'select',opts:['1h','3h','8h']},
     {id:'ef-type-batt',label:'Type batterie',type:'select',opts:['NiCd','NiMH','Li-Ion','Pb']},
-    {id:'ef-mis',label:'Mise en service',type:'date'},
   ],
   alarme_t4: [
     {id:'ef-alim',label:'Alimentation',type:'select',opts:['Piles','Accumulateurs','Secteur + piles','Secteur + accus']},
     {id:'ef-nb-declencheurs',label:'Nb déclencheurs',type:'number',placeholder:'1',step:'1'},
     {id:'ef-nb-sirenes',label:'Nb sirènes',type:'number',placeholder:'1',step:'1'},
-    {id:'ef-mis',label:'Mise en service',type:'date'},
   ],
   detecteur: [
     {id:'ef-type-det',label:'Type détecteur',type:'select',opts:['Optique fumée','Ionique fumée','Thermique fixe','Thermo-vélocimétrique','Gaz','Flamme','Multi-critères']},
     {id:'ef-num-centrale',label:'N° adresse centrale',type:'text',placeholder:'Zone 1 - Détect. 03'},
-    {id:'ef-mis',label:'Mise en service',type:'date'},
   ],
   pco: [
     {id:'ef-classement',label:'Classement coupe-feu',type:'select',opts:['EI15','EI30','EI45','EI60','EI90','EI120','EI180','EI240']},
     {id:'ef-type-porte',label:'Type',type:'select',opts:['Porte pivotante 1 vantail','Porte pivotante 2 vantaux','Porte coulissante','Trappe désenfumage','Volet coupe-feu']},
-    {id:'ef-mis',label:'Mise en service',type:'date'},
   ],
   vgp_nacelle: [
     {id:'ef-type-nacelle',label:'Type nacelle',type:'select',opts:['Ciseaux électrique','Ciseaux diesel','Articulée électrique','Articulée diesel','Télescopique']},
     {id:'ef-hauteur',label:'Hauteur max (m)',type:'number',placeholder:'12',step:'0.5'},
     {id:'ef-cap',label:'Charge max (kg)',type:'number',placeholder:'200',step:'10'},
     {id:'ef-energie',label:'Énergie',type:'select',opts:['Électrique','Diesel','Hybride','GPL']},
-    {id:'ef-fab',label:'Date fabrication',type:'date'},
-    {id:'ef-mis',label:'Mise en service',type:'date'},
   ],
   vgp_engin: [
     {id:'ef-type-engin',label:"Type d'engin",type:'select',opts:['Chariot élévateur','Chariot télescopique','Pelle hydraulique','Mini-pelle','Chargeuse','Tombereau','Autre']},
     {id:'ef-ptac',label:'PTAC (tonnes)',type:'number',placeholder:'3.5',step:'0.5'},
     {id:'ef-cap',label:'Charge (t)',type:'number',placeholder:'1.5',step:'0.1'},
     {id:'ef-energie',label:'Énergie',type:'select',opts:['Diesel','Électrique','Gaz','Hybride']},
-    {id:'ef-fab',label:'Date fabrication',type:'date'},
-    {id:'ef-mis',label:'Mise en service',type:'date'},
   ],
   vgp_antichute: [
     {id:'ef-type-ac',label:"Type",type:'select',opts:['Harnais complet','Longe double','Longe simple','Absorbeur énergie','Enrouleur auto','Ligne de vie','Connecteur']},
     {id:'ef-norme',label:'Norme CE',type:'select',opts:['EN 361','EN 358','EN 354','EN 355','EN 360','EN 362','EN 363']},
-    {id:'ef-fab',label:'Date fabrication',type:'date'},
     {id:'ef-date-limite',label:'Date limite utilisation',type:'date'},
   ],
 };
@@ -1339,8 +1329,6 @@ function onEFTypeChange(){
   const champs = CHAMPS_TYPE_TERRAIN[code] || [
     {id:'ef-cap',label:'Capacité',type:'number',placeholder:'',step:'1'},
     {id:'ef-unite',label:'Unité',type:'text',placeholder:'kg, L, m…'},
-    {id:'ef-fab',label:'Date fabrication',type:'date'},
-    {id:'ef-mis',label:'Mise en service',type:'date'},
   ];
   champs.forEach(c => {
     const div = document.createElement('div');

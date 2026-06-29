@@ -486,6 +486,8 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Emplacement précis</label><input type="text" id="e-emplacement" placeholder="Ex: Couloir RDC face toilettes"></div>
       <div class="fg"><label>Marque</label><input type="text" id="e-marque"></div>
       <div class="fg"><label>Modèle</label><input type="text" id="e-modele"></div>
+      <div class="fg"><label>Date de fabrication</label><input type="date" id="e-fab"></div>
+      <div class="fg"><label>Mise en service</label><input type="date" id="e-mis"></div>
       <!-- Champs conditionnels selon type -->
       <div id="e-champs-specifiques" style="grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:13px"></div>
       <div class="fg" style="grid-column:1/-1"><label>Localisation</label><input type="text" id="e-loc"></div>
@@ -1116,9 +1118,39 @@ async function openEquipModal(prefill=null){
   $('e-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
   $('e-type').innerHTML=typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
   $('e-tech').innerHTML='<option value="">— Non affecté —</option>'+profils.map(p=>`<option value="${p.id}">${p.prenom||''} ${p.nom}</option>`).join('');
-  ['e-id','e-num','e-serie','e-lot','e-num-ent','e-emplacement','e-marque','e-modele','e-loc','e-zone','e-notes'].forEach(id=>$(id).value='');_equipRestoreData={};
-  $('e-statut').value='opérationnel';$('mo-eq-t').textContent='Nouvel équipement';onEquipTypeChange();
-  if(prefill){$('e-id').value=prefill.id;$('e-client').value=prefill.client_id;$('e-type').value=prefill.type_equipement_code;$('e-tech').value=prefill.technicien_id||'';$('e-num').value=prefill.numero_identification||'';$('e-serie').value=prefill.numero_serie||'';$('e-lot').value=prefill.numero_lot||'';$('e-num-ent').value=prefill.numero_entreprise||'';$('e-emplacement').value=prefill.emplacement||'';_equipRestoreData={...prefill.donnees_specifiques||{},'e-cap':prefill.capacite_valeur,'e-unite':prefill.capacite_unite,'e-fab':prefill.date_fabrication,'e-mis':prefill.date_mise_en_service};$('e-marque').value=prefill.marque||'';$('e-modele').value=prefill.modele||'';$('e-cap').value=prefill.capacite_valeur||'';$('e-unite').value=prefill.capacite_unite||'';$('e-fab').value=prefill.date_fabrication||'';$('e-mis').value=prefill.date_mise_en_service||'';$('e-loc').value=prefill.localisation||'';$('e-zone').value=prefill.etage_zone||'';$('e-statut').value=prefill.statut||'opérationnel';$('e-notes').value=prefill.notes||'';$('mo-eq-t').textContent='Modifier';}
+  ['e-id','e-num','e-serie','e-lot','e-num-ent','e-emplacement','e-marque','e-modele','e-loc','e-zone','e-notes'].forEach(id=>$(id).value='');
+  _equipRestoreData={};
+  $('e-statut').value='opérationnel';
+  $('mo-eq-t').textContent='Nouvel équipement';
+
+  if(prefill){
+    $('e-id').value=prefill.id;
+    $('e-client').value=prefill.client_id;
+    $('e-type').value=prefill.type_equipement_code;
+    $('e-tech').value=prefill.technicien_id||'';
+    $('e-num').value=prefill.numero_identification||'';
+    $('e-serie').value=prefill.numero_serie||'';
+    $('e-lot').value=prefill.numero_lot||'';
+    $('e-num-ent').value=prefill.numero_entreprise||'';
+    $('e-emplacement').value=prefill.emplacement||'';
+    $('e-marque').value=prefill.marque||'';
+    $('e-modele').value=prefill.modele||'';
+    $('e-loc').value=prefill.localisation||'';
+    $('e-zone').value=prefill.etage_zone||'';
+    $('e-statut').value=prefill.statut||'opérationnel';
+    $('e-notes').value=prefill.notes||'';
+    $('mo-eq-t').textContent='Modifier l\'équipement';
+    // Préparer la restauration des champs spécifiques
+    _equipRestoreData={
+      ...(prefill.donnees_specifiques||{}),
+      'e-cap':String(prefill.capacite_valeur||''),
+      'e-unite':prefill.capacite_unite||'',
+      'e-fab':prefill.date_fabrication||'',
+      'e-mis':prefill.date_mise_en_service||''
+    };
+  }
+  // Toujours appeler APRÈS avoir défini la valeur du select
+  onEquipTypeChange();
   OM('mo-equip');
 }
 function editEquip(id){openEquipModal(equipements.find(e=>e.id===id))}
@@ -1384,60 +1416,48 @@ const CHAMPS_TYPE = {
     {id:'e-cap',label:'Capacité',type:'number',placeholder:'6',step:'0.5'},
     {id:'e-unite',label:'Unité',type:'select',opts:['kg','L']},
     {id:'e-pression',label:'Pression nominale (bar)',type:'number',placeholder:'15',step:'0.5'},
-    {id:'e-fab',label:'Date fabrication',type:'date'},
-    {id:'e-mis',label:'Mise en service',type:'date'},
   ],
   ria: [
     {id:'e-diametre',label:'Diamètre tuyau (mm)',type:'select',opts:['19','25','33']},
     {id:'e-longueur',label:'Longueur tuyau (m)',type:'select',opts:['20','30']},
     {id:'e-dmf',label:'Type de DMF',type:'select',opts:['A','B','A/HT','Sans DMF']},
     {id:'e-pression',label:'Pression réseau (bar)',type:'number',placeholder:'3.5',step:'0.1'},
-    {id:'e-mis',label:'Mise en service',type:'date'},
   ],
   baes: [
     {id:'e-type-baes',label:'Type BAES',type:'select',opts:['BAES standard','BAEH (habitation)','BAES SA (autotest)','Bloc de secours']},
     {id:'e-autonomie',label:'Autonomie',type:'select',opts:['1h','3h','8h']},
     {id:'e-type-batt',label:'Type batterie',type:'select',opts:['NiCd','NiMH','Li-Ion','Pb']},
     {id:'e-flux',label:'Flux lumineux (lm)',type:'number',placeholder:'80',step:'10'},
-    {id:'e-mis',label:'Mise en service',type:'date'},
   ],
   alarme_t4: [
     {id:'e-alim',label:'Alimentation',type:'select',opts:['Piles','Accumulateurs','Secteur + piles','Secteur + accus']},
     {id:'e-nb-declencheurs',label:'Nb déclencheurs manuels',type:'number',placeholder:'1',step:'1'},
     {id:'e-nb-sirenes',label:'Nb sirènes / avertisseurs',type:'number',placeholder:'1',step:'1'},
-    {id:'e-mis',label:'Mise en service',type:'date'},
   ],
   detecteur: [
     {id:'e-type-det',label:'Type détecteur',type:'select',opts:['Optique fumée','Ionique fumée','Thermique fixe','Thermo-vélocimétrique','Gaz','Flamme','Multi-critères']},
     {id:'e-num-centrale',label:'N° adresse centrale',type:'text',placeholder:'Zone 1 - Détect. 03'},
-    {id:'e-mis',label:'Mise en service',type:'date'},
   ],
   pco: [
     {id:'e-classement',label:'Classement coupe-feu',type:'select',opts:['EI15','EI30','EI45','EI60','EI90','EI120','EI180','EI240','E30','E60','REI60','REI120']},
     {id:'e-type-porte',label:'Type',type:'select',opts:['Porte pivotante 1 vantail','Porte pivotante 2 vantaux','Porte coulissante','Trappe de désenfumage','Volet coupe-feu','Cloison CF']},
     {id:'e-ferme-auto',label:'Fermeture automatique',type:'select',opts:['Électromagnétique','À ressort','Motorisée','Non']},
-    {id:'e-mis',label:'Mise en service',type:'date'},
   ],
   vgp_nacelle: [
     {id:'e-type-nacelle',label:'Type de nacelle',type:'select',opts:['Ciseaux électrique','Ciseaux diesel','Articulée électrique','Articulée diesel','Télescopique','Sur camion','Sur remorque']},
     {id:'e-hauteur',label:'Hauteur de travail max (m)',type:'number',placeholder:'12',step:'0.5'},
     {id:'e-cap',label:'Charge max (kg)',type:'number',placeholder:'200',step:'10'},
     {id:'e-energie',label:'Énergie',type:'select',opts:['Électrique','Diesel','Hybride','GPL']},
-    {id:'e-fab',label:'Date fabrication',type:'date'},
-    {id:'e-mis',label:'Mise en service',type:'date'},
   ],
   vgp_engin: [
     {id:'e-type-engin',label:"Type d'engin",type:'select',opts:['Chariot élévateur frontal','Chariot télescopique','Pelle hydraulique','Mini-pelle','Chargeuse','Tombereau','Compacteur','Autre']},
     {id:'e-ptac',label:'PTAC (tonnes)',type:'number',placeholder:'3.5',step:'0.5'},
     {id:'e-cap',label:'Capacité de levage (t)',type:'number',placeholder:'1.5',step:'0.1'},
     {id:'e-energie',label:'Énergie',type:'select',opts:['Diesel','Électrique','Gaz','Hybride']},
-    {id:'e-fab',label:'Date fabrication',type:'date'},
-    {id:'e-mis',label:'Mise en service',type:'date'},
   ],
   vgp_antichute: [
     {id:'e-type-ac',label:"Type d'équipement",type:'select',opts:['Harnais complet','Longe double absorbeur','Longe simple','Absorbeur énergie','Enrouleur rappel auto','Ligne de vie horizontale','Connecteur / Mousqueton']},
     {id:'e-norme',label:'Norme CE',type:'select',opts:['EN 361 (harnais)','EN 358 (maintien)','EN 354 (longe)','EN 355 (absorbeur)','EN 360 (enrouleur)','EN 362 (connecteur)','EN 363 (système)']},
-    {id:'e-fab',label:'Date fabrication',type:'date'},
     {id:'e-date-limite',label:'Date limite utilisation',type:'date'},
   ],
 };
@@ -1454,8 +1474,6 @@ function onEquipTypeChange(){
   const champs = CHAMPS_TYPE[code] || [
     {id:'e-cap',label:'Capacité',type:'number',placeholder:'',step:'1'},
     {id:'e-unite',label:'Unité',type:'text',placeholder:'kg, L, m…'},
-    {id:'e-fab',label:'Date fabrication',type:'date'},
-    {id:'e-mis',label:'Mise en service',type:'date'},
   ];
   champs.forEach(c => {
     const div = document.createElement('div');
