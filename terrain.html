@@ -696,11 +696,14 @@ async function ouvrirScanner(){
       ctx.drawImage(video,0,0);
       const img=ctx.getImageData(0,0,canvas.width,canvas.height);
       const code=jsQR(img.data,img.width,img.height,{inversionAttempts:'dontInvert'});
-      if(code&&code.data.startsWith('BFS-EXT:')){
-        const parts=code.data.split(':')[1].split('|');
-        const equipId=parts[0];
+      if(code&&code.data){
         stopScanner();
-        traiterScanEquip(equipId);
+        // Format BFS-EXT:NUMERO ou juste NUMERO directement
+        let numeroId=code.data;
+        if(code.data.startsWith('BFS-EXT:')){
+          numeroId=code.data.split('BFS-EXT:')[1].split('|')[0];
+        }
+        traiterScanEquip(numeroId);
       }
     },200);
   }catch(e){
@@ -715,16 +718,31 @@ function stopScanner(){
   if($('s-scanner').classList.contains('active'))goTo('s-session');
 }
 
-async function traiterScanEquip(equipId){
-  const equip=currentEquipements.find(e=>e.id===equipId);
+async function traiterScanEquip(numeroId){
+  // Chercher par numero_identification (= ce qui est imprimé sur l'étiquette QR)
+  let equip=currentEquipements.find(e=>e.numero_identification===numeroId || e.id===numeroId);
   if(!equip){
-    // Charger depuis la base si pas dans la liste courante
-    const {data}=await db.from('equipements').select('*,types_equipements(libelle,icone)').eq('id',equipId).single();
-    if(!data){toast('Équipement non trouvé dans ce parc','err');return}
-    if(data.client_id!==currentClient?.id){toast('Équipement appartenant à un autre client','err');return}
-    currentEquipements.push(data);
+    // Chercher en base par numero_identification
+    const {data}=await db.from('equipements')
+      .select('*,types_equipements(libelle,icone)')
+      .eq('numero_identification',numeroId)
+      .single();
+    if(!data){
+      // Essayer par UUID au cas où
+      const {data:data2}=await db.from('equipements')
+        .select('*,types_equipements(libelle,icone)')
+        .eq('id',numeroId).single();
+      if(!data2){toast('Équipement non trouvé : '+numeroId,'err');return}
+      equip=data2;
+    } else {
+      equip=data;
+    }
+    if(equip.client_id!==currentClient?.id){
+      toast('Cet équipement appartient à un autre client','err');return;
+    }
+    if(!currentEquipements.find(e=>e.id===equip.id))currentEquipements.push(equip);
   }
-  ouvrirVerif(equipId);
+  ouvrirVerif(equip.id);
 }
 
 // ============================================================

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BFS Contrôle</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -478,7 +479,9 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Client *</label><select id="e-client"></select></div>
       <div class="fg"><label>Technicien référent</label><select id="e-tech"><option value="">— Non affecté —</option></select></div>
       <div class="fg" style="grid-column:1/-1"><label>Type d'équipement *</label><select id="e-type"></select></div>
-      <div class="fg"><label>N° identification</label><input type="text" id="e-num"></div>
+      <div class="fg"><label>N° identification / QR code</label><input type="text" id="e-num" placeholder="EXT-BRIEC-001"></div>
+      <div class="fg"><label>N° de série (fabricant)</label><input type="text" id="e-serie" placeholder="Gravé sur l'appareil"></div>
+      <div class="fg"><label>N° de lot</label><input type="text" id="e-lot" placeholder="Lot de fabrication"></div>
       <div class="fg"><label>Marque</label><input type="text" id="e-marque"></div>
       <div class="fg"><label>Modèle</label><input type="text" id="e-modele"></div>
       <div class="fg"><label>Capacité</label><input type="number" id="e-cap" step="0.1"></div>
@@ -1102,10 +1105,10 @@ function renderEquip(){
   el.innerHTML=`<table><thead><tr><th>Client</th><th>Agence</th><th>Type</th><th>Identification</th><th>Marque/Modèle</th><th>Technicien</th><th>Localisation</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${data.map(e=>`<tr>
     <td><strong>${e.clients?.raison_sociale||'—'}</strong></td><td><span class="badge bg">${e.agences?.nom||'—'}</span></td>
     <td>${e.types_equipements?.icone||''} ${e.types_equipements?.libelle||'—'}</td>
-    <td>${e.numero_identification||'—'}</td><td>${e.marque||'—'}${e.modele?' / '+e.modele:''}</td>
+    <td>${e.numero_identification||'—'}<br><small style='color:var(--txt-l)'>${e.numero_serie?'S/N: '+e.numero_serie:''}</small></td><td>${e.marque||'—'}${e.modele?' / '+e.modele:''}</td>
     <td>${e.profils?.prenom||''} ${e.profils?.nom||'—'}</td>
     <td>${e.localisation||'—'}</td><td>${badgeSt(e.statut)}</td>
-    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editEquip('${e.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="verifierEquip('${e.id}')">✅</button><button class="btn btn-s btn-xs" onclick="deleteEquip('${e.id}')">🗑</button></div></td>
+    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editEquip('${e.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="showQR('${e.id}','${e.numero_identification||e.id}','${e.clients?.raison_sociale||''}','${e.types_equipements?.libelle||''}')">QR</button><button class="btn btn-s btn-xs" onclick="verifierEquip('${e.id}')">✅</button><button class="btn btn-s btn-xs" onclick="deleteEquip('${e.id}')">🗑</button></div></td>
   </tr>`).join('')}</tbody></table>`;
 }
 async function openEquipModal(prefill=null){
@@ -1113,15 +1116,15 @@ async function openEquipModal(prefill=null){
   $('e-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
   $('e-type').innerHTML=typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
   $('e-tech').innerHTML='<option value="">— Non affecté —</option>'+profils.map(p=>`<option value="${p.id}">${p.prenom||''} ${p.nom}</option>`).join('');
-  ['e-id','e-num','e-marque','e-modele','e-cap','e-unite','e-loc','e-zone','e-notes'].forEach(id=>$(id).value='');
+  ['e-id','e-num','e-serie','e-lot','e-marque','e-modele','e-cap','e-unite','e-loc','e-zone','e-notes'].forEach(id=>$(id).value='');
   $('e-fab').value='';$('e-mis').value='';$('e-statut').value='opérationnel';$('mo-eq-t').textContent='Nouvel équipement';
-  if(prefill){$('e-id').value=prefill.id;$('e-client').value=prefill.client_id;$('e-type').value=prefill.type_equipement_code;$('e-tech').value=prefill.technicien_id||'';$('e-num').value=prefill.numero_identification||'';$('e-marque').value=prefill.marque||'';$('e-modele').value=prefill.modele||'';$('e-cap').value=prefill.capacite_valeur||'';$('e-unite').value=prefill.capacite_unite||'';$('e-fab').value=prefill.date_fabrication||'';$('e-mis').value=prefill.date_mise_en_service||'';$('e-loc').value=prefill.localisation||'';$('e-zone').value=prefill.etage_zone||'';$('e-statut').value=prefill.statut||'opérationnel';$('e-notes').value=prefill.notes||'';$('mo-eq-t').textContent='Modifier';}
+  if(prefill){$('e-id').value=prefill.id;$('e-client').value=prefill.client_id;$('e-type').value=prefill.type_equipement_code;$('e-tech').value=prefill.technicien_id||'';$('e-num').value=prefill.numero_identification||'';$('e-serie').value=prefill.numero_serie||'';$('e-lot').value=prefill.numero_lot||'';$('e-marque').value=prefill.marque||'';$('e-modele').value=prefill.modele||'';$('e-cap').value=prefill.capacite_valeur||'';$('e-unite').value=prefill.capacite_unite||'';$('e-fab').value=prefill.date_fabrication||'';$('e-mis').value=prefill.date_mise_en_service||'';$('e-loc').value=prefill.localisation||'';$('e-zone').value=prefill.etage_zone||'';$('e-statut').value=prefill.statut||'opérationnel';$('e-notes').value=prefill.notes||'';$('mo-eq-t').textContent='Modifier';}
   OM('mo-equip');
 }
 function editEquip(id){openEquipModal(equipements.find(e=>e.id===id))}
 async function saveEquip(){
   const id=$('e-id').value;
-  const p={client_id:$('e-client').value,technicien_id:$('e-tech').value||null,type_equipement_code:$('e-type').value,numero_identification:$('e-num').value.trim(),marque:$('e-marque').value.trim(),modele:$('e-modele').value.trim(),capacite_valeur:parseFloat($('e-cap').value)||null,capacite_unite:$('e-unite').value.trim(),date_fabrication:$('e-fab').value||null,date_mise_en_service:$('e-mis').value||null,localisation:$('e-loc').value.trim(),etage_zone:$('e-zone').value.trim(),statut:$('e-statut').value,notes:$('e-notes').value.trim(),updated_at:new Date().toISOString()};
+  const p={client_id:$('e-client').value,technicien_id:$('e-tech').value||null,type_equipement_code:$('e-type').value,numero_identification:$('e-num').value.trim(),numero_serie:$('e-serie').value.trim()||null,numero_lot:$('e-lot').value.trim()||null,marque:$('e-marque').value.trim(),modele:$('e-modele').value.trim(),capacite_valeur:parseFloat($('e-cap').value)||null,capacite_unite:$('e-unite').value.trim(),date_fabrication:$('e-fab').value||null,date_mise_en_service:$('e-mis').value||null,localisation:$('e-loc').value.trim(),etage_zone:$('e-zone').value.trim(),statut:$('e-statut').value,notes:$('e-notes').value.trim(),updated_at:new Date().toISOString()};
   const {error}=id?await db.from('equipements').update(p).eq('id',id):await db.from('equipements').insert(p);
   if(error){toast('Erreur: '+error.message,'err');return}
   toast(id?'Modifié':'Créé');CM('mo-equip');loadEquipements();
@@ -1372,5 +1375,19 @@ async function savePoint(){
 async function togglePoint(id,actif){await db.from('points_controle').update({actif:!actif}).eq('id',id);toast(actif?'Désactivé':'Activé');loadConfigPage()}
 async function deletePoint(id){if(!confirm('Supprimer ?'))return;await db.from('points_controle').delete().eq('id',id);toast('Supprimé');loadConfigPage()}
 </script>
+
+<!-- Modal QR Code -->
+<div class="mo" id="mo-qr">
+  <div class="modal" style="max-width:340px;text-align:center">
+    <div class="mh"><h3>QR Code équipement</h3><button class="mclose" onclick="CM('mo-qr')">✕</button></div>
+    <div class="mc">
+      <div id="qr-info" style="margin-bottom:14px;font-size:13px;color:var(--txt-l)"></div>
+      <div id="qrcode-container" style="display:flex;justify-content:center;margin-bottom:16px"></div>
+      <div id="qr-numero" style="font-size:16px;font-weight:700;letter-spacing:1px;margin-bottom:16px"></div>
+      <button class="btn btn-s" style="width:100%" onclick="printQR()">🖨 Imprimer l'étiquette</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
