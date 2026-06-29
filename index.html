@@ -9,67 +9,88 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-:root {
-  --rouge:#C0392B; --rouge-s:#962d22; --rouge-l:#fdf2f1;
-  --dark:#1a1a2e; --dark2:#2d2d44;
-  --bg:#f4f4f8; --blanc:#fff;
-  --txt:#1a1a2e; --txt-l:#6b7280;
-  --vert:#16a34a; --orange:#d97706; --bleu:#2563eb;
-  --r:8px; --ombre:0 2px 8px rgba(0,0,0,0.08);
-  --sw:230px;
+:root{
+  --rouge:#C0392B;--rouge-s:#96251d;--rouge-l:#fdf2f1;
+  --dark:#1a1a2e;--dark2:#252540;
+  --bg:#f0f2f8;--blanc:#fff;--txt:#1a1a2e;--txt-l:#6b7280;
+  --vert:#16a34a;--orange:#d97706;--bleu:#2563eb;--violet:#7c3aed;
+  --r:8px;--ombre:0 2px 8px rgba(0,0,0,.08);--sw:240px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);display:flex;min-height:100vh;font-size:14px}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+
+/* LOGIN */
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,var(--dark) 0%,#2d2d5e 100%)}
+.login-box{background:var(--blanc);border-radius:16px;padding:40px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.login-box .logo{text-align:center;margin-bottom:28px}
+.login-box .logo strong{display:block;font-size:24px;color:var(--rouge)}
+.login-box .logo small{font-size:12px;color:var(--txt-l);letter-spacing:1px}
+.login-box h2{font-size:16px;margin-bottom:20px;text-align:center;color:var(--txt)}
+.login-err{background:#fee2e2;color:#dc2626;padding:8px 12px;border-radius:var(--r);font-size:12px;margin-bottom:12px;display:none}
+
+/* APP */
+#app{display:none;min-height:100vh}
+#app.logged{display:flex}
 
 /* SIDEBAR */
-#sb{width:var(--sw);background:var(--dark);color:#fff;display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100;transition:width .2s}
-.sb-logo{padding:18px 16px 14px;border-bottom:1px solid rgba(255,255,255,.08)}
+#sb{width:var(--sw);background:var(--dark);color:#fff;display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100}
+.sb-logo{padding:16px;border-bottom:1px solid rgba(255,255,255,.08)}
 .sb-logo small{display:block;font-size:10px;color:rgba(255,255,255,.35);letter-spacing:2px;text-transform:uppercase}
-.sb-logo strong{font-size:17px;color:var(--rouge)}
-#sb nav{flex:1;padding:10px 0;overflow-y:auto}
-.nav-section{padding:10px 16px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,.25)}
-#sb nav a{display:flex;align-items:center;gap:10px;padding:9px 16px;color:rgba(255,255,255,.6);text-decoration:none;font-size:13px;font-weight:500;border-left:3px solid transparent;transition:all .15s;white-space:nowrap;overflow:hidden}
+.sb-logo strong{font-size:16px;color:var(--rouge)}
+.sb-user{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.08);font-size:12px}
+.sb-user .u-name{font-weight:600;color:#fff}
+.sb-user .u-role{color:rgba(255,255,255,.45);font-size:11px}
+.sb-user .u-agence{display:inline-block;background:rgba(192,57,43,.3);color:#f87171;padding:1px 6px;border-radius:4px;font-size:10px;margin-top:2px}
+#sb nav{flex:1;padding:8px 0;overflow-y:auto}
+.nav-sec{padding:8px 16px 3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,.22)}
+#sb nav a{display:flex;align-items:center;gap:9px;padding:8px 16px;color:rgba(255,255,255,.6);text-decoration:none;font-size:13px;font-weight:500;border-left:3px solid transparent;transition:all .15s;white-space:nowrap}
 #sb nav a:hover{color:#fff;background:rgba(255,255,255,.06)}
 #sb nav a.active{color:#fff;border-left-color:var(--rouge);background:rgba(192,57,43,.15)}
 #sb nav a .ico{font-size:15px;width:20px;text-align:center;flex-shrink:0}
-.sb-ver{padding:10px 16px;font-size:10px;color:rgba(255,255,255,.2)}
+.sb-logout{padding:12px 16px;border-top:1px solid rgba(255,255,255,.08)}
+.sb-logout button{width:100%;padding:7px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.6);border:none;border-radius:var(--r);cursor:pointer;font-size:12px;text-align:left}
+.sb-logout button:hover{background:rgba(255,255,255,.14);color:#fff}
 
 /* MAIN */
 #main{margin-left:var(--sw);flex:1;display:flex;flex-direction:column;min-height:100vh}
-#topbar{background:var(--blanc);border-bottom:1px solid #e5e7eb;padding:0 24px;height:54px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
+#topbar{background:var(--blanc);border-bottom:1px solid #e5e7eb;padding:0 20px;height:52px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
 #topbar h1{font-size:15px;font-weight:600}
-#content{padding:20px;flex:1}
+#content{padding:18px;flex:1}
 .page{display:none}.page.active{display:block}
 
 /* STATS */
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:20px}
-.stat-card{background:var(--blanc);border-radius:var(--r);padding:14px 18px;box-shadow:var(--ombre);border-left:4px solid #ddd}
-.stat-card.rouge{border-left-color:var(--rouge)}.stat-card.vert{border-left-color:var(--vert)}.stat-card.orange{border-left-color:var(--orange)}.stat-card.bleu{border-left-color:var(--bleu)}
-.stat-card .val{font-size:26px;font-weight:700;line-height:1}
-.stat-card .lab{font-size:11px;color:var(--txt-l);margin-top:3px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+.stat-card{background:var(--blanc);border-radius:var(--r);padding:14px 16px;box-shadow:var(--ombre);border-left:4px solid #ddd;cursor:default}
+.stat-card.rouge{border-left-color:var(--rouge)}.stat-card.vert{border-left-color:var(--vert)}.stat-card.orange{border-left-color:var(--orange)}.stat-card.bleu{border-left-color:var(--bleu)}.stat-card.violet{border-left-color:var(--violet)}
+.stat-card .val{font-size:24px;font-weight:700;line-height:1}
+.stat-card .lab{font-size:11px;color:var(--txt-l);margin-top:2px}
+
+/* AGENCE TABS */
+.agence-tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.ag-tab{padding:6px 14px;border-radius:20px;border:2px solid #e5e7eb;background:var(--blanc);cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;color:var(--txt-l)}
+.ag-tab.active{border-color:var(--rouge);background:var(--rouge-l);color:var(--rouge)}
 
 /* CARD */
-.card{background:var(--blanc);border-radius:var(--r);box-shadow:var(--ombre);overflow:hidden;margin-bottom:16px}
-.card-header{padding:12px 18px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.card{background:var(--blanc);border-radius:var(--r);box-shadow:var(--ombre);overflow:hidden;margin-bottom:14px}
+.card-header{padding:11px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .card-header h2{font-size:13px;font-weight:600}
 
 /* TABLE */
 table{width:100%;border-collapse:collapse}
-th{background:#f8f9fa;padding:9px 12px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--txt-l);white-space:nowrap}
-td{padding:9px 12px;border-top:1px solid #f0f0f0;font-size:13px;vertical-align:middle}
+th{background:#f8f9fa;padding:8px 11px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--txt-l);white-space:nowrap}
+td{padding:8px 11px;border-top:1px solid #f0f0f0;font-size:13px;vertical-align:middle}
 tr:hover td{background:#fafafa}
-.t-empty{padding:36px;text-align:center;color:var(--txt-l)}
+.t-empty{padding:32px;text-align:center;color:var(--txt-l);font-size:13px}
 
 /* BADGES */
-.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
-.bv{background:#dcfce7;color:#15803d}.br{background:#fee2e2;color:#dc2626}.bo{background:#fef3c7;color:#b45309}.bg{background:#f3f4f6;color:#6b7280}.bb{background:#dbeafe;color:#1d4ed8}
+.badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:11px;font-weight:600}
+.bv{background:#dcfce7;color:#15803d}.br{background:#fee2e2;color:#dc2626}.bo{background:#fef3c7;color:#b45309}.bg{background:#f3f4f6;color:#6b7280}.bb{background:#dbeafe;color:#1d4ed8}.bvi{background:#ede9fe;color:#6d28d9}
 
 /* BOUTONS */
-.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:var(--r);border:none;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border-radius:var(--r);border:none;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s;white-space:nowrap}
 .btn-p{background:var(--rouge);color:#fff}.btn-p:hover{background:var(--rouge-s)}
-.btn-s{background:var(--bg);color:var(--txt);border:1px solid #e5e7eb}.btn-s:hover{background:#e9e9ef}
-.btn-sm{padding:4px 9px;font-size:12px}
-.btn-xs{padding:3px 7px;font-size:11px}
+.btn-s{background:var(--bg);color:var(--txt);border:1px solid #e5e7eb}.btn-s:hover{background:#e5e7eb}
+.btn-sm{padding:4px 9px;font-size:12px}.btn-xs{padding:3px 7px;font-size:11px}
 .ia{display:flex;gap:3px;flex-wrap:wrap}
 
 /* FORMS */
@@ -77,177 +98,248 @@ tr:hover td{background:#fafafa}
 .fg label{font-size:11px;font-weight:600;color:var(--txt-l);text-transform:uppercase;letter-spacing:.4px}
 .fg input,.fg select,.fg textarea{padding:7px 10px;border:1px solid #e5e7eb;border-radius:var(--r);font-size:13px;width:100%;outline:none;transition:border-color .15s;background:#fff}
 .fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--rouge);box-shadow:0 0 0 3px rgba(192,57,43,.08)}
-.fg textarea{resize:vertical;min-height:70px}
-.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
-.fa{display:flex;gap:8px;justify-content:flex-end;padding-top:10px;border-top:1px solid #f0f0f0;margin-top:10px}
-.sec-title{font-size:11px;font-weight:700;color:var(--txt-l);text-transform:uppercase;letter-spacing:.5px;margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid #f0f0f0}
+.fg textarea{resize:vertical;min-height:65px}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:13px}
+.fa{display:flex;gap:8px;justify-content:flex-end;padding-top:10px;border-top:1px solid #f0f0f0;margin-top:12px}
+.sec-title{font-size:11px;font-weight:700;color:var(--txt-l);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 10px;padding-bottom:6px;border-bottom:1px solid #f0f0f0}
 
 /* MODAL */
-.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto}
+.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto}
 .mo.open{display:flex}
-.modal{background:var(--blanc);border-radius:12px;width:100%;max-width:700px;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
-.modal.lg{max-width:900px}
-.mh{padding:16px 20px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--blanc);z-index:1;border-radius:12px 12px 0 0}
-.mh h3{font-size:15px;font-weight:600}
-.mc{padding:20px}
+.modal{background:var(--blanc);border-radius:12px;width:100%;max-width:680px;margin:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal.lg{max-width:880px}
+.mh{padding:14px 18px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--blanc);z-index:1;border-radius:12px 12px 0 0}
+.mh h3{font-size:14px;font-weight:600}
+.mc{padding:18px}
 .mclose{background:none;border:none;font-size:18px;cursor:pointer;color:var(--txt-l);padding:4px}
 
 /* SEARCH */
-.search-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
-.search-bar input,.search-bar select{padding:7px 11px;border:1px solid #e5e7eb;border-radius:var(--r);font-size:13px;background:#fff}
-.search-bar input{flex:1;min-width:180px}
+.search-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.search-bar input,.search-bar select{padding:7px 10px;border:1px solid #e5e7eb;border-radius:var(--r);font-size:13px;background:#fff}
+.search-bar input{flex:1;min-width:160px}
 
 /* POINTS CONTRÔLE */
-.pc-list{display:flex;flex-direction:column;gap:6px;max-height:420px;overflow-y:auto;padding-right:4px}
-.pc-item{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:8px 10px;border:1px solid #e5e7eb;border-radius:var(--r);background:#fafafa}
-.pc-item.non-conforme{border-left:3px solid var(--rouge);background:var(--rouge-l)}
-.pc-item.conforme{border-left:3px solid var(--vert)}
+.pc-list{display:flex;flex-direction:column;gap:5px;max-height:400px;overflow-y:auto;padding-right:4px}
+.pc-item{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:7px 10px;border:1px solid #e5e7eb;border-radius:var(--r);background:#fafafa}
+.pc-item.nc{border-left:3px solid var(--rouge);background:var(--rouge-l)}
+.pc-item.ok{border-left:3px solid var(--vert)}
 .pc-label{font-size:13px;font-weight:500}
 .pc-label small{display:block;font-size:11px;color:var(--txt-l)}
-.pc-input{display:flex;align-items:center;gap:6px}
-.pc-input input[type=text],.pc-input input[type=number],.pc-input input[type=date]{width:140px;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px}
-.pc-radio{display:flex;gap:8px}
-.pc-radio label{display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding:4px 8px;border-radius:6px;border:1px solid #ddd;background:#fff;transition:all .1s}
+.pc-input input[type=text],.pc-input input[type=number],.pc-input input[type=date]{width:130px;padding:4px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px}
+.pc-radio{display:flex;gap:6px}
+.pc-radio label{display:flex;align-items:center;gap:3px;font-size:12px;cursor:pointer;padding:3px 8px;border-radius:6px;border:1px solid #ddd;background:#fff;transition:all .1s}
 .pc-radio input[type=radio]{display:none}
-.pc-radio label.ok.selected{background:#dcfce7;border-color:#16a34a;color:#15803d;font-weight:600}
-.pc-radio label.nok.selected{background:#fee2e2;border-color:#dc2626;color:#dc2626;font-weight:600}
+.pc-radio label.ok.sel{background:#dcfce7;border-color:#16a34a;color:#15803d;font-weight:600}
+.pc-radio label.nok.sel{background:#fee2e2;border-color:#dc2626;color:#dc2626;font-weight:600}
 
-/* DRAG config points */
-.pc-config-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:var(--r);background:#fafafa;margin-bottom:5px;cursor:default}
-.drag-handle{color:#ccc;cursor:grab;font-size:16px;flex-shrink:0}
-.pc-config-label{flex:1;font-size:13px}
-.pc-config-meta{font-size:11px;color:var(--txt-l);display:flex;gap:6px}
+/* CALENDRIER */
+.cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.cal-nav h3{font-size:15px;font-weight:600}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:#e5e7eb;border-radius:var(--r);overflow:hidden}
+.cal-head{background:#f8f9fa;padding:6px;text-align:center;font-size:11px;font-weight:700;color:var(--txt-l);text-transform:uppercase}
+.cal-day{background:var(--blanc);min-height:80px;padding:5px;cursor:pointer;transition:background .1s;position:relative}
+.cal-day:hover{background:#fafafa}
+.cal-day.other-month{background:#fafafa;opacity:.6}
+.cal-day.today{background:#fdf8f0}
+.cal-day.today .cal-num{background:var(--rouge);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+.cal-num{font-size:12px;font-weight:600;color:var(--txt-l);margin-bottom:4px;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+.rdv-chip{font-size:10px;padding:2px 5px;border-radius:4px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.rdv-planifie{background:#dbeafe;color:#1d4ed8}
+.rdv-confirme{background:#dcfce7;color:#15803d}
+.rdv-effectue{background:#f3f4f6;color:#6b7280}
+.rdv-annule{background:#fee2e2;color:#dc2626;text-decoration:line-through}
 
 /* TOAST */
-#toast{position:fixed;bottom:20px;right:20px;background:var(--dark);color:#fff;padding:10px 18px;border-radius:var(--r);font-size:13px;z-index:999;transform:translateY(60px);opacity:0;transition:all .25s;pointer-events:none}
+#toast{position:fixed;bottom:18px;right:18px;background:var(--dark);color:#fff;padding:9px 16px;border-radius:var(--r);font-size:13px;z-index:999;transform:translateY(60px);opacity:0;transition:all .25s;pointer-events:none;max-width:300px}
 #toast.show{transform:translateY(0);opacity:1}
 #toast.ok{background:var(--vert)}#toast.err{background:var(--rouge)}
 
-/* ECHÉANCES */
-.ec-retard{color:#dc2626;font-weight:600}.ec-urgent{color:#d97706;font-weight:600}.ec-proche{color:#2563eb}.ec-ok{color:var(--vert)}
-
-/* LOADING */
-.loading{text-align:center;padding:36px;color:var(--txt-l)}
-.spin{display:inline-block;width:18px;height:18px;border:2px solid #e5e7eb;border-top-color:var(--rouge);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+.loading{text-align:center;padding:32px;color:var(--txt-l)}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid #e5e7eb;border-top-color:var(--rouge);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
-
-/* RESPONSIVE */
-@media(max-width:768px){
-  #sb{width:56px}
-  .sb-logo strong,.sb-logo small,.nav-section,#sb nav a span,.sb-ver{display:none}
-  #sb nav a{padding:12px;justify-content:center}
-  #main{margin-left:56px}
-  .form-grid{grid-template-columns:1fr}
-}
+.ec-retard{color:#dc2626;font-weight:600}.ec-urgent{color:#d97706;font-weight:600}.ec-proche{color:#2563eb}.ec-ok{color:var(--vert)}
+.hidden{display:none}
+@media(max-width:768px){#sb{width:56px}.sb-logo strong,.sb-logo small,.nav-sec,#sb nav a span,.sb-user,.sb-logout button span{display:none}#sb nav a{padding:12px;justify-content:center}#main{margin-left:56px}.form-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 
-<aside id="sb">
-  <div class="sb-logo"><small>BFS</small><strong>🔥 Contrôle</strong></div>
-  <nav>
-    <div class="nav-section">Général</div>
-    <a href="#" class="active" data-page="dashboard"><span class="ico">📊</span><span>Tableau de bord</span></a>
-    <a href="#" data-page="clients"><span class="ico">🏢</span><span>Clients</span></a>
-    <a href="#" data-page="equipements"><span class="ico">🔧</span><span>Équipements</span></a>
-    <a href="#" data-page="verifications"><span class="ico">✅</span><span>Vérifications</span></a>
-    <a href="#" data-page="contrats"><span class="ico">📋</span><span>Contrats</span></a>
-    <div class="nav-section">Configuration</div>
-    <a href="#" data-page="config-points"><span class="ico">⚙️</span><span>Points de contrôle</span></a>
-  </nav>
-  <div class="sb-ver">v2.0 — BFS</div>
-</aside>
-
-<main id="main">
-  <div id="topbar">
-    <h1 id="page-title">Tableau de bord</h1>
-    <div id="topbar-actions" style="display:flex;gap:8px"></div>
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="logo"><strong>🔥 BFS Contrôle</strong><small>BRETAGNE FORMATION SÉCURITÉ</small></div>
+    <h2>Connexion</h2>
+    <div class="login-err" id="login-err"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Email</label><input type="email" id="login-email" placeholder="prenom.nom@bfs.fr" autocomplete="email"></div>
+    <div class="fg" style="margin-bottom:20px"><label>Mot de passe</label><input type="password" id="login-pwd" autocomplete="current-password"></div>
+    <button class="btn btn-p" style="width:100%;justify-content:center" onclick="doLogin()">Se connecter</button>
+    <p style="text-align:center;margin-top:14px;font-size:12px;color:var(--txt-l)">Première connexion ? Contactez l'administrateur.</p>
   </div>
-  <div id="content">
+</div>
 
-    <!-- DASHBOARD -->
-    <div class="page active" id="page-dashboard">
-      <div class="stats-grid">
-        <div class="stat-card bleu"><div class="val" id="s-clients">—</div><div class="lab">Clients</div></div>
-        <div class="stat-card bleu"><div class="val" id="s-equip">—</div><div class="lab">Équipements</div></div>
-        <div class="stat-card rouge"><div class="val" id="s-retard">—</div><div class="lab">En retard</div></div>
-        <div class="stat-card orange"><div class="val" id="s-urgent">—</div><div class="lab">Urgent &lt;30j</div></div>
-        <div class="stat-card vert"><div class="val" id="s-ok">—</div><div class="lab">À jour</div></div>
+<!-- APP -->
+<div id="app">
+  <!-- SIDEBAR -->
+  <aside id="sb">
+    <div class="sb-logo"><small>BFS</small><strong>🔥 Contrôle</strong></div>
+    <div class="sb-user">
+      <div class="u-name" id="sb-nom">—</div>
+      <div class="u-role" id="sb-role">—</div>
+      <div class="u-agence" id="sb-agence" style="display:none"></div>
+    </div>
+    <nav id="sb-nav">
+      <!-- Injecté dynamiquement selon le rôle -->
+    </nav>
+    <div class="sb-logout"><button onclick="doLogout()">🚪 <span>Déconnexion</span></button></div>
+  </aside>
+
+  <!-- MAIN -->
+  <main id="main">
+    <div id="topbar">
+      <h1 id="page-title">Tableau de bord</h1>
+      <div id="topbar-actions" style="display:flex;gap:6px"></div>
+    </div>
+    <div id="content">
+
+      <!-- ===== DASHBOARD TECHNICIEN ===== -->
+      <div class="page" id="page-dash-tech">
+        <div id="dash-tech-agence-tabs" class="agence-tabs" style="display:none"></div>
+        <div class="stats-grid" id="dash-tech-stats"></div>
+        <div class="card">
+          <div class="card-header"><h2 id="dash-tech-title">Mes échéances</h2>
+            <button class="btn btn-s btn-sm" onclick="exportEcheancesXLS('tech')">⬇ Excel</button>
+          </div>
+          <div id="dash-tech-table"><div class="loading"><span class="spin"></span></div></div>
+        </div>
       </div>
-      <div class="card">
-        <div class="card-header">
-          <h2>⚠️ Échéances à traiter</h2>
-          <div style="display:flex;gap:6px">
-            <select id="dash-filter-cat" onchange="loadDashboard()" style="padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px">
-              <option value="">Tous types</option>
-              <option value="incendie">Incendie</option>
-              <option value="vgp">VGP</option>
-            </select>
-            <button class="btn btn-s btn-sm" onclick="exportEcheancesXLS()">⬇ Excel</button>
+
+      <!-- ===== DASHBOARD SECRÉTARIAT ===== -->
+      <div class="page" id="page-dash-secretariat">
+        <div class="agence-tabs" id="sec-agence-tabs"></div>
+        <div class="stats-grid" id="sec-stats"></div>
+        <div style="display:grid;grid-template-columns:1fr 340px;gap:14px;align-items:start">
+          <div class="card">
+            <div class="card-header">
+              <h2>📅 Planning</h2>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-s btn-sm" id="cal-prev" onclick="calNav(-1)">‹</button>
+                <span id="cal-label" style="font-size:13px;font-weight:600;min-width:130px;text-align:center"></span>
+                <button class="btn btn-s btn-sm" id="cal-next" onclick="calNav(1)">›</button>
+              </div>
+              <button class="btn btn-p btn-sm" onclick="openRdvModal()">+ RDV</button>
+            </div>
+            <div style="padding:12px"><div id="calendrier"></div></div>
+          </div>
+          <div>
+            <div class="card">
+              <div class="card-header"><h2>⚠️ Échéances urgentes</h2></div>
+              <div id="sec-echeances-urgentes"><div class="loading"><span class="spin"></span></div></div>
+            </div>
           </div>
         </div>
-        <div id="dash-echeances"><div class="loading"><span class="spin"></span>Chargement…</div></div>
       </div>
-    </div>
 
-    <!-- CLIENTS -->
-    <div class="page" id="page-clients">
-      <div class="search-bar">
-        <input type="text" id="q-clients" placeholder="Rechercher…" oninput="renderClients()">
-        <button class="btn btn-p" onclick="openClientModal()">+ Nouveau client</button>
+      <!-- ===== DASHBOARD ADMIN ===== -->
+      <div class="page" id="page-dash-admin">
+        <div class="agence-tabs" id="admin-agence-tabs">
+          <button class="ag-tab active" data-agence="" onclick="adminSetAgence(this,'')">🌍 Tout</button>
+          <button class="ag-tab" data-agence="briec" onclick="adminSetAgence(this,'briec')">📍 Briec</button>
+          <button class="ag-tab" data-agence="sevremont" onclick="adminSetAgence(this,'sevremont')">📍 Sevremont</button>
+        </div>
+        <div class="stats-grid" id="admin-stats"></div>
+        <div class="card">
+          <div class="card-header"><h2>⚠️ Toutes les échéances</h2>
+            <button class="btn btn-s btn-sm" onclick="exportEcheancesXLS('admin')">⬇ Excel</button>
+          </div>
+          <div id="admin-echeances"><div class="loading"><span class="spin"></span></div></div>
+        </div>
       </div>
-      <div class="card"><div id="tbl-clients"><div class="loading"><span class="spin"></span></div></div></div>
-    </div>
 
-    <!-- ÉQUIPEMENTS -->
-    <div class="page" id="page-equipements">
-      <div class="search-bar">
-        <input type="text" id="q-equip" placeholder="Rechercher…" oninput="renderEquip()">
-        <select id="f-type-equip" onchange="renderEquip()" style="max-width:200px">
-          <option value="">Tous types</option>
-        </select>
-        <button class="btn btn-p" onclick="openEquipModal()">+ Nouvel équipement</button>
+      <!-- CLIENTS -->
+      <div class="page" id="page-clients">
+        <div class="search-bar">
+          <input type="text" id="q-clients" placeholder="Rechercher…" oninput="renderClients()">
+          <select id="f-agence-clients" onchange="renderClients()" style="max-width:160px">
+            <option value="">Toutes agences</option>
+            <option value="briec">Briec</option>
+            <option value="sevremont">Sevremont</option>
+          </select>
+          <button class="btn btn-p" onclick="openClientModal()">+ Nouveau client</button>
+        </div>
+        <div class="card"><div id="tbl-clients"><div class="loading"><span class="spin"></span></div></div></div>
       </div>
-      <div class="card"><div id="tbl-equip"><div class="loading"><span class="spin"></span></div></div></div>
-    </div>
 
-    <!-- VÉRIFICATIONS -->
-    <div class="page" id="page-verifications">
-      <div class="search-bar">
-        <select id="f-client-verif" onchange="loadVerifs()" style="max-width:260px">
-          <option value="">Tous les clients</option>
-        </select>
-        <select id="f-type-verif" onchange="loadVerifs()" style="max-width:180px">
-          <option value="">Tous types</option>
-        </select>
-        <button class="btn btn-p" onclick="openVerifModal()">+ Nouvelle vérification</button>
+      <!-- ÉQUIPEMENTS -->
+      <div class="page" id="page-equipements">
+        <div class="search-bar">
+          <input type="text" id="q-equip" placeholder="Rechercher…" oninput="renderEquip()">
+          <select id="f-type-equip" onchange="renderEquip()" style="max-width:180px"><option value="">Tous types</option></select>
+          <select id="f-agence-equip" onchange="renderEquip()" style="max-width:140px"><option value="">Toutes agences</option><option value="briec">Briec</option><option value="sevremont">Sevremont</option></select>
+          <button class="btn btn-p" onclick="openEquipModal()">+ Équipement</button>
+        </div>
+        <div class="card"><div id="tbl-equip"><div class="loading"><span class="spin"></span></div></div></div>
       </div>
-      <div class="card"><div id="tbl-verifs"><div class="loading"><span class="spin"></span></div></div></div>
-    </div>
 
-    <!-- CONTRATS -->
-    <div class="page" id="page-contrats">
-      <div class="search-bar">
-        <input type="text" id="q-contrats" placeholder="Rechercher…" oninput="renderContrats()">
-        <button class="btn btn-p" onclick="openContratModal()">+ Nouveau contrat</button>
+      <!-- VÉRIFICATIONS -->
+      <div class="page" id="page-verifications">
+        <div class="search-bar">
+          <select id="f-client-verif" onchange="loadVerifs()" style="max-width:240px"><option value="">Tous clients</option></select>
+          <select id="f-type-verif" onchange="loadVerifs()" style="max-width:160px"><option value="">Tous types</option></select>
+          <button class="btn btn-p" onclick="openVerifModal()">+ Vérification</button>
+        </div>
+        <div class="card"><div id="tbl-verifs"><div class="loading"><span class="spin"></span></div></div></div>
       </div>
-      <div class="card"><div id="tbl-contrats"><div class="loading"><span class="spin"></span></div></div></div>
-    </div>
 
-    <!-- CONFIG POINTS DE CONTRÔLE -->
-    <div class="page" id="page-config-points">
-      <div class="search-bar">
-        <select id="f-type-config" onchange="loadConfigPoints()" style="max-width:260px">
-          <option value="">Sélectionner un type…</option>
-        </select>
-        <input type="text" id="f-marque-config" placeholder="Filtrer par marque (optionnel)" oninput="loadConfigPoints()" style="max-width:200px">
-        <button class="btn btn-p" id="btn-add-point" onclick="openPointModal()" style="display:none">+ Ajouter un point</button>
+      <!-- CONTRATS -->
+      <div class="page" id="page-contrats">
+        <div class="search-bar">
+          <input type="text" id="q-contrats" placeholder="Rechercher…" oninput="renderContrats()">
+          <button class="btn btn-p" onclick="openContratModal()">+ Contrat</button>
+        </div>
+        <div class="card"><div id="tbl-contrats"><div class="loading"><span class="spin"></span></div></div></div>
       </div>
-      <div class="card"><div id="tbl-points"><div class="t-empty">Sélectionnez un type d'équipement ci-dessus</div></div></div>
-    </div>
 
-  </div>
-</main>
+      <!-- PLANNING (technicien + secrétariat) -->
+      <div class="page" id="page-planning">
+        <div class="search-bar">
+          <select id="f-tech-planning" onchange="loadPlanningPage()" style="max-width:200px"><option value="">Tous techniciens</option></select>
+          <select id="f-agence-planning" onchange="loadPlanningPage()" style="max-width:140px"><option value="">Toutes agences</option><option value="briec">Briec</option><option value="sevremont">Sevremont</option></select>
+          <button class="btn btn-p" onclick="openRdvModal()">+ RDV</button>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div style="display:flex;gap:6px;align-items:center">
+              <button class="btn btn-s btn-sm" onclick="calPNav(-1)">‹</button>
+              <span id="calp-label" style="font-size:13px;font-weight:600;min-width:130px;text-align:center"></span>
+              <button class="btn btn-s btn-sm" onclick="calPNav(1)">›</button>
+            </div>
+          </div>
+          <div style="padding:12px"><div id="calendrier-planning"></div></div>
+        </div>
+      </div>
+
+      <!-- ADMIN UTILISATEURS -->
+      <div class="page" id="page-utilisateurs">
+        <div class="search-bar">
+          <input type="text" id="q-users" placeholder="Rechercher…" oninput="renderUsers()">
+          <button class="btn btn-p" onclick="openUserModal()">+ Inviter utilisateur</button>
+        </div>
+        <div class="card"><div id="tbl-users"><div class="loading"><span class="spin"></span></div></div></div>
+      </div>
+
+      <!-- CONFIG POINTS -->
+      <div class="page" id="page-config-points">
+        <div class="search-bar">
+          <select id="f-type-config" onchange="loadConfigPoints()" style="max-width:240px"><option value="">Sélectionner un type…</option></select>
+          <input type="text" id="f-marque-config" placeholder="Filtrer par marque" oninput="loadConfigPoints()" style="max-width:180px">
+          <button class="btn btn-p" id="btn-add-pt" onclick="openPointModal()" style="display:none">+ Ajouter un point</button>
+        </div>
+        <div class="card"><div id="tbl-points"><div class="t-empty">Sélectionnez un type d'équipement</div></div></div>
+      </div>
+
+    </div>
+  </main>
+</div>
 
 <!-- TOAST -->
 <div id="toast"></div>
@@ -256,371 +348,629 @@ tr:hover td{background:#fafafa}
 
 <!-- Client -->
 <div class="mo" id="mo-client">
-  <div class="modal">
-    <div class="mh"><h3 id="mo-client-title">Nouveau client</h3><button class="mclose" onclick="closeModal('mo-client')">✕</button></div>
-    <div class="mc">
-      <input type="hidden" id="c-id">
-      <div class="form-grid">
-        <div class="fg" style="grid-column:1/-1"><label>Raison sociale *</label><input type="text" id="c-rs"></div>
-        <div class="fg" style="grid-column:1/-1"><label>Adresse</label><input type="text" id="c-adr"></div>
-        <div class="fg"><label>Code postal</label><input type="text" id="c-cp"></div>
-        <div class="fg"><label>Ville</label><input type="text" id="c-ville"></div>
-        <div class="fg"><label>SIRET</label><input type="text" id="c-siret"></div>
-        <div class="fg"><label>Contact</label><input type="text" id="c-contact"></div>
-        <div class="fg"><label>Téléphone</label><input type="tel" id="c-tel"></div>
-        <div class="fg"><label>Email</label><input type="email" id="c-email"></div>
-        <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="c-notes"></textarea></div>
-      </div>
-      <div class="fa"><button class="btn btn-s" onclick="closeModal('mo-client')">Annuler</button><button class="btn btn-p" onclick="saveClient()">Enregistrer</button></div>
+  <div class="modal"><div class="mh"><h3 id="mo-client-t">Nouveau client</h3><button class="mclose" onclick="CM('mo-client')">✕</button></div>
+  <div class="mc"><input type="hidden" id="c-id">
+    <div class="form-grid">
+      <div class="fg" style="grid-column:1/-1"><label>Raison sociale *</label><input type="text" id="c-rs"></div>
+      <div class="fg"><label>Agence *</label><select id="c-agence"><option value="">—</option><option value="briec">Briec</option><option value="sevremont">Sevremont</option></select></div>
+      <div class="fg" style="grid-column:1/-1"><label>Adresse</label><input type="text" id="c-adr"></div>
+      <div class="fg"><label>Code postal</label><input type="text" id="c-cp"></div>
+      <div class="fg"><label>Ville</label><input type="text" id="c-ville"></div>
+      <div class="fg"><label>SIRET</label><input type="text" id="c-siret"></div>
+      <div class="fg"><label>Contact</label><input type="text" id="c-contact"></div>
+      <div class="fg"><label>Téléphone</label><input type="tel" id="c-tel"></div>
+      <div class="fg"><label>Email</label><input type="email" id="c-email"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="c-notes"></textarea></div>
     </div>
-  </div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-client')">Annuler</button><button class="btn btn-p" onclick="saveClient()">Enregistrer</button></div>
+  </div></div>
 </div>
 
 <!-- Équipement -->
 <div class="mo" id="mo-equip">
-  <div class="modal">
-    <div class="mh"><h3 id="mo-equip-title">Nouvel équipement</h3><button class="mclose" onclick="closeModal('mo-equip')">✕</button></div>
-    <div class="mc">
-      <input type="hidden" id="e-id">
-      <div class="form-grid">
-        <div class="fg" style="grid-column:1/-1"><label>Client *</label><select id="e-client"></select></div>
-        <div class="fg" style="grid-column:1/-1"><label>Type d'équipement *</label><select id="e-type" onchange="onEquipTypeChange()"></select></div>
-        <div class="fg"><label>N° identification / série</label><input type="text" id="e-num"></div>
-        <div class="fg"><label>Marque</label><input type="text" id="e-marque"></div>
-        <div class="fg"><label>Modèle</label><input type="text" id="e-modele"></div>
-        <div class="fg" id="fg-capacite"><label>Capacité / Masse</label><input type="number" id="e-cap" step="0.1"></div>
-        <div class="fg" id="fg-unite"><label>Unité</label><input type="text" id="e-unite" placeholder="kg, L, m, t…"></div>
-        <div class="fg"><label>Date fabrication</label><input type="date" id="e-fab"></div>
-        <div class="fg"><label>Date mise en service</label><input type="date" id="e-mis"></div>
-        <div class="fg" style="grid-column:1/-1"><label>Localisation</label><input type="text" id="e-loc"></div>
-        <div class="fg"><label>Étage / Zone</label><input type="text" id="e-zone"></div>
-        <div class="fg"><label>Statut</label>
-          <select id="e-statut">
-            <option value="opérationnel">Opérationnel</option>
-            <option value="à remplacer">À remplacer</option>
-            <option value="en révision">En révision</option>
-            <option value="hors service">Hors service</option>
-            <option value="réformé">Réformé</option>
-          </select>
-        </div>
-        <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="e-notes"></textarea></div>
-      </div>
-      <div class="fa"><button class="btn btn-s" onclick="closeModal('mo-equip')">Annuler</button><button class="btn btn-p" onclick="saveEquip()">Enregistrer</button></div>
+  <div class="modal"><div class="mh"><h3 id="mo-equip-t">Nouvel équipement</h3><button class="mclose" onclick="CM('mo-equip')">✕</button></div>
+  <div class="mc"><input type="hidden" id="e-id">
+    <div class="form-grid">
+      <div class="fg"><label>Client *</label><select id="e-client" onchange="onEquipClientChange()"></select></div>
+      <div class="fg"><label>Technicien référent</label><select id="e-tech"><option value="">— Non affecté —</option></select></div>
+      <div class="fg" style="grid-column:1/-1"><label>Type d'équipement *</label><select id="e-type"></select></div>
+      <div class="fg"><label>N° identification</label><input type="text" id="e-num"></div>
+      <div class="fg"><label>Marque</label><input type="text" id="e-marque"></div>
+      <div class="fg"><label>Modèle</label><input type="text" id="e-modele"></div>
+      <div class="fg"><label>Capacité</label><input type="number" id="e-cap" step="0.1"></div>
+      <div class="fg"><label>Unité (kg, L, m…)</label><input type="text" id="e-unite"></div>
+      <div class="fg"><label>Date fabrication</label><input type="date" id="e-fab"></div>
+      <div class="fg"><label>Mise en service</label><input type="date" id="e-mis"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Localisation</label><input type="text" id="e-loc"></div>
+      <div class="fg"><label>Étage / Zone</label><input type="text" id="e-zone"></div>
+      <div class="fg"><label>Statut</label><select id="e-statut"><option value="opérationnel">Opérationnel</option><option value="à remplacer">À remplacer</option><option value="en révision">En révision</option><option value="hors service">Hors service</option><option value="réformé">Réformé</option></select></div>
+      <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="e-notes"></textarea></div>
     </div>
-  </div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-equip')">Annuler</button><button class="btn btn-p" onclick="saveEquip()">Enregistrer</button></div>
+  </div></div>
 </div>
 
 <!-- Vérification -->
 <div class="mo" id="mo-verif">
-  <div class="modal lg">
-    <div class="mh"><h3 id="mo-verif-title">Nouvelle vérification</h3><button class="mclose" onclick="closeModal('mo-verif')">✕</button></div>
-    <div class="mc">
-      <input type="hidden" id="v-id">
-      <div class="form-grid">
-        <div class="fg"><label>Client *</label><select id="v-client" onchange="onVerifClientChange()"></select></div>
-        <div class="fg"><label>Équipement *</label><select id="v-equip" onchange="onVerifEquipChange()"></select></div>
-        <div class="fg"><label>Date de vérification *</label><input type="date" id="v-date"></div>
-        <div class="fg"><label>Prochaine échéance</label><input type="date" id="v-echeance"></div>
-        <div class="fg"><label>Technicien</label><input type="text" id="v-tech"></div>
-        <div class="fg"><label>Résultat global</label>
-          <select id="v-resultat">
-            <option value="conforme">Conforme</option>
-            <option value="non conforme">Non conforme</option>
-            <option value="à surveiller">À surveiller</option>
-          </select>
-        </div>
-      </div>
-      <div class="sec-title">Points de contrôle</div>
-      <div id="pc-loading" style="display:none" class="loading"><span class="spin"></span>Chargement des points…</div>
-      <div id="pc-list" class="pc-list"></div>
-      <div class="fg" style="margin-top:12px"><label>Observations générales</label><textarea id="v-obs"></textarea></div>
-      <div class="fa"><button class="btn btn-s" onclick="closeModal('mo-verif')">Annuler</button><button class="btn btn-p" onclick="saveVerif()">Enregistrer</button></div>
+  <div class="modal lg"><div class="mh"><h3>Nouvelle vérification</h3><button class="mclose" onclick="CM('mo-verif')">✕</button></div>
+  <div class="mc"><input type="hidden" id="v-id">
+    <div class="form-grid">
+      <div class="fg"><label>Client *</label><select id="v-client" onchange="onVerifClientChange()"></select></div>
+      <div class="fg"><label>Équipement *</label><select id="v-equip" onchange="onVerifEquipChange()"></select></div>
+      <div class="fg"><label>Date *</label><input type="date" id="v-date"></div>
+      <div class="fg"><label>Prochaine échéance</label><input type="date" id="v-echeance"></div>
+      <div class="fg"><label>Technicien</label><input type="text" id="v-tech"></div>
+      <div class="fg"><label>Résultat global</label><select id="v-resultat"><option value="conforme">Conforme</option><option value="non conforme">Non conforme</option><option value="à surveiller">À surveiller</option></select></div>
     </div>
-  </div>
+    <div class="sec-title">Points de contrôle</div>
+    <div id="pc-loading" class="loading hidden"><span class="spin"></span>Chargement…</div>
+    <div id="pc-list" class="pc-list"></div>
+    <div class="fg" style="margin-top:10px"><label>Observations</label><textarea id="v-obs"></textarea></div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-verif')">Annuler</button><button class="btn btn-p" onclick="saveVerif()">Enregistrer</button></div>
+  </div></div>
+</div>
+
+<!-- RDV -->
+<div class="mo" id="mo-rdv">
+  <div class="modal"><div class="mh"><h3 id="mo-rdv-t">Nouveau RDV</h3><button class="mclose" onclick="CM('mo-rdv')">✕</button></div>
+  <div class="mc"><input type="hidden" id="rdv-id">
+    <div class="form-grid">
+      <div class="fg"><label>Client *</label><select id="rdv-client"></select></div>
+      <div class="fg"><label>Technicien *</label><select id="rdv-tech"></select></div>
+      <div class="fg"><label>Date *</label><input type="date" id="rdv-date"></div>
+      <div class="fg"><label>Heure</label><input type="time" id="rdv-heure"></div>
+      <div class="fg"><label>Durée (min)</label><input type="number" id="rdv-duree" value="60" min="15" step="15"></div>
+      <div class="fg"><label>Type d'intervention</label><select id="rdv-type-int">
+        <option value="vérification extincteurs">Vérification extincteurs</option>
+        <option value="vérification RIA">Vérification RIA</option>
+        <option value="vérification BAES">Vérification BAES</option>
+        <option value="VGP nacelle">VGP nacelle</option>
+        <option value="VGP engin">VGP engin</option>
+        <option value="VGP antichute">VGP antichute</option>
+        <option value="maintenance préventive">Maintenance préventive</option>
+        <option value="dépannage">Dépannage</option>
+        <option value="autre">Autre</option>
+      </select></div>
+      <div class="fg"><label>Statut</label><select id="rdv-statut"><option value="planifié">Planifié</option><option value="confirmé">Confirmé</option><option value="effectué">Effectué</option><option value="annulé">Annulé</option></select></div>
+      <div class="fg" style="grid-column:1/-1"><label>Notes / instructions</label><textarea id="rdv-notes"></textarea></div>
+    </div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-rdv')">Annuler</button><button class="btn btn-p" onclick="saveRdv()">Enregistrer</button></div>
+  </div></div>
 </div>
 
 <!-- Contrat -->
 <div class="mo" id="mo-contrat">
-  <div class="modal">
-    <div class="mh"><h3 id="mo-contrat-title">Nouveau contrat</h3><button class="mclose" onclick="closeModal('mo-contrat')">✕</button></div>
-    <div class="mc">
-      <input type="hidden" id="ct-id">
-      <div class="form-grid">
-        <div class="fg" style="grid-column:1/-1"><label>Client *</label><select id="ct-client"></select></div>
-        <div class="fg"><label>N° de contrat</label><input type="text" id="ct-num" placeholder="BFS-2024-001"></div>
-        <div class="fg"><label>Type</label>
-          <select id="ct-type"><option value="annuel">Annuel</option><option value="pluriannuel">Pluriannuel</option><option value="ponctuel">Ponctuel</option></select>
-        </div>
-        <div class="fg"><label>Date début</label><input type="date" id="ct-debut"></div>
-        <div class="fg"><label>Date fin</label><input type="date" id="ct-fin"></div>
-        <div class="fg"><label>Tarif annuel HT (€)</label><input type="number" id="ct-tarif" step="0.01"></div>
-        <div class="fg"><label>Périodicité</label>
-          <select id="ct-period"><option value="annuelle">Annuelle</option><option value="semestrielle">Semestrielle</option><option value="trimestrielle">Trimestrielle</option><option value="mensuelle">Mensuelle</option></select>
-        </div>
-        <div class="fg"><label>Statut</label>
-          <select id="ct-statut"><option value="actif">Actif</option><option value="suspendu">Suspendu</option><option value="terminé">Terminé</option></select>
-        </div>
-        <div class="fg" style="grid-column:1/-1">
-          <label>Types d'équipements couverts</label>
-          <div id="ct-types-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;margin-top:4px"></div>
-        </div>
-        <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="ct-notes"></textarea></div>
-      </div>
-      <div class="fa"><button class="btn btn-s" onclick="closeModal('mo-contrat')">Annuler</button><button class="btn btn-p" onclick="saveContrat()">Enregistrer</button></div>
+  <div class="modal"><div class="mh"><h3 id="mo-ct-t">Nouveau contrat</h3><button class="mclose" onclick="CM('mo-contrat')">✕</button></div>
+  <div class="mc"><input type="hidden" id="ct-id">
+    <div class="form-grid">
+      <div class="fg" style="grid-column:1/-1"><label>Client *</label><select id="ct-client"></select></div>
+      <div class="fg"><label>N° contrat</label><input type="text" id="ct-num"></div>
+      <div class="fg"><label>Type</label><select id="ct-type"><option value="annuel">Annuel</option><option value="pluriannuel">Pluriannuel</option><option value="ponctuel">Ponctuel</option></select></div>
+      <div class="fg"><label>Début</label><input type="date" id="ct-debut"></div>
+      <div class="fg"><label>Fin</label><input type="date" id="ct-fin"></div>
+      <div class="fg"><label>Tarif HT (€)</label><input type="number" id="ct-tarif" step="0.01"></div>
+      <div class="fg"><label>Périodicité</label><select id="ct-period"><option value="annuelle">Annuelle</option><option value="semestrielle">Semestrielle</option><option value="trimestrielle">Trimestrielle</option><option value="mensuelle">Mensuelle</option></select></div>
+      <div class="fg"><label>Statut</label><select id="ct-statut"><option value="actif">Actif</option><option value="suspendu">Suspendu</option><option value="terminé">Terminé</option></select></div>
+      <div class="fg" style="grid-column:1/-1"><label>Équipements couverts</label><div id="ct-types-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:5px;margin-top:4px"></div></div>
+      <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="ct-notes"></textarea></div>
     </div>
-  </div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-contrat')">Annuler</button><button class="btn btn-p" onclick="saveContrat()">Enregistrer</button></div>
+  </div></div>
+</div>
+
+<!-- Utilisateur -->
+<div class="mo" id="mo-user">
+  <div class="modal" style="max-width:480px"><div class="mh"><h3 id="mo-user-t">Inviter un utilisateur</h3><button class="mclose" onclick="CM('mo-user')">✕</button></div>
+  <div class="mc"><input type="hidden" id="u-id">
+    <div class="form-grid">
+      <div class="fg"><label>Prénom</label><input type="text" id="u-prenom"></div>
+      <div class="fg"><label>Nom *</label><input type="text" id="u-nom"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Email *</label><input type="email" id="u-email"></div>
+      <div class="fg"><label>Rôle *</label><select id="u-role" onchange="toggleVisibilite()"><option value="technicien">Technicien</option><option value="secretariat">Secrétariat</option><option value="admin">Admin</option></select></div>
+      <div class="fg"><label>Agence</label><select id="u-agence"><option value="">— Aucune —</option></select></div>
+      <div class="fg" id="fg-visibilite"><label>Visibilité tableau de bord</label>
+        <select id="u-visibilite">
+          <option value="perso">Perso uniquement</option>
+          <option value="perso_agence">Perso + son agence</option>
+          <option value="tout">Perso + toutes agences</option>
+        </select>
+      </div>
+    </div>
+    <div id="invite-info" style="background:#dbeafe;padding:10px;border-radius:var(--r);font-size:12px;margin-top:12px;display:none">
+      📧 Un email d'invitation sera envoyé avec un lien pour définir le mot de passe.
+    </div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-user')">Annuler</button><button class="btn btn-p" id="btn-save-user" onclick="saveUser()">Inviter</button></div>
+  </div></div>
 </div>
 
 <!-- Modal point de contrôle -->
 <div class="mo" id="mo-point">
-  <div class="modal" style="max-width:480px">
-    <div class="mh"><h3 id="mo-point-title">Nouveau point de contrôle</h3><button class="mclose" onclick="closeModal('mo-point')">✕</button></div>
-    <div class="mc">
-      <input type="hidden" id="pt-id">
-      <div class="form-grid">
-        <div class="fg" style="grid-column:1/-1"><label>Libellé *</label><input type="text" id="pt-libelle"></div>
-        <div class="fg"><label>Type de réponse *</label>
-          <select id="pt-type-rep" onchange="toggleUnite()">
-            <option value="oui_non">Oui / Non</option>
-            <option value="numerique">Valeur numérique</option>
-            <option value="texte">Texte libre</option>
-            <option value="date">Date</option>
-          </select>
-        </div>
-        <div class="fg" id="fg-unite-pt"><label>Unité (ex: bar, mm)</label><input type="text" id="pt-unite"></div>
-        <div class="fg"><label>Marque (laisser vide = tous)</label><input type="text" id="pt-marque"></div>
-        <div class="fg"><label>Modèle (laisser vide = tous)</label><input type="text" id="pt-modele"></div>
-        <div class="fg"><label>Ordre d'affichage</label><input type="number" id="pt-ordre" value="99"></div>
-        <div class="fg">
-          <label>Obligatoire</label>
-          <select id="pt-oblig"><option value="true">Oui</option><option value="false">Non</option></select>
-        </div>
-      </div>
-      <div class="fa"><button class="btn btn-s" onclick="closeModal('mo-point')">Annuler</button><button class="btn btn-p" onclick="savePoint()">Enregistrer</button></div>
+  <div class="modal" style="max-width:460px"><div class="mh"><h3 id="mo-pt-t">Nouveau point de contrôle</h3><button class="mclose" onclick="CM('mo-point')">✕</button></div>
+  <div class="mc"><input type="hidden" id="pt-id">
+    <div class="form-grid">
+      <div class="fg" style="grid-column:1/-1"><label>Libellé *</label><input type="text" id="pt-libelle"></div>
+      <div class="fg"><label>Type réponse *</label><select id="pt-type-rep" onchange="toggleUnite()"><option value="oui_non">Oui / Non</option><option value="numerique">Numérique</option><option value="texte">Texte</option><option value="date">Date</option></select></div>
+      <div class="fg" id="fg-unite-pt"><label>Unité (bar, mm…)</label><input type="text" id="pt-unite"></div>
+      <div class="fg"><label>Marque (vide=tous)</label><input type="text" id="pt-marque"></div>
+      <div class="fg"><label>Modèle (vide=tous)</label><input type="text" id="pt-modele"></div>
+      <div class="fg"><label>Ordre</label><input type="number" id="pt-ordre" value="99"></div>
+      <div class="fg"><label>Obligatoire</label><select id="pt-oblig"><option value="true">Oui</option><option value="false">Non</option></select></div>
     </div>
-  </div>
-</div>
-
-<!-- Modal rapports -->
-<div class="mo" id="mo-rapports">
-  <div class="modal" style="max-width:400px">
-    <div class="mh"><h3>Générer un rapport</h3><button class="mclose" onclick="closeModal('mo-rapports')">✕</button></div>
-    <div class="mc">
-      <div id="rapport-client-info" style="background:var(--bg);padding:10px 14px;border-radius:var(--r);margin-bottom:14px;font-size:13px"></div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn btn-p" id="btn-rapp-global" onclick="genRapportGlobal()">📄 Rapport global client (tous équipements)</button>
-        <button class="btn btn-s" id="btn-rapp-type" onclick="genRapportParType()">📄 Rapport par type d'équipement</button>
-        <button class="btn btn-s" onclick="exportInventaireXLS()">📊 Inventaire équipements (Excel)</button>
-      </div>
-    </div>
-  </div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-point')">Annuler</button><button class="btn btn-p" onclick="savePoint()">Enregistrer</button></div>
+  </div></div>
 </div>
 
 <script>
 // ============================================================
-// SUPABASE
+// CONFIG
 // ============================================================
-const SURL = 'https://dqraobwozowtnrieitkp.supabase.co';
-const SKEY = 'sb_publishable_UhkImOyooXPnAqTCNMJ4wA_VVqscCmK';
-const db = supabase.createClient(SURL, SKEY);
+const SURL='https://dqraobwozowtnrieitkp.supabase.co';
+const SKEY='sb_publishable_UhkImOyooXPnAqTCNMJ4wA_VVqscCmK';
+const db=supabase.createClient(SURL,SKEY);
 
 // ============================================================
-// ÉTAT
+// ÉTAT GLOBAL
 // ============================================================
-let clients=[], equipements=[], typesEquip=[], pointsControle=[];
-let verifications=[], contrats=[];
-let currentRapportClientId=null;
+let ME=null; // profil connecté
+let clients=[],equipements=[],typesEquip=[],pointsControle=[],profils=[],contrats=[],rdvs=[];
+let calDate=new Date(); let calpDate=new Date();
+let adminAgenceFilter='';
 
 // ============================================================
 // UTILS
 // ============================================================
 const $=id=>document.getElementById(id);
 const fmt=d=>d?new Date(d).toLocaleDateString('fr-FR'):'—';
+const fmtH=t=>t?t.slice(0,5):'—';
 const ecClass=d=>{if(!d)return'';const j=(new Date(d)-new Date())/86400000;return j<0?'ec-retard':j<30?'ec-urgent':j<90?'ec-proche':'ec-ok'};
-const badgeR=r=>({conforme:'<span class="badge bv">Conforme</span>','non conforme':'<span class="badge br">Non conforme</span>','à surveiller':'<span class="badge bo">À surveiller</span>'}[r]||'<span class="badge bg">—</span>');
-const badgeSt=s=>({opérationnel:'<span class="badge bv">Opérationnel</span>','à remplacer':'<span class="badge br">À remplacer</span>','en révision':'<span class="badge bo">En révision</span>','hors service':'<span class="badge br">Hors service</span>',réformé:'<span class="badge bg">Réformé</span>',actif:'<span class="badge bv">Actif</span>',suspendu:'<span class="badge bo">Suspendu</span>',terminé:'<span class="badge bg">Terminé</span>'}[s]||'<span class="badge bg">'+s+'</span>');
-
+const badgeR=r=>({conforme:'<span class="badge bv">✓ Conforme</span>','non conforme':'<span class="badge br">✗ Non conforme</span>','à surveiller':'<span class="badge bo">⚡ À surveiller</span>'}[r]||'<span class="badge bg">—</span>');
+const badgeSt=s=>({opérationnel:'<span class="badge bv">Opérationnel</span>','à remplacer':'<span class="badge br">À remplacer</span>','en révision':'<span class="badge bo">En révision</span>','hors service':'<span class="badge br">HS</span>',réformé:'<span class="badge bg">Réformé</span>',actif:'<span class="badge bv">Actif</span>',suspendu:'<span class="badge bo">Suspendu</span>',terminé:'<span class="badge bg">Terminé</span>'}[s]||'<span class="badge bg">'+s+'</span>');
 function toast(msg,type='ok'){const t=$('toast');t.textContent=msg;t.className='show '+type;setTimeout(()=>t.className='',3000)}
-function closeModal(id){$(id).classList.remove('open')}
-function openModal(id){$(id).classList.add('open')}
+function CM(id){$(id).classList.remove('open')}
+function OM(id){$(id).classList.add('open')}
 document.querySelectorAll('.mo').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
 
 // ============================================================
-// NAVIGATION
+// AUTH
 // ============================================================
+async function doLogin(){
+  const email=$('login-email').value.trim();
+  const pwd=$('login-pwd').value;
+  const err=$('login-err');err.style.display='none';
+  if(!email||!pwd){err.textContent='Email et mot de passe requis.';err.style.display='block';return}
+  const {data,error}=await db.auth.signInWithPassword({email,password:pwd});
+  if(error){err.textContent=error.message==='Invalid login credentials'?'Email ou mot de passe incorrect.':error.message;err.style.display='block';return}
+  await onLogin(data.user);
+}
+$('login-pwd').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+
+async function onLogin(user){
+  // Toujours afficher le login par défaut pendant le chargement
+  $('login-screen').style.display='flex';
+  $('app').classList.remove('logged');
+
+  const {data:profil, error:profErr}=await db.from('profils').select('*, agences(nom,code)').eq('id',user.id).single();
+
+  if(profErr||!profil){
+    // Profil absent — déconnecter proprement et afficher l'erreur
+    await db.auth.signOut();
+    const err=$('login-err');
+    err.textContent='Profil introuvable. Contactez l\'administrateur BFS.';
+    err.style.display='block';
+    return;
+  }
+
+  ME=profil;
+  $('login-screen').style.display='none';
+  $('app').classList.add('logged');
+  $('sb-nom').textContent=`${profil.prenom||''} ${profil.nom}`.trim();
+  $('sb-role').textContent={admin:'Administrateur',secretariat:'Secrétariat',technicien:'Technicien'}[profil.role]||profil.role;
+  if(profil.agences){const ag=$('sb-agence');ag.textContent=profil.agences.nom;ag.style.display='inline-block'}
+  buildNav();
+  await init();
+}
+
+async function doLogout(){
+  await db.auth.signOut();
+  ME=null;
+  $('app').classList.remove('logged');
+  $('login-screen').style.display='flex';
+  $('login-pwd').value='';
+}
+
+// Vérifier session au chargement
+db.auth.getSession().then(async({data:{session}})=>{if(session)await onLogin(session.user)});
+
+// ============================================================
+// NAVIGATION PAR RÔLE
+// ============================================================
+function buildNav(){
+  const nav=$('sb-nav');
+  const role=ME.role;
+  let html='';
+  if(role==='technicien'||role==='admin'||role==='secretariat'){
+    html+=`<div class="nav-sec">Tableau de bord</div>`;
+    if(role==='technicien')html+=nav_a('dash-tech','📊','Mon tableau de bord');
+    if(role==='secretariat')html+=nav_a('dash-secretariat','📊','Secrétariat');
+    if(role==='admin')html+=nav_a('dash-admin','📊','Vue globale');
+  }
+  html+=`<div class="nav-sec">Gestion</div>`;
+  html+=nav_a('clients','🏢','Clients');
+  html+=nav_a('equipements','🔧','Équipements');
+  html+=nav_a('verifications','✅','Vérifications');
+  html+=nav_a('contrats','📋','Contrats');
+  html+=nav_a('planning','📅','Planning');
+  if(role==='admin'){
+    html+=`<div class="nav-sec">Administration</div>`;
+    html+=nav_a('utilisateurs','👥','Utilisateurs');
+    html+=nav_a('config-points','⚙️','Points de contrôle');
+  }
+  nav.innerHTML=html;
+  nav.querySelectorAll('a').forEach(a=>a.addEventListener('click',e=>navigate(a.dataset.page,e)));
+  // Aller sur le bon dashboard
+  const defaultPage={admin:'dash-admin',secretariat:'dash-secretariat',technicien:'dash-tech'}[ME.role]||'dash-tech';
+  navigate(defaultPage);
+}
+const nav_a=(p,ico,label)=>`<a href="#" data-page="${p}"><span class="ico">${ico}</span><span>${label}</span></a>`;
+
 function navigate(page,e){
   if(e)e.preventDefault();
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('#sb nav a').forEach(a=>a.classList.remove('active'));
-  $('page-'+page).classList.add('active');
-  document.querySelector(`[data-page="${page}"]`).classList.add('active');
-  const titles={dashboard:'Tableau de bord',clients:'Clients',equipements:'Équipements',verifications:'Vérifications',contrats:'Contrats','config-points':'Points de contrôle'};
+  const pg=$('page-'+page);if(!pg)return;
+  pg.classList.add('active');
+  const lnk=document.querySelector(`[data-page="${page}"]`);if(lnk)lnk.classList.add('active');
+  const titles={'dash-tech':'Mon tableau de bord','dash-secretariat':'Secrétariat — Planning','dash-admin':'Vue globale',clients:'Clients',equipements:'Équipements',verifications:'Vérifications',contrats:'Contrats',planning:'Planning',utilisateurs:'Utilisateurs','config-points':'Points de contrôle'};
   $('page-title').textContent=titles[page]||page;
-  if(page==='dashboard')loadDashboard();
+  if(page==='dash-tech')loadDashTech();
+  if(page==='dash-secretariat')loadDashSec();
+  if(page==='dash-admin')loadDashAdmin();
   if(page==='clients')loadClients();
   if(page==='equipements')loadEquipements();
   if(page==='verifications')loadVerifs();
   if(page==='contrats')loadContrats();
+  if(page==='planning')loadPlanningPage();
+  if(page==='utilisateurs')loadUsers();
   if(page==='config-points')loadConfigPage();
 }
-document.querySelectorAll('#sb nav a').forEach(a=>a.addEventListener('click',e=>navigate(a.dataset.page,e)));
 
 // ============================================================
-// INIT — charger types équipements au démarrage
+// INIT
 // ============================================================
 async function init(){
-  const {data}=await db.from('types_equipements').select('*').eq('actif',true).order('categorie').order('libelle');
-  typesEquip=data||[];
-  // Remplir filtres
-  const fteq=$('f-type-equip');
-  fteq.innerHTML='<option value="">Tous types</option>'+typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
-  const ftv=$('f-type-verif');
-  ftv.innerHTML='<option value="">Tous types</option>'+typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
-  const ftc=$('f-type-config');
-  ftc.innerHTML='<option value="">Sélectionner un type…</option>'+typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
-  loadDashboard();
-}
-
-// ============================================================
-// DASHBOARD
-// ============================================================
-async function loadDashboard(){
-  const cat=$('dash-filter-cat').value;
-  let qv=db.from('vue_echeances').select('*').order('date_prochaine_echeance');
-  if(cat)qv=qv.eq('categorie',cat);
-  const [{data:cl},{data:eq},{data:ech}]=await Promise.all([
-    db.from('clients').select('id'),
-    db.from('equipements').select('id'),
-    qv
+  const [{data:te},{data:pr},{data:ag}]=await Promise.all([
+    db.from('types_equipements').select('*').eq('actif',true).order('categorie').order('libelle'),
+    db.from('profils').select('*,agences(nom)').eq('actif',true).order('nom'),
+    db.from('agences').select('*')
   ]);
-  $('s-clients').textContent=cl?.length??0;
-  $('s-equip').textContent=eq?.length??0;
-  const retard=(ech||[]).filter(e=>e.statut_echeance==='en retard').length;
-  const urgent=(ech||[]).filter(e=>e.statut_echeance==='urgent').length;
-  const ok=(ech||[]).filter(e=>e.statut_echeance==='ok').length;
-  $('s-retard').textContent=retard;
-  $('s-urgent').textContent=urgent;
-  $('s-ok').textContent=ok;
-  renderEcheances(ech||[]);
+  typesEquip=te||[];profils=pr||[];
+  // Remplir filtres types
+  [$('f-type-equip'),$('f-type-verif'),$('f-type-config')].forEach(el=>{if(!el)return;
+    el.innerHTML=(el.id==='f-type-config'?'<option value="">Sélectionner…</option>':'<option value="">Tous types</option>')+typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
+  });
+  // Remplir select techniciens planning
+  const ftp=$('f-tech-planning');if(ftp)ftp.innerHTML='<option value="">Tous techniciens</option>'+profils.map(p=>`<option value="${p.id}">${p.prenom||''} ${p.nom}</option>`).join('');
+  // Agences dans modal user
+  const ua=$('u-agence');if(ua)ua.innerHTML='<option value="">— Aucune —</option>'+(ag||[]).map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
 }
 
-function renderEcheances(data){
-  const el=$('dash-echeances');
-  const filtered=data.filter(e=>e.statut_echeance!=='ok');
-  if(!filtered.length){el.innerHTML='<div class="t-empty">✅ Toutes les vérifications sont à jour</div>';return}
-  el.innerHTML=`<table><thead><tr><th>Client</th><th>Équipement</th><th>Type</th><th>Localisation</th><th>Dernière vérif.</th><th>Prochaine échéance</th><th>Statut</th></tr></thead><tbody>${filtered.map(e=>`<tr>
+// ============================================================
+// DASHBOARD TECHNICIEN
+// ============================================================
+async function loadDashTech(){
+  const vis=ME.visibilite||'perso';
+  // Tabs selon visibilité
+  const tabs=$('dash-tech-agence-tabs');tabs.innerHTML='';tabs.style.display='none';
+  let echeancesQ=db.from('vue_echeances').select('*').order('date_prochaine_echeance');
+  let statsQ=db.from('vue_echeances').select('*');
+
+  if(vis==='perso'){
+    echeancesQ=echeancesQ.eq('technicien_id',ME.id);
+    statsQ=statsQ.eq('technicien_id',ME.id);
+    $('dash-tech-title').textContent='Mes échéances à traiter';
+  } else if(vis==='perso_agence'){
+    tabs.style.display='flex';
+    const agNom=ME.agences?.nom||'Mon agence';
+    tabs.innerHTML=`<button class="ag-tab active" onclick="dashTechTab(this,'perso')">👤 Mes équipements</button>
+      <button class="ag-tab" onclick="dashTechTab(this,'agence')">📍 ${agNom}</button>`;
+    echeancesQ=echeancesQ.eq('technicien_id',ME.id);
+    statsQ=statsQ.eq('technicien_id',ME.id);
+  } else {
+    tabs.style.display='flex';
+    tabs.innerHTML=`<button class="ag-tab active" onclick="dashTechTab(this,'perso')">👤 Mes équipements</button>
+      <button class="ag-tab" onclick="dashTechTab(this,'briec')">📍 Briec</button>
+      <button class="ag-tab" onclick="dashTechTab(this,'sevremont')">📍 Sevremont</button>`;
+    echeancesQ=echeancesQ.eq('technicien_id',ME.id);
+    statsQ=statsQ.eq('technicien_id',ME.id);
+  }
+
+  const [{data:ech},{data:mesequip}]=await Promise.all([
+    echeancesQ,
+    db.from('equipements').select('id').eq('technicien_id',ME.id)
+  ]);
+  const ec=ech||[];
+  const retard=ec.filter(e=>e.statut_echeance==='en retard').length;
+  const urgent=ec.filter(e=>e.statut_echeance==='urgent').length;
+  const proche=ec.filter(e=>e.statut_echeance==='proche').length;
+  $('dash-tech-stats').innerHTML=`
+    <div class="stat-card bleu"><div class="val">${mesequip?.length??0}</div><div class="lab">Mes équipements</div></div>
+    <div class="stat-card rouge"><div class="val">${retard}</div><div class="lab">En retard</div></div>
+    <div class="stat-card orange"><div class="val">${urgent}</div><div class="lab">Urgent &lt;30j</div></div>
+    <div class="stat-card vert"><div class="val">${proche}</div><div class="lab">Proche &lt;90j</div></div>`;
+  renderEcheancesTable(ec.filter(e=>e.statut_echeance!=='ok'),$('dash-tech-table'));
+}
+
+window.dashTechTab=async function(btn,scope){
+  document.querySelectorAll('#dash-tech-agence-tabs .ag-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  let q=db.from('vue_echeances').select('*').order('date_prochaine_echeance');
+  if(scope==='perso'){q=q.eq('technicien_id',ME.id);$('dash-tech-title').textContent='Mes échéances';}
+  else{q=q.eq('agence_code',scope);$('dash-tech-title').textContent='Échéances agence';}
+  const {data}=await q;
+  renderEcheancesTable((data||[]).filter(e=>e.statut_echeance!=='ok'),$('dash-tech-table'));
+};
+
+// ============================================================
+// DASHBOARD SECRÉTARIAT
+// ============================================================
+async function loadDashSec(){
+  // Stats des 2 agences
+  const [{data:ec},{data:rdvs_}]=await Promise.all([
+    db.from('vue_echeances').select('*'),
+    db.from('vue_planning').select('*').gte('date_rdv',new Date().toISOString().slice(0,10)).lte('date_rdv',new Date(Date.now()+7*86400000).toISOString().slice(0,10))
+  ]);
+  const ec_=ec||[];
+  $('sec-stats').innerHTML=`
+    <div class="stat-card rouge"><div class="val">${ec_.filter(e=>e.statut_echeance==='en retard').length}</div><div class="lab">En retard</div></div>
+    <div class="stat-card orange"><div class="val">${ec_.filter(e=>e.statut_echeance==='urgent').length}</div><div class="lab">Urgents &lt;30j</div></div>
+    <div class="stat-card bleu"><div class="val">${rdvs_?.length??0}</div><div class="lab">RDV cette semaine</div></div>
+    <div class="stat-card violet"><div class="val">${ec_.filter(e=>e.statut_echeance==='proche').length}</div><div class="lab">Proche &lt;90j</div></div>`;
+  // Urgentes
+  const el=$('sec-echeances-urgentes');
+  const urgentes=ec_.filter(e=>['en retard','urgent'].includes(e.statut_echeance)).slice(0,8);
+  el.innerHTML=urgentes.length?`<div style="padding:8px">${urgentes.map(e=>`<div style="padding:6px 10px;border-left:3px solid ${e.statut_echeance==='en retard'?'#dc2626':'#d97706'};margin-bottom:5px;background:#fafafa;border-radius:0 6px 6px 0;font-size:12px">
+    <strong>${e.raison_sociale}</strong> — ${e.icone} ${e.type_libelle}<br>
+    <span class="${ecClass(e.date_prochaine_echeance)}">${fmt(e.date_prochaine_echeance)}</span>
+  </div>`).join('')}</div>`:'<div class="t-empty">✅ Aucune urgence</div>';
+  renderCal('calendrier',calDate);
+}
+
+// ============================================================
+// DASHBOARD ADMIN
+// ============================================================
+async function loadDashAdmin(){
+  let q=db.from('vue_echeances').select('*');
+  if(adminAgenceFilter)q=q.eq('agence_code',adminAgenceFilter);
+  const [{data:ec},{data:cl},{data:eq}]=await Promise.all([q,db.from('clients').select('id'),db.from('equipements').select('id')]);
+  const ec_=ec||[];
+  $('admin-stats').innerHTML=`
+    <div class="stat-card bleu"><div class="val">${cl?.length??0}</div><div class="lab">Clients</div></div>
+    <div class="stat-card bleu"><div class="val">${eq?.length??0}</div><div class="lab">Équipements</div></div>
+    <div class="stat-card rouge"><div class="val">${ec_.filter(e=>e.statut_echeance==='en retard').length}</div><div class="lab">En retard</div></div>
+    <div class="stat-card orange"><div class="val">${ec_.filter(e=>e.statut_echeance==='urgent').length}</div><div class="lab">Urgent &lt;30j</div></div>
+    <div class="stat-card vert"><div class="val">${ec_.filter(e=>e.statut_echeance==='ok').length}</div><div class="lab">À jour</div></div>`;
+  renderEcheancesTable(ec_.filter(e=>e.statut_echeance!=='ok'),$('admin-echeances'));
+}
+window.adminSetAgence=function(btn,agence){
+  document.querySelectorAll('#admin-agence-tabs .ag-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');adminAgenceFilter=agence;loadDashAdmin();
+};
+
+function renderEcheancesTable(data,el){
+  if(!data.length){el.innerHTML='<div class="t-empty">✅ Tout est à jour</div>';return}
+  el.innerHTML=`<table><thead><tr><th>Client</th><th>Agence</th><th>Équipement</th><th>Type</th><th>Technicien</th><th>Dernière vérif.</th><th>Prochaine échéance</th></tr></thead><tbody>${data.map(e=>`<tr>
     <td><strong>${e.raison_sociale}</strong><br><small style="color:var(--txt-l)">${e.ville||''}</small></td>
-    <td>${e.icone} ${e.numero_identification||'—'}<br><small>${e.marque||''} ${e.modele||''}</small></td>
-    <td>${e.type_libelle}</td>
-    <td>${e.localisation||'—'}</td>
+    <td><span class="badge bg">${e.agence_nom||'—'}</span></td>
+    <td>${e.icone||''} ${e.numero_identification||'—'}<br><small>${e.marque||''} ${e.modele||''}</small></td>
+    <td>${e.type_libelle||'—'}</td>
+    <td>${e.tech_prenom||''} ${e.tech_nom||'—'}</td>
     <td>${fmt(e.date_verification)}</td>
     <td class="${ecClass(e.date_prochaine_echeance)}">${fmt(e.date_prochaine_echeance)}</td>
-    <td>${badgeR(e.statut_echeance==='en retard'?'non conforme':'à surveiller')}</td>
   </tr>`).join('')}</tbody></table>`;
 }
 
-async function exportEcheancesXLS(){
-  const {data}=await db.from('vue_echeances').select('*').order('date_prochaine_echeance');
+async function exportEcheancesXLS(scope){
+  let q=db.from('vue_echeances').select('*').order('date_prochaine_echeance');
+  if(scope==='tech')q=q.eq('technicien_id',ME.id);
+  const {data}=await q;
   if(!data?.length){toast('Aucune donnée','err');return}
-  const rows=data.map(e=>({'Client':e.raison_sociale,'Ville':e.ville,'Type':e.type_libelle,'Identification':e.numero_identification,'Marque':e.marque,'Modèle':e.modele,'Localisation':e.localisation,'Dernière vérif.':fmt(e.date_verification),'Prochaine échéance':fmt(e.date_prochaine_echeance),'Statut':e.statut_echeance,'Résultat':e.resultat}));
-  const ws=XLSX.utils.json_to_sheet(rows);
-  const wb=XLSX.utils.book_new();
+  const rows=data.map(e=>({'Client':e.raison_sociale,'Agence':e.agence_nom,'Type':e.type_libelle,'Identification':e.numero_identification,'Localisation':e.localisation,'Technicien':`${e.tech_prenom||''} ${e.tech_nom||''}`.trim(),'Dernière vérif.':fmt(e.date_verification),'Prochaine échéance':fmt(e.date_prochaine_echeance),'Statut':e.statut_echeance}));
+  const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Échéances');
-  XLSX.writeFile(wb,`BFS_echeances_${new Date().toISOString().slice(0,10)}.xlsx`);
-  toast('Export généré');
+  XLSX.writeFile(wb,`BFS_echeances_${new Date().toISOString().slice(0,10)}.xlsx`);toast('Export généré');
+}
+
+// ============================================================
+// CALENDRIER
+// ============================================================
+const JOURS=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+const MOIS=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+async function renderCal(containerId,date,rdvList){
+  const el=$(containerId);if(!el)return;
+  if(!rdvList){
+    const debut=new Date(date.getFullYear(),date.getMonth(),1);
+    const fin=new Date(date.getFullYear(),date.getMonth()+1,0);
+    const {data}=await db.from('vue_planning').select('*')
+      .gte('date_rdv',debut.toISOString().slice(0,10))
+      .lte('date_rdv',fin.toISOString().slice(0,10));
+    rdvList=data||[];
+  }
+  if(containerId==='calendrier')$('cal-label').textContent=`${MOIS[date.getMonth()]} ${date.getFullYear()}`;
+  if(containerId==='calendrier-planning')$('calp-label').textContent=`${MOIS[date.getMonth()]} ${date.getFullYear()}`;
+
+  const today=new Date();today.setHours(0,0,0,0);
+  const premierJour=new Date(date.getFullYear(),date.getMonth(),1);
+  let startDow=premierJour.getDay();startDow=startDow===0?6:startDow-1;
+  const dernier=new Date(date.getFullYear(),date.getMonth()+1,0).getDate();
+
+  let html=`<div class="cal-grid">`;
+  JOURS.forEach(j=>html+=`<div class="cal-head">${j}</div>`);
+  let day=1-startDow;
+  for(let row=0;row<6;row++){
+    for(let col=0;col<7;col++,day++){
+      const d=new Date(date.getFullYear(),date.getMonth(),day);
+      const isCurrentMonth=day>=1&&day<=dernier;
+      const isToday=d.getTime()===today.getTime();
+      const ds=d.toISOString().slice(0,10);
+      const dayRdvs=rdvList.filter(r=>r.date_rdv===ds);
+      html+=`<div class="cal-day${!isCurrentMonth?' other-month':''}${isToday?' today':''}" onclick="onCalDayClick('${ds}')">
+        <div class="cal-num">${isCurrentMonth?day:''}</div>
+        ${dayRdvs.map(r=>`<div class="rdv-chip rdv-${r.statut.replace('é','e')}" title="${r.raison_sociale} — ${r.tech_prenom||''} ${r.tech_nom||''}" onclick="event.stopPropagation();editRdv('${r.id}')">${fmtH(r.heure_debut)} ${r.raison_sociale}</div>`).join('')}
+      </div>`;
+    }
+  }
+  html+='</div>';
+  el.innerHTML=html;
+}
+
+window.calNav=function(dir){calDate=new Date(calDate.getFullYear(),calDate.getMonth()+dir,1);renderCal('calendrier',calDate)};
+window.calPNav=function(dir){calpDate=new Date(calpDate.getFullYear(),calpDate.getMonth()+dir,1);loadPlanningPage()};
+window.onCalDayClick=function(ds){$('rdv-date').value=ds;openRdvModal()};
+
+// ============================================================
+// PLANNING PAGE
+// ============================================================
+async function loadPlanningPage(){
+  const tid=$('f-tech-planning')?.value;
+  const ag=$('f-agence-planning')?.value;
+  const debut=new Date(calpDate.getFullYear(),calpDate.getMonth(),1);
+  const fin=new Date(calpDate.getFullYear(),calpDate.getMonth()+1,0);
+  let q=db.from('vue_planning').select('*').gte('date_rdv',debut.toISOString().slice(0,10)).lte('date_rdv',fin.toISOString().slice(0,10));
+  if(tid)q=q.eq('technicien_id',tid);
+  if(ag)q=q.eq('agence_code',ag);
+  const {data}=await q;
+  rdvs=data||[];
+  renderCal('calendrier-planning',calpDate,rdvs);
+}
+
+// ============================================================
+// RDV
+// ============================================================
+async function openRdvModal(prefill=null){
+  if(!clients.length)await loadClients();
+  $('rdv-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
+  $('rdv-tech').innerHTML=profils.map(p=>`<option value="${p.id}">${p.prenom||''} ${p.nom}</option>`).join('');
+  ['rdv-id','rdv-notes'].forEach(id=>$(id).value='');
+  $('rdv-date').value=new Date().toISOString().slice(0,10);
+  $('rdv-heure').value='09:00';$('rdv-duree').value=60;
+  $('rdv-statut').value='planifié';$('mo-rdv-t').textContent='Nouveau RDV';
+  if(ME.role==='technicien'){$('rdv-tech').value=ME.id}
+  if(prefill){
+    $('rdv-id').value=prefill.id||'';$('rdv-client').value=prefill.client_id||'';
+    $('rdv-tech').value=prefill.technicien_id||'';$('rdv-date').value=prefill.date_rdv||'';
+    $('rdv-heure').value=prefill.heure_debut?.slice(0,5)||'';$('rdv-duree').value=prefill.duree_minutes||60;
+    $('rdv-type-int').value=prefill.type_intervention||'';$('rdv-statut').value=prefill.statut||'planifié';
+    $('rdv-notes').value=prefill.notes||'';$('mo-rdv-t').textContent='Modifier le RDV';
+  }
+  OM('mo-rdv');
+}
+
+async function editRdv(id){
+  const r=rdvs.find(x=>x.id===id);
+  if(r)openRdvModal({id:r.id,client_id:r.client_id,technicien_id:r.technicien_id,date_rdv:r.date_rdv,heure_debut:r.heure_debut,duree_minutes:r.duree_minutes,type_intervention:r.type_intervention,statut:r.statut,notes:r.notes});
+}
+
+async function saveRdv(){
+  const id=$('rdv-id').value;
+  const p={client_id:$('rdv-client').value,technicien_id:$('rdv-tech').value||null,date_rdv:$('rdv-date').value,heure_debut:$('rdv-heure').value||null,duree_minutes:parseInt($('rdv-duree').value)||60,type_intervention:$('rdv-type-int').value,statut:$('rdv-statut').value,notes:$('rdv-notes').value.trim(),cree_par:ME.id,updated_at:new Date().toISOString()};
+  if(!p.client_id||!p.date_rdv){toast('Client et date obligatoires','err');return}
+  const {error}=id?await db.from('rdv').update(p).eq('id',id):await db.from('rdv').insert(p);
+  if(error){toast('Erreur: '+error.message,'err');return}
+  toast(id?'RDV modifié':'RDV créé');CM('mo-rdv');
+  if($('page-dash-secretariat').classList.contains('active'))loadDashSec();
+  else loadPlanningPage();
 }
 
 // ============================================================
 // CLIENTS
 // ============================================================
 async function loadClients(){
-  const {data}=await db.from('clients').select('*').order('raison_sociale');
+  const {data}=await db.from('clients').select('*,agences(nom,code)').order('raison_sociale');
   clients=data||[];
   renderClients();
-  // Remplir selects
-  ['f-client-verif','ct-client'].forEach(id=>{
-    const el=$(id);if(!el)return;
-    const cur=el.value;
-    el.innerHTML='<option value="">— Tous —</option>'+clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
+  [$('f-client-verif'),$('ct-client'),$('rdv-client')].forEach(el=>{if(!el)return;
+    const cur=el.value;el.innerHTML=(el.id.includes('verif')||el.id.includes('rdv')?'<option value="">—</option>':'')+clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
     if(cur)el.value=cur;
   });
 }
 
 function renderClients(){
   const q=$('q-clients').value.toLowerCase();
-  const data=clients.filter(c=>(c.raison_sociale+c.ville+c.siret).toLowerCase().includes(q));
+  const ag=$('f-agence-clients').value;
+  const data=clients.filter(c=>{
+    const m=(c.raison_sociale+c.ville+c.siret).toLowerCase().includes(q);
+    return m&&(!ag||c.agences?.code===ag);
+  });
   const el=$('tbl-clients');
   if(!data.length){el.innerHTML='<div class="t-empty">Aucun client</div>';return}
-  el.innerHTML=`<table><thead><tr><th>Raison sociale</th><th>Ville</th><th>Contact</th><th>Téléphone</th><th>Actions</th></tr></thead><tbody>${data.map(c=>`<tr>
-    <td><strong>${c.raison_sociale}</strong>${c.siret?'<br><small style="color:var(--txt-l)">'+c.siret+'</small>':''}</td>
+  el.innerHTML=`<table><thead><tr><th>Raison sociale</th><th>Agence</th><th>Ville</th><th>Contact</th><th>Téléphone</th><th>Actions</th></tr></thead><tbody>${data.map(c=>`<tr>
+    <td><strong>${c.raison_sociale}</strong></td>
+    <td><span class="badge bg">${c.agences?.nom||'—'}</span></td>
     <td>${c.ville||'—'}</td><td>${c.contact_nom||'—'}</td><td>${c.contact_telephone||'—'}</td>
     <td><div class="ia">
       <button class="btn btn-s btn-xs" onclick="editClient('${c.id}')">✏️</button>
-      <button class="btn btn-s btn-xs" onclick="openRapports('${c.id}')">📄</button>
       <button class="btn btn-s btn-xs" onclick="deleteClient('${c.id}')">🗑</button>
     </div></td>
   </tr>`).join('')}</tbody></table>`;
 }
 
-function openClientModal(prefill=null){
+async function openClientModal(prefill=null){
+  const {data:ag}=await db.from('agences').select('*');
+  $('c-agence').innerHTML='<option value="">—</option>'+(ag||[]).map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
   ['c-id','c-rs','c-adr','c-cp','c-ville','c-siret','c-contact','c-tel','c-email','c-notes'].forEach(id=>$(id).value='');
-  $('mo-client-title').textContent='Nouveau client';
+  $('mo-client-t').textContent='Nouveau client';
   if(prefill){
-    $('c-id').value=prefill.id;$('c-rs').value=prefill.raison_sociale||'';$('c-adr').value=prefill.adresse||'';
-    $('c-cp').value=prefill.code_postal||'';$('c-ville').value=prefill.ville||'';$('c-siret').value=prefill.siret||'';
-    $('c-contact').value=prefill.contact_nom||'';$('c-tel').value=prefill.contact_telephone||'';
-    $('c-email').value=prefill.contact_email||'';$('c-notes').value=prefill.notes||'';
-    $('mo-client-title').textContent='Modifier le client';
+    $('c-id').value=prefill.id;$('c-agence').value=prefill.agence_id||'';$('c-rs').value=prefill.raison_sociale||'';
+    $('c-adr').value=prefill.adresse||'';$('c-cp').value=prefill.code_postal||'';$('c-ville').value=prefill.ville||'';
+    $('c-siret').value=prefill.siret||'';$('c-contact').value=prefill.contact_nom||'';
+    $('c-tel').value=prefill.contact_telephone||'';$('c-email').value=prefill.contact_email||'';
+    $('c-notes').value=prefill.notes||'';$('mo-client-t').textContent='Modifier le client';
   }
-  openModal('mo-client');
+  OM('mo-client');
 }
 function editClient(id){openClientModal(clients.find(c=>c.id===id))}
 
 async function saveClient(){
-  const id=$('c-id').value;
-  const rs=$('c-rs').value.trim();
+  const id=$('c-id').value;const rs=$('c-rs').value.trim();
   if(!rs){toast('Raison sociale obligatoire','err');return}
-  const p={raison_sociale:rs,adresse:$('c-adr').value.trim(),code_postal:$('c-cp').value.trim(),ville:$('c-ville').value.trim(),siret:$('c-siret').value.trim(),contact_nom:$('c-contact').value.trim(),contact_telephone:$('c-tel').value.trim(),contact_email:$('c-email').value.trim(),notes:$('c-notes').value.trim(),updated_at:new Date().toISOString()};
+  const p={raison_sociale:rs,agence_id:$('c-agence').value||null,adresse:$('c-adr').value.trim(),code_postal:$('c-cp').value.trim(),ville:$('c-ville').value.trim(),siret:$('c-siret').value.trim(),contact_nom:$('c-contact').value.trim(),contact_telephone:$('c-tel').value.trim(),contact_email:$('c-email').value.trim(),notes:$('c-notes').value.trim(),updated_at:new Date().toISOString()};
   const {error}=id?await db.from('clients').update(p).eq('id',id):await db.from('clients').insert(p);
   if(error){toast('Erreur: '+error.message,'err');return}
-  toast(id?'Client modifié':'Client créé');closeModal('mo-client');loadClients();
+  toast(id?'Client modifié':'Client créé');CM('mo-client');loadClients();
 }
-
-async function deleteClient(id){
-  if(!confirm('Supprimer ce client et tous ses équipements / vérifications ?'))return;
-  await db.from('clients').delete().eq('id',id);
-  toast('Client supprimé');loadClients();
-}
+async function deleteClient(id){if(!confirm('Supprimer ce client ?'))return;await db.from('clients').delete().eq('id',id);toast('Supprimé');loadClients()}
 
 // ============================================================
 // ÉQUIPEMENTS
 // ============================================================
 async function loadEquipements(){
-  const {data}=await db.from('equipements').select('*, clients(raison_sociale), types_equipements(libelle,icone)').order('created_at',{ascending:false});
-  equipements=data||[];
-  renderEquip();
+  const {data}=await db.from('equipements').select('*,clients(raison_sociale),agences(nom,code),profils(nom,prenom),types_equipements(libelle,icone)').order('created_at',{ascending:false});
+  equipements=data||[];renderEquip();
 }
 
 function renderEquip(){
   const q=$('q-equip').value.toLowerCase();
   const ft=$('f-type-equip').value;
+  const ag=$('f-agence-equip').value;
   const data=equipements.filter(e=>{
-    const match=(e.clients?.raison_sociale+e.numero_identification+e.marque+e.modele+e.localisation).toLowerCase().includes(q);
-    return match&&(!ft||e.type_equipement_code===ft);
+    const m=(e.clients?.raison_sociale+e.numero_identification+e.marque+e.modele+e.localisation).toLowerCase().includes(q);
+    return m&&(!ft||e.type_equipement_code===ft)&&(!ag||e.agences?.code===ag);
   });
   const el=$('tbl-equip');
   if(!data.length){el.innerHTML='<div class="t-empty">Aucun équipement</div>';return}
-  el.innerHTML=`<table><thead><tr><th>Client</th><th>Type</th><th>Identification</th><th>Marque / Modèle</th><th>Capacité</th><th>Localisation</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${data.map(e=>`<tr>
+  el.innerHTML=`<table><thead><tr><th>Client</th><th>Agence</th><th>Type</th><th>Identification</th><th>Marque/Modèle</th><th>Technicien</th><th>Localisation</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${data.map(e=>`<tr>
     <td><strong>${e.clients?.raison_sociale||'—'}</strong></td>
+    <td><span class="badge bg">${e.agences?.nom||'—'}</span></td>
     <td>${e.types_equipements?.icone||''} ${e.types_equipements?.libelle||'—'}</td>
     <td>${e.numero_identification||'—'}</td>
     <td>${e.marque||'—'}${e.modele?' / '+e.modele:''}</td>
-    <td>${e.capacite_valeur?e.capacite_valeur+' '+(e.capacite_unite||''):'—'}</td>
-    <td>${e.localisation||'—'}${e.etage_zone?' / '+e.etage_zone:''}</td>
+    <td>${e.profils?.prenom||''} ${e.profils?.nom||'—'}</td>
+    <td>${e.localisation||'—'}</td>
     <td>${badgeSt(e.statut)}</td>
     <td><div class="ia">
       <button class="btn btn-s btn-xs" onclick="editEquip('${e.id}')">✏️</button>
-      <button class="btn btn-s btn-xs" onclick="nouvelleVerifPour('${e.id}')">✅</button>
+      <button class="btn btn-s btn-xs" onclick="verifierEquip('${e.id}')">✅</button>
       <button class="btn btn-s btn-xs" onclick="deleteEquip('${e.id}')">🗑</button>
     </div></td>
   </tr>`).join('')}</tbody></table>`;
@@ -630,64 +980,51 @@ async function openEquipModal(prefill=null){
   if(!clients.length)await loadClients();
   $('e-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
   $('e-type').innerHTML=typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
+  $('e-tech').innerHTML='<option value="">— Non affecté —</option>'+profils.map(p=>`<option value="${p.id}">${p.prenom||''} ${p.nom}</option>`).join('');
   ['e-id','e-num','e-marque','e-modele','e-cap','e-unite','e-loc','e-zone','e-notes'].forEach(id=>$(id).value='');
   $('e-fab').value='';$('e-mis').value='';$('e-statut').value='opérationnel';
-  $('mo-equip-title').textContent='Nouvel équipement';
+  $('mo-equip-t').textContent='Nouvel équipement';
   if(prefill){
     $('e-id').value=prefill.id;$('e-client').value=prefill.client_id;$('e-type').value=prefill.type_equipement_code;
-    $('e-num').value=prefill.numero_identification||'';$('e-marque').value=prefill.marque||'';$('e-modele').value=prefill.modele||'';
+    $('e-tech').value=prefill.technicien_id||'';$('e-num').value=prefill.numero_identification||'';
+    $('e-marque').value=prefill.marque||'';$('e-modele').value=prefill.modele||'';
     $('e-cap').value=prefill.capacite_valeur||'';$('e-unite').value=prefill.capacite_unite||'';
     $('e-fab').value=prefill.date_fabrication||'';$('e-mis').value=prefill.date_mise_en_service||'';
     $('e-loc').value=prefill.localisation||'';$('e-zone').value=prefill.etage_zone||'';
     $('e-statut').value=prefill.statut||'opérationnel';$('e-notes').value=prefill.notes||'';
-    $('mo-equip-title').textContent='Modifier l\'équipement';
+    $('mo-equip-t').textContent='Modifier l\'équipement';
   }
-  openModal('mo-equip');
+  OM('mo-equip');
 }
 function editEquip(id){openEquipModal(equipements.find(e=>e.id===id))}
-function onEquipTypeChange(){}
+function onEquipClientChange(){}
 
 async function saveEquip(){
   const id=$('e-id').value;
-  const p={client_id:$('e-client').value,type_equipement_code:$('e-type').value,numero_identification:$('e-num').value.trim(),marque:$('e-marque').value.trim(),modele:$('e-modele').value.trim(),capacite_valeur:parseFloat($('e-cap').value)||null,capacite_unite:$('e-unite').value.trim(),date_fabrication:$('e-fab').value||null,date_mise_en_service:$('e-mis').value||null,localisation:$('e-loc').value.trim(),etage_zone:$('e-zone').value.trim(),statut:$('e-statut').value,notes:$('e-notes').value.trim(),updated_at:new Date().toISOString()};
+  const p={client_id:$('e-client').value,technicien_id:$('e-tech').value||null,type_equipement_code:$('e-type').value,numero_identification:$('e-num').value.trim(),marque:$('e-marque').value.trim(),modele:$('e-modele').value.trim(),capacite_valeur:parseFloat($('e-cap').value)||null,capacite_unite:$('e-unite').value.trim(),date_fabrication:$('e-fab').value||null,date_mise_en_service:$('e-mis').value||null,localisation:$('e-loc').value.trim(),etage_zone:$('e-zone').value.trim(),statut:$('e-statut').value,notes:$('e-notes').value.trim(),updated_at:new Date().toISOString()};
   const {error}=id?await db.from('equipements').update(p).eq('id',id):await db.from('equipements').insert(p);
   if(error){toast('Erreur: '+error.message,'err');return}
-  toast(id?'Équipement modifié':'Équipement créé');closeModal('mo-equip');loadEquipements();
+  toast(id?'Modifié':'Créé');CM('mo-equip');loadEquipements();
 }
-
-async function deleteEquip(id){
-  if(!confirm('Supprimer cet équipement et toutes ses vérifications ?'))return;
-  await db.from('equipements').delete().eq('id',id);
-  toast('Équipement supprimé');loadEquipements();
-}
+async function deleteEquip(id){if(!confirm('Supprimer ?'))return;await db.from('equipements').delete().eq('id',id);toast('Supprimé');loadEquipements()}
+async function verifierEquip(id){const e=equipements.find(x=>x.id===id);if(e){navigate('verifications');setTimeout(()=>openVerifModal({client_id:e.client_id,equipement_id:id}),200)}}
 
 // ============================================================
 // VÉRIFICATIONS
 // ============================================================
 async function loadVerifs(){
+  if(!clients.length)await loadClients();
   const cid=$('f-client-verif').value;
   const tid=$('f-type-verif').value;
-  // Mettre à jour selects clients
-  if(!clients.length)await loadClients();
-  const fvc=$('f-client-verif');
-  const cur=fvc.value;
-  fvc.innerHTML='<option value="">Tous les clients</option>'+clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
-  if(cur)fvc.value=cur;
-
-  let q=db.from('verifications').select('*, equipements(numero_identification,marque,modele,localisation), clients(raison_sociale), types_equipements(libelle,icone)').order('date_verification',{ascending:false});
-  if(cid)q=q.eq('client_id',cid);
-  if(tid)q=q.eq('type_equipement_code',tid);
+  let q=db.from('verifications').select('*,equipements(numero_identification,marque,modele,localisation),clients(raison_sociale),types_equipements(libelle,icone),agences(nom)').order('date_verification',{ascending:false});
+  if(cid)q=q.eq('client_id',cid);if(tid)q=q.eq('type_equipement_code',tid);
   const {data}=await q;
-  verifications=data||[];
-  renderVerifs();
-}
-
-function renderVerifs(){
   const el=$('tbl-verifs');
-  if(!verifications.length){el.innerHTML='<div class="t-empty">Aucune vérification</div>';return}
-  el.innerHTML=`<table><thead><tr><th>Client</th><th>Équipement</th><th>Type</th><th>Date vérif.</th><th>Prochaine échéance</th><th>Technicien</th><th>Résultat</th><th>Actions</th></tr></thead><tbody>${verifications.map(v=>`<tr>
+  if(!data?.length){el.innerHTML='<div class="t-empty">Aucune vérification</div>';return}
+  el.innerHTML=`<table><thead><tr><th>Client</th><th>Agence</th><th>Équipement</th><th>Type</th><th>Date vérif.</th><th>Prochaine échéance</th><th>Technicien</th><th>Résultat</th><th>Actions</th></tr></thead><tbody>${data.map(v=>`<tr>
     <td>${v.clients?.raison_sociale||'—'}</td>
-    <td>${v.equipements?.numero_identification||'—'}<br><small>${v.equipements?.marque||''} ${v.equipements?.modele||''}</small></td>
+    <td><span class="badge bg">${v.agences?.nom||'—'}</span></td>
+    <td>${v.equipements?.numero_identification||'—'}<br><small>${v.equipements?.marque||''}</small></td>
     <td>${v.types_equipements?.icone||''} ${v.types_equipements?.libelle||'—'}</td>
     <td>${fmt(v.date_verification)}</td>
     <td class="${ecClass(v.date_prochaine_echeance)}">${fmt(v.date_prochaine_echeance)}</td>
@@ -704,293 +1041,112 @@ async function openVerifModal(prefill=null){
   if(!clients.length)await loadClients();
   $('v-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
   $('v-id').value='';$('v-date').value=new Date().toISOString().slice(0,10);
-  $('v-echeance').value='';$('v-tech').value='';$('v-resultat').value='conforme';$('v-obs').value='';
-  $('pc-list').innerHTML='';
-  $('mo-verif-title').textContent='Nouvelle vérification';
-  if(prefill){$('v-client').value=prefill.client_id}
+  $('v-echeance').value='';$('v-tech').value=ME.role==='technicien'?`${ME.prenom||''} ${ME.nom}`.trim():'';
+  $('v-resultat').value='conforme';$('v-obs').value='';$('pc-list').innerHTML='';
+  if(prefill?.client_id)$('v-client').value=prefill.client_id;
   await onVerifClientChange(prefill);
-  openModal('mo-verif');
+  OM('mo-verif');
 }
 
 async function onVerifClientChange(prefill=null){
   const cid=$('v-client').value;
-  $('v-equip').innerHTML='<option>Chargement…</option>';
-  $('pc-list').innerHTML='';
+  $('v-equip').innerHTML='<option>Chargement…</option>';$('pc-list').innerHTML='';
   if(!cid)return;
   const {data}=await db.from('equipements').select('id,numero_identification,marque,modele,type_equipement_code,types_equipements(libelle,icone)').eq('client_id',cid).neq('statut','réformé');
   $('v-equip').innerHTML=(data||[]).map(e=>`<option value="${e.id}" data-type="${e.type_equipement_code}">${e.types_equipements?.icone||''} ${e.numero_identification||'?'} — ${e.marque||''} ${e.modele||''} (${e.types_equipements?.libelle||''})</option>`).join('');
-  if(prefill&&prefill.equipement_id)$('v-equip').value=prefill.equipement_id;
-  await onVerifEquipChange(prefill);
+  if(prefill?.equipement_id)$('v-equip').value=prefill.equipement_id;
+  await onVerifEquipChange();
 }
 
-async function onVerifEquipChange(prefill=null){
-  const sel=$('v-equip');
-  const opt=sel.options[sel.selectedIndex];
-  if(!opt)return;
-  const typeCode=opt.dataset.type;
-  if(!typeCode)return;
-  const equipId=sel.value;
-  // Récupérer l'équipement pour marque/modèle
+async function onVerifEquipChange(){
+  const sel=$('v-equip');const opt=sel.options[sel.selectedIndex];
+  if(!opt||!opt.value)return;
+  const typeCode=opt.dataset.type;const equipId=sel.value;
   const equip=equipements.find(e=>e.id===equipId);
-  $('pc-loading').style.display='block';
-  $('pc-list').innerHTML='';
-  // Charger points de contrôle adaptés (marque/modèle ou globaux)
-  let q=db.from('points_controle').select('*').eq('type_equipement_code',typeCode).eq('actif',true).order('ordre');
-  const {data:pts}=await q;
-  $('pc-loading').style.display='none';
-  // Filtrer : points globaux + points spécifiques à la marque/modèle
-  const marque=equip?.marque||'';
-  const modele=equip?.modele||'';
+  $('pc-loading').classList.remove('hidden');$('pc-list').innerHTML='';
+  const {data:pts}=await db.from('points_controle').select('*').eq('type_equipement_code',typeCode).eq('actif',true).order('ordre');
+  $('pc-loading').classList.add('hidden');
+  const marque=(equip?.marque||'').toLowerCase();const modele=(equip?.modele||'').toLowerCase();
   const filtered=(pts||[]).filter(p=>{
-    if(!p.marque&&!p.modele)return true; // global
-    if(p.marque&&marque&&p.marque.toLowerCase()===marque.toLowerCase()){
-      if(!p.modele)return true;
-      if(p.modele&&modele&&p.modele.toLowerCase()===modele.toLowerCase())return true;
-      return false;
-    }
+    if(!p.marque&&!p.modele)return true;
+    if(p.marque&&marque&&p.marque.toLowerCase()===marque){if(!p.modele)return true;if(p.modele&&modele&&p.modele.toLowerCase()===modele)return true;return false}
     return false;
   });
-  renderPointsControle(filtered, prefill?.resultats||[]);
+  renderPCList(filtered);
 }
 
-function renderPointsControle(points, existingResults=[]){
+function renderPCList(points){
   const el=$('pc-list');
-  if(!points.length){el.innerHTML='<div style="color:var(--txt-l);font-size:13px;padding:10px">Aucun point de contrôle défini pour ce type.</div>';return}
+  if(!points.length){el.innerHTML='<div style="color:var(--txt-l);font-size:13px;padding:8px">Aucun point de contrôle pour ce type.</div>';return}
   el.innerHTML=points.map(p=>{
-    const existing=existingResults.find(r=>r.point_controle_id===p.id);
     let input='';
-    if(p.type_reponse==='oui_non'){
-      const okSel=existing?.valeur_oui_non===true?'selected':'';
-      const nokSel=existing?.valeur_oui_non===false?'selected':'';
-      input=`<div class="pc-radio">
-        <label class="ok ${okSel}" onclick="selectOuiNon(this,'ok','pc-${p.id}')"><input type="radio" name="pc-${p.id}" value="oui">✓ OK</label>
-        <label class="nok ${nokSel}" onclick="selectOuiNon(this,'nok','pc-${p.id}')"><input type="radio" name="pc-${p.id}" value="non">✗ NON</label>
-      </div>`;
-    } else if(p.type_reponse==='numerique'){
-      input=`<input type="number" step="0.01" id="pcv-${p.id}" value="${existing?.valeur_numerique||''}" placeholder="${p.unite||'valeur'}"> ${p.unite||''}`;
-    } else if(p.type_reponse==='texte'){
-      input=`<input type="text" id="pcv-${p.id}" value="${existing?.valeur_texte||''}" placeholder="Saisir…">`;
-    } else if(p.type_reponse==='date'){
-      input=`<input type="date" id="pcv-${p.id}" value="${existing?.valeur_date||''}">`;
-    }
-    return `<div class="pc-item" id="pc-item-${p.id}" data-id="${p.id}" data-type="${p.type_reponse}">
-      <div class="pc-label">${p.libelle}${p.obligatoire?'<span style="color:var(--rouge)">*</span>':''}${p.marque?'<small>'+p.marque+(p.modele?' '+p.modele:'')+'</small>':''}</div>
-      <div class="pc-input">${input}</div>
-    </div>`;
+    if(p.type_reponse==='oui_non')input=`<div class="pc-radio"><label class="ok" onclick="selON(this,'ok','pc-${p.id}')"><input type="radio" name="pc-${p.id}" value="oui">✓ OK</label><label class="nok" onclick="selON(this,'nok','pc-${p.id}')"><input type="radio" name="pc-${p.id}" value="non">✗ NON</label></div>`;
+    else if(p.type_reponse==='numerique')input=`<input type="number" step="0.01" id="pcv-${p.id}" placeholder="${p.unite||'valeur'}"> ${p.unite||''}`;
+    else if(p.type_reponse==='texte')input=`<input type="text" id="pcv-${p.id}" placeholder="Saisir…">`;
+    else if(p.type_reponse==='date')input=`<input type="date" id="pcv-${p.id}">`;
+    return`<div class="pc-item" id="pc-item-${p.id}" data-id="${p.id}" data-type="${p.type_reponse}"><div class="pc-label">${p.libelle}${p.obligatoire?'<span style="color:var(--rouge)">*</span>':''}${p.marque?'<small>'+p.marque+(p.modele?' '+p.modele:'')+'</small>':''}</div><div class="pc-input">${input}</div></div>`;
   }).join('');
 }
-
-function selectOuiNon(lbl,type,name){
-  const parent=lbl.closest('.pc-radio');
-  parent.querySelectorAll('label').forEach(l=>l.classList.remove('selected'));
-  lbl.classList.add('selected');
-  const item=lbl.closest('.pc-item');
-  item.classList.remove('conforme','non-conforme');
-  if(type==='ok')item.classList.add('conforme');
-  else item.classList.add('non-conforme');
-}
-
-async function nouvelleVerifPour(equipId){
-  if(!clients.length)await loadClients();
-  const equip=equipements.find(e=>e.id===equipId);
-  navigate('verifications');
-  setTimeout(()=>openVerifModal(equip?{client_id:equip.client_id,equipement_id:equipId}:null),200);
-}
+window.selON=function(lbl,type,name){lbl.closest('.pc-radio').querySelectorAll('label').forEach(l=>l.classList.remove('sel'));lbl.classList.add('sel');const item=lbl.closest('.pc-item');item.classList.remove('ok','nc');item.classList.add(type==='ok'?'ok':'nc')};
 
 async function saveVerif(){
-  const cid=$('v-client').value;
-  const eid=$('v-equip').value;
-  const date=$('v-date').value;
+  const cid=$('v-client').value;const eid=$('v-equip').value;const date=$('v-date').value;
   if(!eid||!date){toast('Champs obligatoires manquants','err');return}
-  const opt=$('v-equip').options[$('v-equip').selectedIndex];
-  const typeCode=opt?.dataset?.type||'';
-
-  const verifPayload={equipement_id:eid,client_id:cid,type_equipement_code:typeCode,date_verification:date,date_prochaine_echeance:$('v-echeance').value||null,technicien:$('v-tech').value.trim(),resultat:$('v-resultat').value,observations:$('v-obs').value.trim()};
-  const {data:vData,error:vErr}=await db.from('verifications').insert(verifPayload).select().single();
-  if(vErr){toast('Erreur: '+vErr.message,'err');return}
-
-  // Sauvegarder les résultats des points de contrôle
-  const items=document.querySelectorAll('.pc-item[data-id]');
-  const resultats=[];
+  const opt=$('v-equip').options[$('v-equip').selectedIndex];const typeCode=opt?.dataset?.type||'';
+  const {data:vData,error}=await db.from('verifications').insert({equipement_id:eid,client_id:cid,type_equipement_code:typeCode,date_verification:date,date_prochaine_echeance:$('v-echeance').value||null,technicien:$('v-tech').value.trim(),technicien_id:ME.id,resultat:$('v-resultat').value,observations:$('v-obs').value.trim()}).select().single();
+  if(error){toast('Erreur: '+error.message,'err');return}
+  const items=document.querySelectorAll('.pc-item[data-id]');const resultats=[];
   items.forEach(item=>{
-    const pid=item.dataset.id;
-    const ttype=item.dataset.type;
-    const r={verification_id:vData.id,point_controle_id:pid,libelle_snapshot:item.querySelector('.pc-label').textContent.replace('*','').trim(),type_reponse:ttype};
-    if(ttype==='oui_non'){
-      const sel=item.querySelector('label.selected');
-      if(sel){r.valeur_oui_non=sel.classList.contains('ok');r.conforme=r.valeur_oui_non}
-    } else if(ttype==='numerique'){
-      const v=item.querySelector('input')?.value;
-      if(v)r.valeur_numerique=parseFloat(v);
-    } else if(ttype==='texte'){
-      r.valeur_texte=item.querySelector('input')?.value||'';
-    } else if(ttype==='date'){
-      r.valeur_date=item.querySelector('input')?.value||null;
-    }
+    const pid=item.dataset.id;const tt=item.dataset.type;
+    const r={verification_id:vData.id,point_controle_id:pid,libelle_snapshot:item.querySelector('.pc-label').textContent.replace('*','').trim(),type_reponse:tt};
+    if(tt==='oui_non'){const s=item.querySelector('label.sel');if(s){r.valeur_oui_non=s.classList.contains('ok');r.conforme=r.valeur_oui_non}}
+    else if(tt==='numerique'){const v=item.querySelector('input')?.value;if(v)r.valeur_numerique=parseFloat(v)}
+    else if(tt==='texte')r.valeur_texte=item.querySelector('input')?.value||'';
+    else if(tt==='date')r.valeur_date=item.querySelector('input')?.value||null;
     resultats.push(r);
   });
   if(resultats.length)await db.from('resultats_controle').insert(resultats);
-
-  toast('Vérification enregistrée');closeModal('mo-verif');loadVerifs();
+  toast('Vérification enregistrée');CM('mo-verif');loadVerifs();
 }
-
-async function deleteVerif(id){
-  if(!confirm('Supprimer cette vérification ?'))return;
-  await db.from('verifications').delete().eq('id',id);
-  toast('Vérification supprimée');loadVerifs();
-}
+async function deleteVerif(id){if(!confirm('Supprimer ?'))return;await db.from('verifications').delete().eq('id',id);toast('Supprimé');loadVerifs()}
 
 // ============================================================
-// EXPORT PDF — VÉRIFICATION INDIVIDUELLE
+// EXPORT PDF VÉRIFICATION
 // ============================================================
 async function exportVerifPDF(verifId){
-  const {data:v}=await db.from('verifications').select('*, equipements(*, clients(*)), types_equipements(libelle,icone)').eq('id',verifId).single();
-  const {data:resultats}=await db.from('resultats_controle').select('*').eq('verification_id',verifId).order('libelle_snapshot');
+  const {data:v}=await db.from('verifications').select('*,equipements(*,clients(*)),types_equipements(libelle,icone),agences(nom)').eq('id',verifId).single();
+  const {data:res}=await db.from('resultats_controle').select('*').eq('verification_id',verifId).order('libelle_snapshot');
   if(!v){toast('Données introuvables','err');return}
-
-  const {jsPDF}=window.jspdf;
-  const doc=new jsPDF();
+  const {jsPDF}=window.jspdf;const doc=new jsPDF();
   const eq=v.equipements;const cl=eq?.clients;
-
-  // Header
-  doc.setFillColor(192,57,43);doc.rect(0,0,210,28,'F');
-  doc.setTextColor(255);doc.setFontSize(14);doc.setFont('helvetica','bold');
-  doc.text(`BFS — Rapport de vérification`,14,12);
+  doc.setFillColor(192,57,43);doc.rect(0,0,210,26,'F');
+  doc.setTextColor(255);doc.setFontSize(13);doc.setFont('helvetica','bold');
+  doc.text('BFS — Rapport de vérification',14,11);
   doc.setFontSize(9);doc.setFont('helvetica','normal');
-  doc.text(`${v.types_equipements?.icone||''} ${v.types_equipements?.libelle||''} — Réf. ${eq?.numero_identification||'—'}`,14,20);
-  doc.text(`Édité le ${new Date().toLocaleDateString('fr-FR')}`,150,20);
-
-  doc.setTextColor(30);let y=35;
-
+  doc.text(`${v.types_equipements?.icone||''} ${v.types_equipements?.libelle||''} — ${eq?.numero_identification||'—'}`,14,19);
+  doc.text(`Agence ${v.agences?.nom||'—'} — Édité le ${new Date().toLocaleDateString('fr-FR')}`,130,19);
+  doc.setTextColor(30);let y=32;
   doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[
     ['Client',cl?.raison_sociale||'—'],['Adresse',`${cl?.adresse||''} ${cl?.code_postal||''} ${cl?.ville||''}`.trim()],
-    ['Contact',cl?.contact_nom||'—'],['Type équipement',v.types_equipements?.libelle||'—'],
+    ['Agence',v.agences?.nom||'—'],['Type équipement',v.types_equipements?.libelle||'—'],
     ['N° identification',eq?.numero_identification||'—'],['Marque / Modèle',`${eq?.marque||'—'} ${eq?.modele||''}`],
     ['Localisation',`${eq?.localisation||'—'}${eq?.etage_zone?' / '+eq.etage_zone:''}`],
     ['Date vérification',fmt(v.date_verification)],['Prochaine échéance',fmt(v.date_prochaine_echeance)],
     ['Technicien',v.technicien||'—'],['Résultat global',v.resultat?.toUpperCase()||'—'],
-  ],styles:{fontSize:10},columnStyles:{0:{fontStyle:'bold',cellWidth:55}},
-  headStyles:{fillColor:[192,57,43]}});
-  y=doc.lastAutoTable.finalY+10;
-
-  if(resultats?.length){
-    doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text('Points de contrôle',14,y);y+=2;
-    const rows=resultats.map(r=>{
-      let val='—';
-      if(r.type_reponse==='oui_non')val=r.valeur_oui_non===true?'✓ OK':r.valeur_oui_non===false?'✗ NON':'—';
-      else if(r.type_reponse==='numerique')val=r.valeur_numerique!=null?String(r.valeur_numerique):'—';
-      else if(r.type_reponse==='texte')val=r.valeur_texte||'—';
-      else if(r.type_reponse==='date')val=fmt(r.valeur_date);
-      return[r.libelle_snapshot,val];
-    });
-    doc.autoTable({startY:y,margin:{left:14,right:14},head:[['Point de contrôle','Résultat']],body:rows,
-      styles:{fontSize:10},headStyles:{fillColor:[192,57,43]},
-      didParseCell:(d)=>{if(d.column.index===1&&d.cell.text[0]==='✓ OK')d.cell.styles.textColor=[22,163,74];if(d.column.index===1&&d.cell.text[0]==='✗ NON')d.cell.styles.textColor=[220,38,38]}
-    });
-    y=doc.lastAutoTable.finalY+10;
+  ],styles:{fontSize:10},columnStyles:{0:{fontStyle:'bold',cellWidth:52}},headStyles:{fillColor:[192,57,43]}});
+  y=doc.lastAutoTable.finalY+8;
+  if(res?.length){
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('Points de contrôle',14,y);y+=2;
+    doc.autoTable({startY:y,margin:{left:14,right:14},head:[['Point de contrôle','Résultat']],
+      body:res.map(r=>{let val='—';if(r.type_reponse==='oui_non')val=r.valeur_oui_non===true?'✓ OK':r.valeur_oui_non===false?'✗ NON':'—';else if(r.type_reponse==='numerique')val=r.valeur_numerique!=null?String(r.valeur_numerique):'—';else if(r.type_reponse==='texte')val=r.valeur_texte||'—';else if(r.type_reponse==='date')val=fmt(r.valeur_date);return[r.libelle_snapshot,val]}),
+      styles:{fontSize:9},headStyles:{fillColor:[192,57,43]},
+      didParseCell:(d)=>{if(d.column.index===1){if(d.cell.text[0]==='✓ OK')d.cell.styles.textColor=[22,163,74];if(d.cell.text[0]==='✗ NON')d.cell.styles.textColor=[220,38,38]}}
+    });y=doc.lastAutoTable.finalY+8;
   }
-
-  if(v.observations){
-    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('Observations :',14,y);y+=6;
-    doc.setFont('helvetica','normal');doc.text(doc.splitTextToSize(v.observations,182),14,y);y+=16;
-  }
-
-  y=Math.max(y+10,240);
-  doc.setDrawColor(200);doc.line(14,y,85,y);doc.line(125,y,196,y);
-  doc.setFontSize(9);doc.text(`Technicien : ${v.technicien||''}`,14,y+5);doc.text('Cachet BFS',125,y+5);
-
-  doc.save(`BFS_verif_${eq?.numero_identification||verifId}_${v.date_verification}.pdf`);
-  toast('Rapport PDF généré');
-}
-
-// ============================================================
-// RAPPORTS CLIENT
-// ============================================================
-function openRapports(clientId){
-  const cl=clients.find(c=>c.id===clientId);
-  currentRapportClientId=clientId;
-  $('rapport-client-info').innerHTML=`<strong>${cl?.raison_sociale||'—'}</strong><br>${cl?.ville||''}`;
-  openModal('mo-rapports');
-}
-
-async function genRapportGlobal(){
-  const cl=clients.find(c=>c.id===currentRapportClientId);
-  const {data:eqs}=await db.from('equipements').select('*, types_equipements(libelle,icone)').eq('client_id',currentRapportClientId).order('type_equipement_code');
-  const {data:verifs}=await db.from('verifications').select('*, types_equipements(libelle)').eq('client_id',currentRapportClientId).order('date_verification',{ascending:false});
-
-  const {jsPDF}=window.jspdf;const doc=new jsPDF();
-  doc.setFillColor(192,57,43);doc.rect(0,0,210,28,'F');
-  doc.setTextColor(255);doc.setFontSize(14);doc.setFont('helvetica','bold');
-  doc.text('BFS — Rapport global équipements',14,12);
-  doc.setFontSize(9);doc.setFont('helvetica','normal');
-  doc.text(cl?.raison_sociale||'',14,20);doc.text(`Édité le ${new Date().toLocaleDateString('fr-FR')}`,150,20);
-
-  doc.setTextColor(30);let y=35;
-  doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[
-    ['Client',cl?.raison_sociale||'—'],['Adresse',`${cl?.adresse||''} ${cl?.code_postal||''} ${cl?.ville||''}`.trim()],
-    ['Contact',cl?.contact_nom||'—'],['Téléphone',cl?.contact_telephone||'—'],
-    ['Total équipements',(eqs?.length||0)+' équipements'],
-  ],styles:{fontSize:10},columnStyles:{0:{fontStyle:'bold',cellWidth:50}}});
-  y=doc.lastAutoTable.finalY+10;
-
-  // Inventaire équipements
-  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text('Inventaire des équipements',14,y);y+=2;
-  doc.autoTable({startY:y,margin:{left:14,right:14},
-    head:[['Type','N° identification','Marque/Modèle','Localisation','Statut']],
-    body:(eqs||[]).map(e=>[e.types_equipements?.libelle||'—',e.numero_identification||'—',`${e.marque||''} ${e.modele||''}`.trim()||'—',e.localisation||'—',e.statut]),
-    styles:{fontSize:9},headStyles:{fillColor:[192,57,43]}});
-  y=doc.lastAutoTable.finalY+10;
-
-  // Dernières vérifications
-  if(y>240){doc.addPage();y=20}
-  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text('Dernières vérifications',14,y);y+=2;
-  doc.autoTable({startY:y,margin:{left:14,right:14},
-    head:[['Type','Date vérif.','Prochaine échéance','Technicien','Résultat']],
-    body:(verifs||[]).slice(0,20).map(v=>[v.types_equipements?.libelle||'—',fmt(v.date_verification),fmt(v.date_prochaine_echeance),v.technicien||'—',v.resultat||'—']),
-    styles:{fontSize:9},headStyles:{fillColor:[192,57,43]}});
-
-  doc.save(`BFS_rapport_global_${cl?.raison_sociale||currentRapportClientId}_${new Date().toISOString().slice(0,10)}.pdf`);
-  toast('Rapport global généré');closeModal('mo-rapports');
-}
-
-async function genRapportParType(){
-  const cl=clients.find(c=>c.id===currentRapportClientId);
-  const {data:verifs}=await db.from('verifications').select('*, equipements(numero_identification,marque,modele,localisation), types_equipements(libelle,icone), resultats_controle(*)').eq('client_id',currentRapportClientId).order('type_equipement_code').order('date_verification',{ascending:false});
-
-  const {jsPDF}=window.jspdf;const doc=new jsPDF();
-  let firstPage=true;
-  // Grouper par type
-  const byType={};
-  (verifs||[]).forEach(v=>{
-    const k=v.type_equipement_code;
-    if(!byType[k])byType[k]={libelle:v.types_equipements?.libelle,icone:v.types_equipements?.icone,verifs:[]};
-    byType[k].verifs.push(v);
-  });
-
-  Object.values(byType).forEach(group=>{
-    if(!firstPage)doc.addPage();firstPage=false;
-    doc.setFillColor(192,57,43);doc.rect(0,0,210,22,'F');
-    doc.setTextColor(255);doc.setFontSize(12);doc.setFont('helvetica','bold');
-    doc.text(`BFS — ${group.libelle} — ${cl?.raison_sociale||''}`,14,14);
-    doc.setTextColor(30);let y=30;
-    doc.autoTable({startY:y,margin:{left:14,right:14},
-      head:[['Équipement','Localisation','Date vérif.','Prochaine échéance','Résultat']],
-      body:group.verifs.map(v=>[`${v.equipements?.numero_identification||'—'} ${v.equipements?.marque||''} ${v.equipements?.modele||''}`.trim(),v.equipements?.localisation||'—',fmt(v.date_verification),fmt(v.date_prochaine_echeance),v.resultat||'—']),
-      styles:{fontSize:9},headStyles:{fillColor:[50,50,80]}});
-  });
-
-  doc.save(`BFS_rapport_type_${cl?.raison_sociale||''}_${new Date().toISOString().slice(0,10)}.pdf`);
-  toast('Rapport par type généré');closeModal('mo-rapports');
-}
-
-async function exportInventaireXLS(){
-  const cl=clients.find(c=>c.id===currentRapportClientId);
-  const {data}=await db.from('equipements').select('*, types_equipements(libelle)').eq('client_id',currentRapportClientId).order('type_equipement_code');
-  const rows=(data||[]).map(e=>({'Type':e.types_equipements?.libelle,'N° identification':e.numero_identification,'Marque':e.marque,'Modèle':e.modele,'Capacité':`${e.capacite_valeur||''} ${e.capacite_unite||''}`.trim(),'Localisation':e.localisation,'Zone':e.etage_zone,'Mise en service':fmt(e.date_mise_en_service),'Statut':e.statut}));
-  const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Inventaire');
-  XLSX.writeFile(wb,`BFS_inventaire_${cl?.raison_sociale||'client'}_${new Date().toISOString().slice(0,10)}.xlsx`);
-  toast('Inventaire exporté');
+  if(v.observations){doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('Observations :',14,y);y+=5;doc.setFont('helvetica','normal');doc.text(doc.splitTextToSize(v.observations,182),14,y);y+=14}
+  y=Math.max(y+8,238);doc.setDrawColor(200);doc.line(14,y,82,y);doc.line(122,y,196,y);
+  doc.setFontSize(9);doc.text(`Technicien : ${v.technicien||''}`,14,y+5);doc.text('Cachet BFS',122,y+5);
+  doc.save(`BFS_verif_${eq?.numero_identification||verifId}_${v.date_verification}.pdf`);toast('PDF généré');
 }
 
 // ============================================================
@@ -998,19 +1154,18 @@ async function exportInventaireXLS(){
 // ============================================================
 async function loadContrats(){
   if(!clients.length)await loadClients();
-  const {data}=await db.from('contrats').select('*, clients(raison_sociale)').order('date_debut',{ascending:false});
-  contrats=data||[];
-  renderContrats();
+  const {data}=await db.from('contrats').select('*,clients(raison_sociale),agences(nom)').order('date_debut',{ascending:false});
+  contrats=data||[];renderContrats();
 }
-
 function renderContrats(){
   const q=$('q-contrats').value.toLowerCase();
-  const data=contrats.filter(c=>(c.numero_contrat+c.clients?.raison_sociale+c.type_contrat).toLowerCase().includes(q));
+  const data=contrats.filter(c=>(c.numero_contrat+c.clients?.raison_sociale).toLowerCase().includes(q));
   const el=$('tbl-contrats');
   if(!data.length){el.innerHTML='<div class="t-empty">Aucun contrat</div>';return}
-  el.innerHTML=`<table><thead><tr><th>N° contrat</th><th>Client</th><th>Type</th><th>Début</th><th>Fin</th><th>Tarif</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${data.map(c=>`<tr>
+  el.innerHTML=`<table><thead><tr><th>N° contrat</th><th>Client</th><th>Agence</th><th>Type</th><th>Fin</th><th>Tarif</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${data.map(c=>`<tr>
     <td><strong>${c.numero_contrat||'—'}</strong></td><td>${c.clients?.raison_sociale||'—'}</td>
-    <td>${c.type_contrat}</td><td>${fmt(c.date_debut)}</td>
+    <td><span class="badge bg">${c.agences?.nom||'—'}</span></td>
+    <td>${c.type_contrat}</td>
     <td class="${ecClass(c.date_fin)}">${fmt(c.date_fin)}</td>
     <td>${c.tarif_annuel?c.tarif_annuel.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'—'}</td>
     <td>${badgeSt(c.statut)}</td>
@@ -1025,94 +1180,123 @@ function renderContrats(){
 async function openContratModal(prefill=null){
   if(!clients.length)await loadClients();
   $('ct-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
-  // Cases à cocher types
-  const grid=$('ct-types-grid');
-  grid.innerHTML=typesEquip.map(t=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;background:#fafafa">
-    <input type="checkbox" name="ct-type" value="${t.code}" ${prefill?.types_couverts?.includes(t.code)?'checked':''}> ${t.icone} ${t.libelle}
-  </label>`).join('');
+  $('ct-types-grid').innerHTML=typesEquip.map(t=>`<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:4px 8px;border:1px solid #e5e7eb;border-radius:6px"><input type="checkbox" name="ct-type" value="${t.code}" ${prefill?.types_couverts?.includes(t.code)?'checked':''}> ${t.icone} ${t.libelle}</label>`).join('');
   ['ct-id','ct-num','ct-tarif','ct-notes'].forEach(id=>$(id).value='');
   $('ct-debut').value='';$('ct-fin').value='';$('ct-type').value='annuel';$('ct-period').value='annuelle';$('ct-statut').value='actif';
-  $('mo-contrat-title').textContent='Nouveau contrat';
-  if(prefill){
-    $('ct-id').value=prefill.id;$('ct-client').value=prefill.client_id;$('ct-num').value=prefill.numero_contrat||'';
-    $('ct-type').value=prefill.type_contrat||'annuel';$('ct-debut').value=prefill.date_debut||'';$('ct-fin').value=prefill.date_fin||'';
-    $('ct-tarif').value=prefill.tarif_annuel||'';$('ct-period').value=prefill.periodicite_visite||'annuelle';
-    $('ct-statut').value=prefill.statut||'actif';$('ct-notes').value=prefill.notes||'';
-    $('mo-contrat-title').textContent='Modifier le contrat';
-  }
-  openModal('mo-contrat');
+  $('mo-ct-t').textContent='Nouveau contrat';
+  if(prefill){$('ct-id').value=prefill.id;$('ct-client').value=prefill.client_id;$('ct-num').value=prefill.numero_contrat||'';$('ct-type').value=prefill.type_contrat||'annuel';$('ct-debut').value=prefill.date_debut||'';$('ct-fin').value=prefill.date_fin||'';$('ct-tarif').value=prefill.tarif_annuel||'';$('ct-period').value=prefill.periodicite_visite||'annuelle';$('ct-statut').value=prefill.statut||'actif';$('ct-notes').value=prefill.notes||'';$('mo-ct-t').textContent='Modifier'}
+  OM('mo-contrat');
 }
 function editContrat(id){openContratModal(contrats.find(c=>c.id===id))}
-
 async function saveContrat(){
-  const id=$('ct-id').value;
-  const types=Array.from(document.querySelectorAll('input[name="ct-type"]:checked')).map(cb=>cb.value);
+  const id=$('ct-id').value;const types=Array.from(document.querySelectorAll('input[name="ct-type"]:checked')).map(c=>c.value);
   const p={client_id:$('ct-client').value,numero_contrat:$('ct-num').value.trim(),type_contrat:$('ct-type').value,types_couverts:types,date_debut:$('ct-debut').value||null,date_fin:$('ct-fin').value||null,tarif_annuel:parseFloat($('ct-tarif').value)||null,periodicite_visite:$('ct-period').value,statut:$('ct-statut').value,notes:$('ct-notes').value.trim(),updated_at:new Date().toISOString()};
   const {error}=id?await db.from('contrats').update(p).eq('id',id):await db.from('contrats').insert(p);
   if(error){toast('Erreur: '+error.message,'err');return}
-  toast(id?'Contrat modifié':'Contrat créé');closeModal('mo-contrat');loadContrats();
+  toast(id?'Contrat modifié':'Contrat créé');CM('mo-contrat');loadContrats();
+}
+async function deleteContrat(id){if(!confirm('Supprimer ?'))return;await db.from('contrats').delete().eq('id',id);toast('Supprimé');loadContrats()}
+
+async function exportContratPDF(id){
+  const {data:c}=await db.from('contrats').select('*,clients(*),agences(nom)').eq('id',id).single();if(!c)return;
+  const {jsPDF}=window.jspdf;const doc=new jsPDF();const cl=c.clients;
+  doc.setFillColor(192,57,43);doc.rect(0,0,210,26,'F');doc.setTextColor(255);doc.setFontSize(12);doc.setFont('helvetica','bold');
+  doc.text('BFS — Contrat de maintenance',14,11);doc.setFontSize(9);doc.setFont('helvetica','normal');
+  doc.text(`N° ${c.numero_contrat||'—'} — Agence ${c.agences?.nom||'—'}`,14,19);doc.text(`Édité le ${new Date().toLocaleDateString('fr-FR')}`,155,19);
+  doc.setTextColor(30);let y=32;
+  doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[['Prestataire','BFS — Bretagne Formation Sécurité'],['Agence',c.agences?.nom||'—'],['Client',cl?.raison_sociale||'—'],['Adresse',`${cl?.adresse||''} ${cl?.code_postal||''} ${cl?.ville||''}`.trim()],['SIRET',cl?.siret||'—'],['Contact',`${cl?.contact_nom||'—'} — ${cl?.contact_telephone||''}`],['Type',c.type_contrat],['Période',`${fmt(c.date_debut)} → ${fmt(c.date_fin)}`],['Périodicité',c.periodicite_visite||'—'],['Tarif HT',c.tarif_annuel?c.tarif_annuel.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'—'],['Équipements couverts',(c.types_couverts||[]).join(', ')||'—']],styles:{fontSize:10},columnStyles:{0:{fontStyle:'bold',cellWidth:52}}});
+  y=doc.lastAutoTable.finalY+8;if(c.notes){doc.setFont('helvetica','bold');doc.text('Conditions :',14,y);y+=5;doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(doc.splitTextToSize(c.notes,182),14,y);y+=18}
+  y=Math.max(y+8,232);doc.setDrawColor(200);doc.line(14,y,82,y);doc.line(122,y,196,y);doc.setFontSize(9);doc.text('Signature client + cachet',14,y+5);doc.text('Pour BFS — Signature',122,y+5);
+  doc.save(`BFS_contrat_${c.numero_contrat||id}.pdf`);toast('PDF généré');
 }
 
-async function deleteContrat(id){
-  if(!confirm('Supprimer ce contrat ?'))return;
-  await db.from('contrats').delete().eq('id',id);toast('Contrat supprimé');loadContrats();
+// ============================================================
+// UTILISATEURS (admin)
+// ============================================================
+let users=[];
+async function loadUsers(){
+  const {data}=await db.from('profils').select('*,agences(nom)').order('nom');
+  users=data||[];renderUsers();
+}
+function renderUsers(){
+  const q=$('q-users').value.toLowerCase();
+  const data=users.filter(u=>(u.nom+u.prenom+u.email).toLowerCase().includes(q));
+  const el=$('tbl-users');
+  if(!data.length){el.innerHTML='<div class="t-empty">Aucun utilisateur</div>';return}
+  const roleLabel={admin:'Administrateur',secretariat:'Secrétariat',technicien:'Technicien'};
+  const visBadge={perso:'<span class="badge bg">Perso</span>',perso_agence:'<span class="badge bb">Perso + agence</span>',tout:'<span class="badge bvi">Tout</span>'};
+  el.innerHTML=`<table><thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Agence</th><th>Visibilité</th><th>Actif</th><th>Actions</th></tr></thead><tbody>${data.map(u=>`<tr>
+    <td><strong>${u.prenom||''} ${u.nom}</strong></td><td>${u.email||'—'}</td>
+    <td><span class="badge ${u.role==='admin'?'br':u.role==='secretariat'?'bvi':'bb'}">${roleLabel[u.role]||u.role}</span></td>
+    <td>${u.agences?.nom||'—'}</td>
+    <td>${u.role==='technicien'?(visBadge[u.visibilite]||'—'):'—'}</td>
+    <td>${u.actif?'<span class="badge bv">Oui</span>':'<span class="badge bg">Non</span>'}</td>
+    <td><div class="ia">
+      <button class="btn btn-s btn-xs" onclick="editUser('${u.id}')">✏️</button>
+      <button class="btn btn-s btn-xs" onclick="toggleUser('${u.id}',${u.actif})">${u.actif?'⏸':'▶'}</button>
+    </div></td>
+  </tr>`).join('')}</tbody></table>`;
 }
 
-async function exportContratPDF(contratId){
-  const {data:c}=await db.from('contrats').select('*, clients(*)').eq('id',contratId).single();
-  if(!c){toast('Données introuvables','err');return}
-  const cl=c.clients;
-  const {jsPDF}=window.jspdf;const doc=new jsPDF();
-  doc.setFillColor(192,57,43);doc.rect(0,0,210,28,'F');
-  doc.setTextColor(255);doc.setFontSize(13);doc.setFont('helvetica','bold');
-  doc.text('BFS — Contrat de maintenance',14,12);
-  doc.setFontSize(9);doc.setFont('helvetica','normal');
-  doc.text(`N° ${c.numero_contrat||'—'}`,14,20);doc.text(`Édité le ${new Date().toLocaleDateString('fr-FR')}`,150,20);
-  doc.setTextColor(30);let y=35;
-  doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[
-    ['Prestataire','BFS — Bretagne Formation Sécurité'],
-    ['Client',cl?.raison_sociale||'—'],['Adresse',`${cl?.adresse||''} ${cl?.code_postal||''} ${cl?.ville||''}`.trim()],
-    ['SIRET',cl?.siret||'—'],['Contact',`${cl?.contact_nom||'—'} — ${cl?.contact_telephone||''}`],
-    ['Type contrat',c.type_contrat],['Statut',c.statut],
-    ['Période',`${fmt(c.date_debut)} → ${fmt(c.date_fin)}`],
-    ['Périodicité visites',c.periodicite_visite||'—'],
-    ['Tarif annuel HT',c.tarif_annuel?c.tarif_annuel.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'—'],
-    ['Équipements couverts',(c.types_couverts||[]).join(', ')||'—'],
-  ],styles:{fontSize:10},columnStyles:{0:{fontStyle:'bold',cellWidth:55}}});
-  y=doc.lastAutoTable.finalY+10;
-  if(c.notes){doc.setFont('helvetica','bold');doc.text('Conditions particulières :',14,y);y+=6;doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(doc.splitTextToSize(c.notes,182),14,y);y+=20}
-  y=Math.max(y+10,230);
-  doc.setDrawColor(200);doc.line(14,y,85,y);doc.line(125,y,196,y);
-  doc.setFontSize(9);doc.text('Signature client + cachet',14,y+5);doc.text('Pour BFS — Signature',125,y+5);
-  doc.save(`BFS_contrat_${c.numero_contrat||contratId}.pdf`);toast('Contrat PDF généré');
+function openUserModal(prefill=null){
+  ['u-id','u-prenom','u-nom','u-email'].forEach(id=>$(id).value='');
+  $('u-role').value='technicien';$('u-agence').value='';$('u-visibilite').value='perso';
+  $('mo-user-t').textContent='Inviter un utilisateur';
+  $('btn-save-user').textContent='Inviter';
+  $('invite-info').style.display='block';
+  toggleVisibilite();
+  if(prefill){
+    $('u-id').value=prefill.id;$('u-prenom').value=prefill.prenom||'';$('u-nom').value=prefill.nom||'';
+    $('u-email').value=prefill.email||'';$('u-role').value=prefill.role;
+    // trouver agence id
+    const ag=profils.find(p=>p.id===prefill.id);
+    if(prefill.agence_id)$('u-agence').value=prefill.agence_id;
+    $('u-visibilite').value=prefill.visibilite||'perso';
+    $('mo-user-t').textContent='Modifier l\'utilisateur';$('btn-save-user').textContent='Enregistrer';
+    $('invite-info').style.display='none';toggleVisibilite();
+  }
+  OM('mo-user');
 }
+function editUser(id){openUserModal(users.find(u=>u.id===id))}
+function toggleVisibilite(){$('fg-visibilite').style.display=$('u-role').value==='technicien'?'flex':'none'}
+
+async function saveUser(){
+  const id=$('u-id').value;
+  if(!id){
+    // Invitation via Supabase Auth
+    const email=$('u-email').value.trim();const nom=$('u-nom').value.trim();
+    if(!email||!nom){toast('Email et nom obligatoires','err');return}
+    const {data:inv,error:ie}=await db.auth.admin.inviteUserByEmail(email);
+    if(ie){toast('Erreur invitation: '+ie.message,'err');return}
+    // Créer le profil
+    const p={id:inv.user.id,nom,prenom:$('u-prenom').value.trim(),email,role:$('u-role').value,agence_id:$('u-agence').value||null,visibilite:$('u-visibilite').value};
+    await db.from('profils').insert(p);
+    toast('Invitation envoyée à '+email);CM('mo-user');loadUsers();return;
+  }
+  const p={nom:$('u-nom').value.trim(),prenom:$('u-prenom').value.trim(),role:$('u-role').value,agence_id:$('u-agence').value||null,visibilite:$('u-visibilite').value,updated_at:new Date().toISOString()};
+  const {error}=await db.from('profils').update(p).eq('id',id);
+  if(error){toast('Erreur: '+error.message,'err');return}
+  toast('Utilisateur modifié');CM('mo-user');loadUsers();
+}
+async function toggleUser(id,actif){await db.from('profils').update({actif:!actif}).eq('id',id);toast(actif?'Désactivé':'Activé');loadUsers()}
 
 // ============================================================
 // CONFIG POINTS DE CONTRÔLE
 // ============================================================
 async function loadConfigPage(){
-  const typeCode=$('f-type-config').value;
-  const marque=$('f-marque-config').value.trim();
-  $('btn-add-point').style.display=typeCode?'inline-flex':'none';
-  if(!typeCode){$('tbl-points').innerHTML='<div class="t-empty">Sélectionnez un type d\'équipement ci-dessus</div>';return}
-  $('tbl-points').innerHTML='<div class="loading"><span class="spin"></span>Chargement…</div>';
-  let q=db.from('points_controle').select('*').eq('type_equipement_code',typeCode).order('ordre');
-  const {data}=await q;
+  const tc=$('f-type-config').value;const marque=$('f-marque-config').value.trim();
+  $('btn-add-pt').style.display=tc?'inline-flex':'none';
+  if(!tc){$('tbl-points').innerHTML='<div class="t-empty">Sélectionnez un type</div>';return}
+  $('tbl-points').innerHTML='<div class="loading"><span class="spin"></span></div>';
+  const {data}=await db.from('points_controle').select('*').eq('type_equipement_code',tc).order('ordre');
   pointsControle=data||[];
   const filtered=marque?pointsControle.filter(p=>!p.marque||(p.marque.toLowerCase().includes(marque.toLowerCase()))):pointsControle;
-  renderConfigPoints(filtered);
-}
-
-function renderConfigPoints(data){
-  const el=$('tbl-points');
-  if(!data.length){el.innerHTML='<div class="t-empty">Aucun point de contrôle. Cliquez "+ Ajouter un point".</div>';return}
-  const typeLabels={oui_non:'Oui/Non',numerique:'Numérique',texte:'Texte',date:'Date'};
-  el.innerHTML=`<table><thead><tr><th>Ordre</th><th>Libellé</th><th>Type réponse</th><th>Unité</th><th>Marque</th><th>Modèle</th><th>Obligatoire</th><th>Actif</th><th>Actions</th></tr></thead><tbody>${data.map(p=>`<tr style="${!p.actif?'opacity:.5':''}">
-    <td style="color:var(--txt-l)">${p.ordre}</td>
-    <td><strong>${p.libelle}</strong></td>
-    <td><span class="badge bb">${typeLabels[p.type_reponse]||p.type_reponse}</span></td>
-    <td>${p.unite||'—'}</td>
-    <td>${p.marque||'<span style="color:var(--txt-l)">tous</span>'}</td>
+  const el=$('tbl-points');const tl={oui_non:'Oui/Non',numerique:'Numérique',texte:'Texte',date:'Date'};
+  if(!filtered.length){el.innerHTML='<div class="t-empty">Aucun point. Cliquez "+ Ajouter".</div>';return}
+  el.innerHTML=`<table><thead><tr><th>Ordre</th><th>Libellé</th><th>Type</th><th>Unité</th><th>Marque</th><th>Modèle</th><th>Oblig.</th><th>Actif</th><th>Actions</th></tr></thead><tbody>${filtered.map(p=>`<tr style="${!p.actif?'opacity:.5':''}">
+    <td style="color:var(--txt-l)">${p.ordre}</td><td><strong>${p.libelle}</strong></td>
+    <td><span class="badge bb">${tl[p.type_reponse]||p.type_reponse}</span></td>
+    <td>${p.unite||'—'}</td><td>${p.marque||'<span style="color:var(--txt-l)">tous</span>'}</td>
     <td>${p.modele||'<span style="color:var(--txt-l)">tous</span>'}</td>
     <td>${p.obligatoire?'<span class="badge bv">Oui</span>':'<span class="badge bg">Non</span>'}</td>
     <td>${p.actif?'<span class="badge bv">Oui</span>':'<span class="badge bg">Non</span>'}</td>
@@ -1125,49 +1309,24 @@ function renderConfigPoints(data){
 }
 
 function openPointModal(prefill=null){
-  const typeCode=$('f-type-config').value;
-  if(!typeCode){toast('Sélectionnez un type d\'équipement d\'abord','err');return}
+  const tc=$('f-type-config').value;if(!tc){toast('Sélectionnez un type d\'abord','err');return}
   ['pt-id','pt-libelle','pt-unite','pt-marque','pt-modele'].forEach(id=>$(id).value='');
-  $('pt-type-rep').value='oui_non';$('pt-ordre').value='99';$('pt-oblig').value='true';
-  $('mo-point-title').textContent='Nouveau point de contrôle';
-  toggleUnite();
-  if(prefill){
-    $('pt-id').value=prefill.id;$('pt-libelle').value=prefill.libelle||'';$('pt-type-rep').value=prefill.type_reponse;
-    $('pt-unite').value=prefill.unite||'';$('pt-marque').value=prefill.marque||'';$('pt-modele').value=prefill.modele||'';
-    $('pt-ordre').value=prefill.ordre||99;$('pt-oblig').value=String(prefill.obligatoire);
-    $('mo-point-title').textContent='Modifier le point de contrôle';
-    toggleUnite();
-  }
-  openModal('mo-point');
+  $('pt-type-rep').value='oui_non';$('pt-ordre').value=99;$('pt-oblig').value='true';$('mo-pt-t').textContent='Nouveau point';toggleUnite();
+  if(prefill){$('pt-id').value=prefill.id;$('pt-libelle').value=prefill.libelle||'';$('pt-type-rep').value=prefill.type_reponse;$('pt-unite').value=prefill.unite||'';$('pt-marque').value=prefill.marque||'';$('pt-modele').value=prefill.modele||'';$('pt-ordre').value=prefill.ordre||99;$('pt-oblig').value=String(prefill.obligatoire);$('mo-pt-t').textContent='Modifier';toggleUnite()}
+  OM('mo-point');
 }
 function editPoint(id){openPointModal(pointsControle.find(p=>p.id===id))}
 function toggleUnite(){$('fg-unite-pt').style.display=$('pt-type-rep').value==='numerique'?'flex':'none'}
-
 async function savePoint(){
-  const id=$('pt-id').value;
-  const typeCode=$('f-type-config').value;
-  const p={type_equipement_code:typeCode,libelle:$('pt-libelle').value.trim(),type_reponse:$('pt-type-rep').value,unite:$('pt-unite').value.trim()||null,marque:$('pt-marque').value.trim()||null,modele:$('pt-modele').value.trim()||null,ordre:parseInt($('pt-ordre').value)||99,obligatoire:$('pt-oblig').value==='true',actif:true};
+  const id=$('pt-id').value;const tc=$('f-type-config').value;
+  const p={type_equipement_code:tc,libelle:$('pt-libelle').value.trim(),type_reponse:$('pt-type-rep').value,unite:$('pt-unite').value.trim()||null,marque:$('pt-marque').value.trim()||null,modele:$('pt-modele').value.trim()||null,ordre:parseInt($('pt-ordre').value)||99,obligatoire:$('pt-oblig').value==='true',actif:true};
   if(!p.libelle){toast('Libellé obligatoire','err');return}
   const {error}=id?await db.from('points_controle').update(p).eq('id',id):await db.from('points_controle').insert(p);
   if(error){toast('Erreur: '+error.message,'err');return}
-  toast(id?'Point modifié':'Point ajouté');closeModal('mo-point');loadConfigPage();
+  toast(id?'Modifié':'Ajouté');CM('mo-point');loadConfigPage();
 }
-
-async function togglePoint(id,actif){
-  await db.from('points_controle').update({actif:!actif}).eq('id',id);
-  toast(actif?'Point désactivé':'Point activé');loadConfigPage();
-}
-
-async function deletePoint(id){
-  if(!confirm('Supprimer ce point de contrôle ?'))return;
-  await db.from('points_controle').delete().eq('id',id);
-  toast('Point supprimé');loadConfigPage();
-}
-
-// ============================================================
-// DÉMARRAGE
-// ============================================================
-init();
+async function togglePoint(id,actif){await db.from('points_controle').update({actif:!actif}).eq('id',id);toast(actif?'Désactivé':'Activé');loadConfigPage()}
+async function deletePoint(id){if(!confirm('Supprimer ?'))return;await db.from('points_controle').delete().eq('id',id);toast('Supprimé');loadConfigPage()}
 </script>
 </body>
 </html>
