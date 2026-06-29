@@ -590,7 +590,8 @@ function buildNav(){
   let html='';
   if(role==='technicien'||role==='admin'||role==='secretariat'){
     html+=`<div class="nav-sec">Tableau de bord</div>`;
-    if(role==='technicien')html+=nav_a('dash-tech','📊','Mon tableau de bord');
+    if(role==="technicien")html+=nav_a("dash-tech","📊","Mon tableau de bord");
+    if(role==="admin")html+=nav_a("dash-tech","👤","Mon tableau de bord");
     if(role==='secretariat')html+=nav_a('dash-secretariat','📊','Secrétariat');
     if(role==='admin')html+=nav_a('dash-admin','📊','Vue globale');
   }
