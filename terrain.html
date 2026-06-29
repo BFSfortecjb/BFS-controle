@@ -239,8 +239,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button class="btn btn-p" onclick="demarrerSession()" style="margin-bottom:10px">
       🔧 Démarrer une session de contrôle
     </button>
-    <button class="btn btn-s btn-sm" onclick="voirEquipements()">
+    <button class="btn btn-s btn-sm" onclick="voirEquipements()" style="margin-bottom:8px">
       📋 Voir tous les équipements
+    </button>
+    <button class="btn btn-s btn-sm" onclick="creerEquipement()">
+      ➕ Ajouter un équipement
     </button>
   </div>
 </div>
@@ -343,6 +346,74 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <div class="footer" style="display:flex;flex-direction:column;gap:8px">
     <button class="btn btn-p" onclick="exportSessionPDF()">📄 Rapport PDF</button>
     <button class="btn btn-vert" onclick="cloturerSession()">✅ Clôturer la session</button>
+  </div>
+</div>
+
+
+<!-- ===== FICHE ÉQUIPEMENT ===== -->
+<div class="screen" id="s-fiche-equip">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goBack()">←</button>
+    <div style="flex:1;min-width:0">
+      <h1 id="fiche-titre" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Équipement</h1>
+      <div class="hdr-sub" id="fiche-sub"></div>
+    </div>
+    <button onclick="editerEquipement()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer">✏️ Modifier</button>
+  </div>
+  <div class="content" id="fiche-content"></div>
+  <div class="footer">
+    <button class="btn btn-p" onclick="verifierCetEquip()">✅ Vérifier cet équipement</button>
+  </div>
+</div>
+
+<!-- ===== CRÉER / MODIFIER ÉQUIPEMENT ===== -->
+<div class="screen" id="s-equip-form">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goBack()">←</button>
+    <h1 id="equip-form-titre">Nouvel équipement</h1>
+  </div>
+  <div class="content">
+    <input type="hidden" id="ef-id">
+    <div class="fg"><label>Client</label><input type="text" id="ef-client-nom" disabled style="background:#f5f5f5"></div>
+    <div class="fg"><label>Type d'équipement *</label>
+      <select id="ef-type" onchange="onEFTypeChange()"></select>
+    </div>
+    <div class="fg"><label>N° identification / QR code *</label>
+      <input type="text" id="ef-num" placeholder="Ex: EXT-BRIEC-001">
+    </div>
+    <div class="fg"><label>N° de série (fabricant)</label>
+      <input type="text" id="ef-serie" placeholder="Gravé sur l'appareil">
+    </div>
+    <div class="fg"><label>N° de lot</label>
+      <input type="text" id="ef-lot" placeholder="Lot de fabrication">
+    </div>
+    <div class="fg"><label>N° entreprise client</label>
+      <input type="text" id="ef-num-ent" placeholder="Ex: EXT-05">
+    </div>
+    <div class="fg"><label>Emplacement précis *</label>
+      <input type="text" id="ef-emplacement" placeholder="Ex: Couloir RDC face toilettes, Atelier pilier B3">
+    </div>
+    <div class="fg"><label>Marque</label><input type="text" id="ef-marque"></div>
+    <div class="fg"><label>Modèle</label><input type="text" id="ef-modele"></div>
+
+    <!-- Champs conditionnels -->
+    <div id="ef-champs-specifiques"></div>
+
+    <div class="fg"><label>Localisation</label><input type="text" id="ef-loc" placeholder="Entrée, couloir RDC…"></div>
+    <div class="fg"><label>Étage / Zone</label><input type="text" id="ef-zone" placeholder="RDC, 1er étage…"></div>
+    <div class="fg"><label>Statut</label>
+      <select id="ef-statut">
+        <option value="opérationnel">Opérationnel</option>
+        <option value="à remplacer">À remplacer</option>
+        <option value="en révision">En révision</option>
+        <option value="hors service">Hors service</option>
+      </select>
+    </div>
+    <div class="fg"><label>Notes</label><textarea id="ef-notes" placeholder="Informations complémentaires…"></textarea></div>
+    <div style="height:10px"></div>
+  </div>
+  <div class="footer">
+    <button class="btn btn-p" onclick="saveEquipTerrain()">💾 Enregistrer</button>
   </div>
 </div>
 
@@ -581,7 +652,7 @@ function filterEquip(){
 function renderEquipList(containerId,equips){
   const el=$(containerId);
   if(!equips.length){el.innerHTML='<div class="loading">Aucun équipement</div>';return}
-  el.innerHTML=equips.map(e=>`<div class="equip-item" onclick="voirFicheEquip('${e.id}')">
+  el.innerHTML=equips.map(e=>`<div class="equip-item" onclick="ouvrirFicheEquip('${e.id}')">
     <div class="equip-ico">${e.types_equipements?.icone||'🔧'}</div>
     <div class="equip-info">
       <div class="equip-name">${e.types_equipements?.libelle||'—'} — ${e.numero_identification||'Non numéroté'}</div>
@@ -1184,6 +1255,295 @@ async function cloturerSession(){
   toast('Session clôturée ✓','ok');
   await loadParc();goTo('s-parc');
 }
+
+// ============================================================
+// CHAMPS CONDITIONNELS TERRAIN (même définition que index.html)
+// ============================================================
+const CHAMPS_TYPE_TERRAIN = {
+  extincteur: [
+    {id:'ef-agent',label:'Agent extincteur',type:'select',opts:['CO2','Poudre ABC','Poudre BC','Eau pulvérisée','Eau + additif','Mousse','Halon','Autre']},
+    {id:'ef-cap',label:'Capacité',type:'number',placeholder:'6',step:'0.5'},
+    {id:'ef-unite',label:'Unité',type:'select',opts:['kg','L']},
+    {id:'ef-pression',label:'Pression nominale (bar)',type:'number',placeholder:'15',step:'0.5'},
+    {id:'ef-fab',label:'Date fabrication',type:'date'},
+    {id:'ef-mis',label:'Mise en service',type:'date'},
+  ],
+  ria: [
+    {id:'ef-diametre',label:'Diamètre tuyau (mm)',type:'select',opts:['19','25','33']},
+    {id:'ef-longueur',label:'Longueur tuyau (m)',type:'select',opts:['20','30']},
+    {id:'ef-dmf',label:'Type de DMF',type:'select',opts:['A','B','A/HT','Sans DMF']},
+    {id:'ef-pression',label:'Pression réseau (bar)',type:'number',placeholder:'3.5',step:'0.1'},
+    {id:'ef-mis',label:'Mise en service',type:'date'},
+  ],
+  baes: [
+    {id:'ef-type-baes',label:'Type BAES',type:'select',opts:['BAES standard','BAEH (habitation)','BAES SA (autotest)','Bloc de secours']},
+    {id:'ef-autonomie',label:'Autonomie',type:'select',opts:['1h','3h','8h']},
+    {id:'ef-type-batt',label:'Type batterie',type:'select',opts:['NiCd','NiMH','Li-Ion','Pb']},
+    {id:'ef-mis',label:'Mise en service',type:'date'},
+  ],
+  alarme_t4: [
+    {id:'ef-alim',label:'Alimentation',type:'select',opts:['Piles','Accumulateurs','Secteur + piles','Secteur + accus']},
+    {id:'ef-nb-declencheurs',label:'Nb déclencheurs',type:'number',placeholder:'1',step:'1'},
+    {id:'ef-nb-sirenes',label:'Nb sirènes',type:'number',placeholder:'1',step:'1'},
+    {id:'ef-mis',label:'Mise en service',type:'date'},
+  ],
+  detecteur: [
+    {id:'ef-type-det',label:'Type détecteur',type:'select',opts:['Optique fumée','Ionique fumée','Thermique fixe','Thermo-vélocimétrique','Gaz','Flamme','Multi-critères']},
+    {id:'ef-num-centrale',label:'N° adresse centrale',type:'text',placeholder:'Zone 1 - Détect. 03'},
+    {id:'ef-mis',label:'Mise en service',type:'date'},
+  ],
+  pco: [
+    {id:'ef-classement',label:'Classement coupe-feu',type:'select',opts:['EI15','EI30','EI45','EI60','EI90','EI120','EI180','EI240']},
+    {id:'ef-type-porte',label:'Type',type:'select',opts:['Porte pivotante 1 vantail','Porte pivotante 2 vantaux','Porte coulissante','Trappe désenfumage','Volet coupe-feu']},
+    {id:'ef-mis',label:'Mise en service',type:'date'},
+  ],
+  vgp_nacelle: [
+    {id:'ef-type-nacelle',label:'Type nacelle',type:'select',opts:['Ciseaux électrique','Ciseaux diesel','Articulée électrique','Articulée diesel','Télescopique']},
+    {id:'ef-hauteur',label:'Hauteur max (m)',type:'number',placeholder:'12',step:'0.5'},
+    {id:'ef-cap',label:'Charge max (kg)',type:'number',placeholder:'200',step:'10'},
+    {id:'ef-energie',label:'Énergie',type:'select',opts:['Électrique','Diesel','Hybride','GPL']},
+    {id:'ef-fab',label:'Date fabrication',type:'date'},
+    {id:'ef-mis',label:'Mise en service',type:'date'},
+  ],
+  vgp_engin: [
+    {id:'ef-type-engin',label:"Type d'engin",type:'select',opts:['Chariot élévateur','Chariot télescopique','Pelle hydraulique','Mini-pelle','Chargeuse','Tombereau','Autre']},
+    {id:'ef-ptac',label:'PTAC (tonnes)',type:'number',placeholder:'3.5',step:'0.5'},
+    {id:'ef-cap',label:'Charge (t)',type:'number',placeholder:'1.5',step:'0.1'},
+    {id:'ef-energie',label:'Énergie',type:'select',opts:['Diesel','Électrique','Gaz','Hybride']},
+    {id:'ef-fab',label:'Date fabrication',type:'date'},
+    {id:'ef-mis',label:'Mise en service',type:'date'},
+  ],
+  vgp_antichute: [
+    {id:'ef-type-ac',label:"Type",type:'select',opts:['Harnais complet','Longe double','Longe simple','Absorbeur énergie','Enrouleur auto','Ligne de vie','Connecteur']},
+    {id:'ef-norme',label:'Norme CE',type:'select',opts:['EN 361','EN 358','EN 354','EN 355','EN 360','EN 362','EN 363']},
+    {id:'ef-fab',label:'Date fabrication',type:'date'},
+    {id:'ef-date-limite',label:'Date limite utilisation',type:'date'},
+  ],
+};
+
+let _efRestoreData = {};
+let _efPersoCount = 0;
+let _ficheEquipId = null;
+let _prevScreen = 's-equip-list';
+
+function goBack(){
+  goTo(_prevScreen);
+}
+
+function onEFTypeChange(){
+  const code = document.getElementById('ef-type').value;
+  const container = document.getElementById('ef-champs-specifiques');
+  if(!container) return;
+  container.innerHTML = '';
+  _efPersoCount = 0;
+  const champs = CHAMPS_TYPE_TERRAIN[code] || [
+    {id:'ef-cap',label:'Capacité',type:'number',placeholder:'',step:'1'},
+    {id:'ef-unite',label:'Unité',type:'text',placeholder:'kg, L, m…'},
+    {id:'ef-fab',label:'Date fabrication',type:'date'},
+    {id:'ef-mis',label:'Mise en service',type:'date'},
+  ];
+  champs.forEach(c => {
+    const div = document.createElement('div');
+    div.className = 'fg';
+    let input = '';
+    if(c.type === 'select'){
+      input = '<select id="'+c.id+'"><option value="">— Sélectionner —</option>'+(c.opts||[]).map(o=>'<option value="'+o+'">'+o+'</option>').join('')+'</select>';
+    } else {
+      input = '<input type="'+c.type+'" id="'+c.id+'" placeholder="'+(c.placeholder||'')+'" '+(c.step?'step="'+c.step+'"':'')+'>';
+    }
+    div.innerHTML = '<label>'+c.label+'</label>'+input;
+    container.appendChild(div);
+  });
+  // Champs perso
+  const zonePerso = document.createElement('div');
+  zonePerso.style.cssText = 'border-top:1px dashed #e5e7eb;padding-top:12px;margin-top:8px';
+  zonePerso.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--txt-l);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Champs personnalisés</div><div id="ef-champs-perso"></div><button type="button" onclick="ajouterChampPersoEF()" class="btn btn-s" style="padding:8px 12px;font-size:13px;margin-top:6px">+ Ajouter un champ</button>';
+  container.appendChild(zonePerso);
+  // Restaurer
+  if(_efRestoreData){
+    const ids=['ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
+    ids.forEach(id=>{const el=document.getElementById(id);if(el&&_efRestoreData[id])el.value=_efRestoreData[id];});
+  }
+  if(_efRestoreData['_perso']){
+    try{(_efRestoreData['_perso']||[]).forEach(p=>ajouterChampPersoEF(p.label,p.value));}catch(e){}
+  }
+}
+
+function ajouterChampPersoEF(label, value){
+  label=label||'';value=value||'';
+  const zone=document.getElementById('ef-champs-perso');if(!zone)return;
+  const i=++_efPersoCount;
+  const div=document.createElement('div');
+  div.id='efcp-row-'+i;
+  div.style.cssText='display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;margin-bottom:8px';
+  div.innerHTML='<input type="text" id="efcp-label-'+i+'" placeholder="Libellé" value="'+label+'" style="padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"><input type="text" id="efcp-value-'+i+'" placeholder="Valeur" value="'+value+'" style="padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"><button type="button" onclick="document.getElementById('efcp-row-'+i+'').remove()" style="padding:8px;background:#fee2e2;color:#dc2626;border:none;border-radius:8px;cursor:pointer;font-size:16px">✕</button>';
+  zone.appendChild(div);
+}
+
+function getEFChampsPerso(){
+  const result=[];
+  document.querySelectorAll('[id^="efcp-row-"]').forEach(row=>{
+    const i=row.id.split('-')[2];
+    const lbl=document.getElementById('efcp-label-'+i);
+    const val=document.getElementById('efcp-value-'+i);
+    if(lbl&&lbl.value.trim())result.push({label:lbl.value.trim(),value:val?val.value.trim():''});
+  });
+  return result;
+}
+
+function getEFSpecificData(){
+  const data={};
+  const ids=['ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
+  ids.forEach(id=>{const el=document.getElementById(id);if(el&&el.value)data[id]=el.value;});
+  const perso=getEFChampsPerso();
+  if(perso.length)data['_perso']=perso;
+  return data;
+}
+
+// ============================================================
+// FICHE ÉQUIPEMENT
+// ============================================================
+async function ouvrirFicheEquip(id){
+  _prevScreen = document.querySelector('.screen.active')?.id || 's-equip-list';
+  _ficheEquipId = id;
+  const equip = currentEquipements.find(e=>e.id===id);
+  if(!equip){toast('Équipement introuvable','err');return}
+
+  document.getElementById('fiche-titre').textContent = (equip.types_equipements?.icone||'🔧')+' '+( equip.numero_identification||'—');
+  document.getElementById('fiche-sub').textContent = equip.localisation||(equip.etage_zone||'');
+
+  // Dernière vérification
+  const {data:lastV}=await db.from('verifications').select('date_verification,date_prochaine_echeance,resultat,technicien').eq('equipement_id',id).order('date_verification',{ascending:false}).limit(1);
+  const last=lastV?.[0];
+
+  // Données spécifiques
+  const spec = equip.donnees_specifiques || {};
+  const specRows = Object.entries(spec).filter(([k])=>!k.startsWith('_')&&spec[k]).map(([k,v])=>{
+    const labels={'ef-agent':'Agent','ef-cap':'Capacité','ef-unite':'Unité','ef-diametre':'Diamètre','ef-longueur':'Longueur','ef-dmf':'Type DMF','ef-pression':'Pression','ef-mis':'Mise en service','ef-fab':'Fabrication','ef-type-baes':'Type BAES','ef-autonomie':'Autonomie','ef-type-batt':'Batterie','ef-alim':'Alimentation','ef-classement':'Classement CF','ef-hauteur':'Hauteur max','ef-energie':'Énergie','ef-norme':'Norme','ef-date-limite':'Date limite'};
+    const cleanK=k.replace('ef-','e-');
+    return `<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">${labels[k]||labels[cleanK]||k}</span><span style="font-weight:600">${v}</span></div>`;
+  }).join('');
+
+  // Champs perso
+  const perso=(spec['_perso']||[]).map(p=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">${p.label}</span><span style="font-weight:600">${p.value}</span></div>`).join('');
+
+  document.getElementById('fiche-content').innerHTML = `
+    ${last?`<div style="background:var(--bleu-l);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--bleu)">
+      Dernière vérif. : <strong>${fmt(last.date_verification)}</strong> par ${last.technicien||'—'}<br>
+      Résultat : <strong>${last.resultat||'—'}</strong> · Prochaine : <strong>${fmt(last.date_prochaine_echeance)}</strong>
+    </div>`:'<div style="background:#fef3c7;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#b45309">⚠️ Aucune vérification enregistrée</div>'}
+    <div class="card" style="margin-bottom:14px">
+      <div style="padding:14px 16px">
+        <div class="sec">Identification</div>
+        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">N° identification</span><strong>${equip.numero_identification||'—'}</strong></div>
+        ${equip.numero_serie?`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">N° série</span><strong>${equip.numero_serie}</strong></div>`:''}
+        ${equip.numero_lot?`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">N° lot</span><strong>${equip.numero_lot}</strong></div>`:''}
+        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">Marque / Modèle</span><strong>${equip.marque||'—'}${equip.modele?' '+equip.modele:''}</strong></div>
+        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">Localisation</span><strong>${equip.localisation||'—'}${equip.etage_zone?' / '+equip.etage_zone:''}</strong></div>
+        ${equip.emplacement?`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">Emplacement précis</span><strong>${equip.emplacement}</strong></div>`:''}
+        ${equip.numero_entreprise?`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">N° entreprise</span><strong>${equip.numero_entreprise}</strong></div>`:''}
+        <div style="display:flex;justify-content:space-between;padding:7px 0;font-size:13px"><span style="color:var(--txt-l)">Statut</span><strong>${equip.statut}</strong></div>
+      </div>
+    </div>
+    ${specRows||perso?`<div class="card" style="margin-bottom:14px"><div style="padding:14px 16px"><div class="sec">Caractéristiques</div>${specRows}${perso}</div></div>`:''}
+    ${equip.notes?`<div class="card"><div style="padding:14px 16px;font-size:13px;color:var(--txt-l)"><div class="sec">Notes</div>${equip.notes}</div></div>`:''}
+  `;
+  goTo('s-fiche-equip');
+}
+
+function verifierCetEquip(){
+  if(_ficheEquipId) ouvrirVerif(_ficheEquipId);
+}
+
+// ============================================================
+// CRÉER / MODIFIER ÉQUIPEMENT TERRAIN
+// ============================================================
+async function creerEquipement(){
+  _prevScreen = document.querySelector('.screen.active')?.id || 's-client';
+  _efRestoreData = {};
+  document.getElementById('ef-id').value = '';
+  document.getElementById('ef-client-nom').value = currentClient?.raison_sociale||'';
+  document.getElementById('equip-form-titre').textContent = 'Nouvel équipement';
+  ['ef-num','ef-serie','ef-lot','ef-num-ent','ef-emplacement','ef-marque','ef-modele','ef-loc','ef-zone','ef-notes'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.value='';
+  });
+  document.getElementById('ef-statut').value='opérationnel';
+  // Remplir le select des types
+  const sel=document.getElementById('ef-type');
+  sel.innerHTML=typesEquipTerrain.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
+  onEFTypeChange();
+  goTo('s-equip-form');
+}
+
+async function editerEquipement(){
+  _prevScreen = 's-fiche-equip';
+  const equip = currentEquipements.find(e=>e.id===_ficheEquipId);
+  if(!equip){toast('Équipement introuvable','err');return}
+  _efRestoreData = {...(equip.donnees_specifiques||{})};
+  document.getElementById('ef-id').value = equip.id;
+  document.getElementById('ef-client-nom').value = currentClient?.raison_sociale||'';
+  document.getElementById('equip-form-titre').textContent = 'Modifier équipement';
+  document.getElementById('ef-num').value = equip.numero_identification||'';
+  document.getElementById('ef-serie').value = equip.numero_serie||'';
+  document.getElementById('ef-lot').value = equip.numero_lot||'';
+  document.getElementById('ef-num-ent').value = equip.numero_entreprise||'';
+  document.getElementById('ef-emplacement').value = equip.emplacement||'';
+  document.getElementById('ef-marque').value = equip.marque||'';
+  document.getElementById('ef-modele').value = equip.modele||'';
+  document.getElementById('ef-loc').value = equip.localisation||'';
+  document.getElementById('ef-zone').value = equip.etage_zone||'';
+  document.getElementById('ef-statut').value = equip.statut||'opérationnel';
+  document.getElementById('ef-notes').value = equip.notes||'';
+  // Remplir select types
+  const sel=document.getElementById('ef-type');
+  sel.innerHTML=typesEquipTerrain.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
+  sel.value = equip.type_equipement_code||'';
+  onEFTypeChange();
+  goTo('s-equip-form');
+}
+
+async function saveEquipTerrain(){
+  const id = document.getElementById('ef-id').value;
+  const num = document.getElementById('ef-num').value.trim();
+  if(!num){toast('N° identification obligatoire','err');return}
+  const payload = {
+    client_id: currentClient.id,
+    agence_id: currentClient.agence_id,
+    technicien_id: ME.id,
+    type_equipement_code: document.getElementById('ef-type').value,
+    numero_identification: num,
+    numero_serie: document.getElementById('ef-serie').value.trim()||null,
+    numero_lot: document.getElementById('ef-lot').value.trim()||null,
+    numero_entreprise: document.getElementById('ef-num-ent').value.trim()||null,
+    emplacement: document.getElementById('ef-emplacement').value.trim()||null,
+    marque: document.getElementById('ef-marque').value.trim()||null,
+    modele: document.getElementById('ef-modele').value.trim()||null,
+    localisation: document.getElementById('ef-loc').value.trim()||null,
+    etage_zone: document.getElementById('ef-zone').value.trim()||null,
+    statut: document.getElementById('ef-statut').value,
+    notes: document.getElementById('ef-notes').value.trim()||null,
+    donnees_specifiques: getEFSpecificData(),
+    updated_at: new Date().toISOString()
+  };
+  const {data, error} = id
+    ? await db.from('equipements').update(payload).eq('id',id).select().single()
+    : await db.from('equipements').insert(payload).select().single();
+  if(error){toast('Erreur: '+error.message,'err');return}
+  // Mettre à jour la liste locale
+  if(id){
+    const idx=currentEquipements.findIndex(e=>e.id===id);
+    if(idx>=0)currentEquipements[idx]={...currentEquipements[idx],...data};
+  } else {
+    currentEquipements.push(data);
+  }
+  toast(id?'Équipement modifié ✓':'Équipement créé ✓');
+  _ficheEquipId = data.id;
+  await ouvrirFicheEquip(data.id);
+}
+
+// Types équipements chargés au démarrage terrain
+let typesEquipTerrain = [];
+
 </script>
 </body>
 </html>
