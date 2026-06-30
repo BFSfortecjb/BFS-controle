@@ -330,9 +330,54 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button class="btn btn-s btn-sm" onclick="voirEquipements()" style="margin-bottom:8px">
       📋 Voir tous les équipements
     </button>
-    <button class="btn btn-s btn-sm" onclick="creerEquipement()">
+    <button class="btn btn-s btn-sm" onclick="creerEquipement()" style="margin-bottom:8px">
       ➕ Ajouter un équipement
     </button>
+    <button class="btn btn-s btn-sm" onclick="ouvrirInterventionPonctuelle()" style="background:var(--orange-l);color:var(--orange)">
+      🔧 Intervention ponctuelle (hors planning)
+    </button>
+  </div>
+</div>
+
+<!-- ===== INTERVENTION PONCTUELLE ===== -->
+<div class="screen" id="s-intervention-ponctuelle">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-client')">←</button>
+    <h1>Intervention ponctuelle</h1>
+  </div>
+  <div class="content">
+    <div class="card" style="margin-bottom:14px">
+      <div style="padding:12px 14px;font-size:13px;color:var(--txt-l)">Pour une vente de pièces ou un dépannage non planifié. Génère un bon facturable indépendant.</div>
+    </div>
+    <div class="fg"><label>Type d'intervention</label>
+      <select id="ip-type">
+        <option value="dépannage">Dépannage</option>
+        <option value="vente_pièces">Vente de pièces</option>
+        <option value="remplacement_urgent">Remplacement urgent</option>
+        <option value="autre">Autre</option>
+      </select>
+    </div>
+    <div class="fg"><label>Description *</label><textarea id="ip-description" placeholder="Détail de l'intervention…"></textarea></div>
+
+    <div class="sec">Pièces utilisées / vendues</div>
+    <div id="ip-pieces-list" style="margin-bottom:8px"></div>
+    <button type="button" class="btn btn-s btn-sm" onclick="ajouterPieceIP()" style="margin-bottom:14px">+ Ajouter une pièce</button>
+
+    <div class="sec">📷 Photo (optionnel)</div>
+    <div id="ip-photo-preview" style="margin-bottom:8px"></div>
+    <button type="button" class="btn btn-s btn-sm" onclick="$('ip-photo-input').click()" style="margin-bottom:14px">📷 Prendre une photo</button>
+    <input type="file" id="ip-photo-input" accept="image/*" capture="environment" style="display:none" onchange="onPhotoIPSelected(this)">
+
+    <div class="sec">Signature client (optionnel)</div>
+    <div class="fg" style="margin-bottom:8px"><input type="text" id="ip-signataire" placeholder="Nom du signataire"></div>
+    <div style="background:#fff;border:2px dashed #d1d5db;border-radius:12px;position:relative;margin-bottom:8px">
+      <canvas id="ip-sig-canvas" style="width:100%;height:160px;display:block;touch-action:none"></canvas>
+      <div id="ip-sig-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;pointer-events:none">Signature (optionnelle)</div>
+    </div>
+    <button type="button" class="btn btn-s btn-sm" onclick="effacerSignatureIP()">🗑 Effacer</button>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="validerInterventionPonctuelle()" id="btn-valider-ip">✅ Enregistrer l'intervention</button>
   </div>
 </div>
 
@@ -1076,6 +1121,11 @@ async function ouvrirVerif(equipId){
       </button>
     </div>
 
+    <div class="sec">📷 Photos d'anomalie</div>
+    <div id="verif-photos-list" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"></div>
+    <button type="button" class="btn btn-s btn-sm" onclick="prendrePhotoAnomalie()" style="margin-bottom:14px">📷 Prendre une photo</button>
+    <input type="file" id="verif-photo-input" accept="image/*" capture="environment" style="display:none" onchange="onPhotoSelected(this)">
+
     <div class="sec">Planification</div>
     <div class="fg">
       <label>Prochaine échéance</label>
@@ -1086,6 +1136,10 @@ async function ouvrirVerif(equipId){
       <textarea id="verif-obs" placeholder="Anomalies, remarques…">${savedObs}</textarea>
     </div>
   `;
+
+  // Réinitialiser et afficher les photos déjà prises pour cette session de vérif
+  currentPhotosVerif = [];
+  renderPhotosVerif();
 
   // Restaurer pièces
   currentPieces.forEach(p=>{
@@ -1282,6 +1336,24 @@ async function validerVerif(){
     reinitialise_compteur:reinitialise
   }).select().single();
   if(ve){toast('Erreur enregistrement','err');return}
+
+  // Upload des photos d'anomalie
+  const photosUploadees = [];
+  for(const photo of currentPhotosVerif){
+    const fileName = `photo_${vData.id}_${Date.now()}_${Math.random().toString(36).slice(2,7)}.jpg`;
+    const {error:upErr} = await db.storage.from('photos-verification').upload(fileName, photo.blob, {contentType:'image/jpeg'});
+    if(!upErr){
+      const {data:urlData} = db.storage.from('photos-verification').getPublicUrl(fileName);
+      await db.from('photos_verification').insert({
+        verification_id: vData.id,
+        equipement_id: currentEquipId,
+        photo_url: urlData.publicUrl,
+        photo_path: fileName,
+        pris_par: ME.id
+      });
+      photosUploadees.push(urlData.publicUrl);
+    }
+  }
 
   // Si le palier réinitialise le compteur (recharge, révision...), mettre à jour l'équipement
   if(reinitialise){
@@ -1934,6 +2006,307 @@ async function saveEquipTerrain(){
 
 // Types équipements chargés au démarrage terrain
 let typesEquipTerrain = [];
+
+// ============================================================
+// PHOTOS D'ANOMALIE — capture et prévisualisation
+// ============================================================
+let currentPhotosVerif = [];
+
+function prendrePhotoAnomalie(){
+  $('verif-photo-input').click();
+}
+
+function onPhotoSelected(input){
+  const file = input.files[0];
+  if(!file) return;
+  // Compresser l'image avant stockage (limite ~1200px de large)
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const maxW = 1200;
+      const scale = Math.min(1, maxW / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => {
+        const previewUrl = URL.createObjectURL(blob);
+        currentPhotosVerif.push({blob, previewUrl});
+        renderPhotosVerif();
+      }, 'image/jpeg', 0.75);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+
+function renderPhotosVerif(){
+  const el = $('verif-photos-list');
+  if(!el) return;
+  if(!currentPhotosVerif.length){
+    el.innerHTML = '<div style="font-size:12px;color:var(--txt-l)">Aucune photo ajoutée</div>';
+    return;
+  }
+  el.innerHTML = currentPhotosVerif.map((p,i)=>`
+    <div style="position:relative;width:84px;height:84px">
+      <img src="${p.previewUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:10px;border:1.5px solid #e5e7eb">
+      <button type="button" onclick="supprimerPhotoVerif(${i})" style="position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;background:#dc2626;color:#fff;border:2px solid #fff;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>
+    </div>
+  `).join('');
+}
+
+function supprimerPhotoVerif(idx){
+  currentPhotosVerif.splice(idx,1);
+  renderPhotosVerif();
+}
+
+// ============================================================
+// INTERVENTION PONCTUELLE (hors planning)
+// ============================================================
+let ipPieces = [];
+let ipPhoto = null;
+let ipSigCtx = null, ipSigDrawing = false, ipSigHasContent = false;
+
+function ouvrirInterventionPonctuelle(){
+  ipPieces = [];
+  ipPhoto = null;
+  ipSigHasContent = false;
+  $('ip-type').value = 'dépannage';
+  $('ip-description').value = '';
+  $('ip-signataire').value = '';
+  $('ip-photo-preview').innerHTML = '';
+  renderIpPieces();
+  goTo('s-intervention-ponctuelle');
+  setTimeout(initIpSignatureCanvas, 100);
+}
+
+function initIpSignatureCanvas(){
+  const canvas = document.getElementById('ip-sig-canvas');
+  if(!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ipSigCtx = canvas.getContext('2d');
+  ipSigCtx.scale(dpr, dpr);
+  ipSigCtx.lineWidth = 2.5;
+  ipSigCtx.lineCap = 'round';
+  ipSigCtx.strokeStyle = '#1a1a2e';
+  ipSigHasContent = false;
+  document.getElementById('ip-sig-placeholder').style.display = 'flex';
+
+  const getPos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return {x: t.clientX - r.left, y: t.clientY - r.top};
+  };
+  const start = (e) => {e.preventDefault();ipSigDrawing=true;ipSigHasContent=true;document.getElementById('ip-sig-placeholder').style.display='none';const p=getPos(e);ipSigCtx.beginPath();ipSigCtx.moveTo(p.x,p.y);};
+  const move = (e) => {if(!ipSigDrawing)return;e.preventDefault();const p=getPos(e);ipSigCtx.lineTo(p.x,p.y);ipSigCtx.stroke();};
+  const end = () => {ipSigDrawing=false;};
+
+  canvas.ontouchstart=start;canvas.ontouchmove=move;canvas.ontouchend=end;
+  canvas.onmousedown=start;canvas.onmousemove=move;canvas.onmouseup=end;canvas.onmouseleave=end;
+}
+
+function effacerSignatureIP(){
+  const canvas = document.getElementById('ip-sig-canvas');
+  if(ipSigCtx) ipSigCtx.clearRect(0,0,canvas.width,canvas.height);
+  ipSigHasContent = false;
+  document.getElementById('ip-sig-placeholder').style.display = 'flex';
+}
+
+function onPhotoIPSelected(input){
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const maxW = 1200;
+      const scale = Math.min(1, maxW / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => {
+        ipPhoto = {blob, previewUrl: URL.createObjectURL(blob)};
+        $('ip-photo-preview').innerHTML = `<div style="position:relative;width:100px;height:100px"><img src="${ipPhoto.previewUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:10px;border:1.5px solid #e5e7eb"><button type="button" onclick="supprimerPhotoIP()" style="position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;background:#dc2626;color:#fff;border:2px solid #fff;font-size:13px;cursor:pointer">✕</button></div>`;
+      }, 'image/jpeg', 0.75);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+
+function supprimerPhotoIP(){
+  ipPhoto = null;
+  $('ip-photo-preview').innerHTML = '';
+}
+
+function ajouterPieceIP(){
+  const modal = document.createElement('div');
+  modal.className = 'mo open';
+  modal.innerHTML = `<div class="mo-box">
+    <div class="mo-handle"></div>
+    <h3>Ajouter une pièce</h3>
+    <div class="fg"><label>Désignation *</label><input type="text" id="ipp-lib" placeholder="Ex: Joint de robinet"></div>
+    <div class="fg"><label>Référence</label><input type="text" id="ipp-ref"></div>
+    <div class="fg"><label>Quantité</label><input type="number" id="ipp-qty" value="1" min="0.1" step="0.1"></div>
+    <div class="fg"><label>Prix unitaire HT (€)</label><input type="number" id="ipp-prix" step="0.01" placeholder="optionnel"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-s" style="flex:1" onclick="this.closest('.mo').remove()">Annuler</button>
+      <button class="btn btn-p" style="flex:1" onclick="confirmerPieceIP(this)">Ajouter</button>
+    </div>
+  </div>`;
+  modal.addEventListener('click', e=>{ if(e.target===modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+function confirmerPieceIP(btn){
+  const lib = document.getElementById('ipp-lib').value.trim();
+  if(!lib){toast('Désignation obligatoire','err');return}
+  ipPieces.push({
+    libelle: lib,
+    reference: document.getElementById('ipp-ref').value.trim() || null,
+    quantite: parseFloat(document.getElementById('ipp-qty').value) || 1,
+    unite: 'unité',
+    prix_unitaire_ht: parseFloat(document.getElementById('ipp-prix').value) || null
+  });
+  btn.closest('.mo').remove();
+  renderIpPieces();
+}
+
+function renderIpPieces(){
+  const el = $('ip-pieces-list');
+  if(!ipPieces.length){
+    el.innerHTML = '<div style="font-size:12px;color:var(--txt-l)">Aucune pièce ajoutée</div>';
+    return;
+  }
+  el.innerHTML = ipPieces.map((p,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border-radius:10px;margin-bottom:6px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700">${p.libelle} × ${p.quantite}</div>
+        <div style="font-size:11px;color:var(--txt-l)">${p.reference||''}${p.prix_unitaire_ht?' · '+p.prix_unitaire_ht.toFixed(2)+'€/u':''}</div>
+      </div>
+      <button type="button" onclick="ipPieces.splice(${i},1);renderIpPieces()" style="background:#fee2e2;color:#dc2626;border:none;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px">✕</button>
+    </div>
+  `).join('');
+}
+
+async function validerInterventionPonctuelle(){
+  const description = $('ip-description').value.trim();
+  if(!description){toast('Description obligatoire','err');return}
+
+  const btn = $('btn-valider-ip');
+  btn.disabled = true; btn.textContent = '⏳ Enregistrement…';
+
+  // Upload photo si présente
+  let photoUrl = null, photoPath = null;
+  if(ipPhoto){
+    const fileName = `ip_photo_${currentClient.id}_${Date.now()}.jpg`;
+    const {error} = await db.storage.from('photos-verification').upload(fileName, ipPhoto.blob, {contentType:'image/jpeg'});
+    if(!error){
+      const {data:urlData} = db.storage.from('photos-verification').getPublicUrl(fileName);
+      photoUrl = urlData.publicUrl; photoPath = fileName;
+    }
+  }
+
+  // Signature si présente
+  let signatureUrl = null;
+  const signataire = $('ip-signataire').value.trim();
+  if(ipSigHasContent){
+    const canvas = document.getElementById('ip-sig-canvas');
+    signatureUrl = canvas.toDataURL('image/png');
+  }
+
+  // Créer l'intervention
+  const {data: ipData, error: ipErr} = await db.from('interventions_ponctuelles').insert({
+    client_id: currentClient.id,
+    agence_id: currentClient.agence_id,
+    technicien_id: ME.id,
+    date_intervention: new Date().toISOString().slice(0,10),
+    type_intervention: $('ip-type').value,
+    description,
+    photo_url: photoUrl,
+    photo_path: photoPath,
+    signataire_nom: signataire || null,
+    statut_facturation: 'à_facturer'
+  }).select().single();
+
+  if(ipErr){
+    toast('Erreur: '+ipErr.message, 'err');
+    btn.disabled = false; btn.textContent = '✅ Enregistrer l\'intervention';
+    return;
+  }
+
+  // Enregistrer les pièces
+  if(ipPieces.length){
+    await db.from('pieces_intervention_ponctuelle').insert(ipPieces.map(p=>({
+      intervention_id: ipData.id,
+      libelle: p.libelle, reference: p.reference,
+      quantite: p.quantite, unite: p.unite,
+      prix_unitaire_ht: p.prix_unitaire_ht
+    })));
+  }
+
+  // Générer le PDF
+  const {jsPDF} = window.jspdf;
+  const doc = new jsPDF();
+  doc.setFillColor(192,57,43); doc.rect(0,0,210,26,'F');
+  doc.setTextColor(255); doc.setFontSize(13); doc.setFont('helvetica','bold');
+  doc.text('BFS — Bon d\'intervention ponctuelle', 14, 11);
+  doc.setFontSize(9); doc.setFont('helvetica','normal');
+  doc.text(`${currentClient.raison_sociale} · ${currentClient.ville||''}`, 14, 19);
+  doc.text(`${new Date().toLocaleDateString('fr-FR')} · ${ME.prenom||''} ${ME.nom}`, 130, 19);
+  doc.setTextColor(30); let y = 35;
+
+  doc.autoTable({startY:y, margin:{left:14,right:14}, head:[], body:[
+    ['Type', $('ip-type').options[$('ip-type').selectedIndex].text],
+    ['Description', description]
+  ], styles:{fontSize:10}, columnStyles:{0:{fontStyle:'bold',cellWidth:40}}});
+  y = doc.lastAutoTable.finalY + 10;
+
+  if(ipPieces.length){
+    doc.setFont('helvetica','bold'); doc.text('Pièces', 14, y); y += 2;
+    doc.autoTable({startY:y, margin:{left:14,right:14},
+      head:[['Désignation','Référence','Qté','PU HT','Total HT']],
+      body: ipPieces.map(p=>[p.libelle, p.reference||'—', p.quantite, p.prix_unitaire_ht?p.prix_unitaire_ht.toFixed(2)+'€':'—', p.prix_unitaire_ht?(p.prix_unitaire_ht*p.quantite).toFixed(2)+'€':'—']),
+      styles:{fontSize:9}, headStyles:{fillColor:[192,57,43]}
+    });
+    y = doc.lastAutoTable.finalY + 10;
+  }
+
+  y = Math.max(y+10, 230);
+  doc.setDrawColor(200);
+  doc.text('Technicien', 14, y);
+  doc.text('Client / Signataire', 122, y);
+  doc.line(14,y+3,82,y+3); doc.line(122,y+3,196,y+3);
+  doc.setFontSize(9);
+  doc.text(`${ME.prenom||''} ${ME.nom}`, 14, y+8);
+  if(signatureUrl){
+    doc.addImage(signatureUrl,'PNG',122,y-22,70,24);
+    doc.text(signataire||'', 122, y+8);
+  } else {
+    doc.text('(non signé)', 122, y+8);
+  }
+
+  const pdfBlob = doc.output('blob');
+  const pdfFileName = `bon_ip_${currentClient.id}_${Date.now()}.pdf`;
+  const {error: pdfUpErr} = await db.storage.from('bons-intervention').upload(pdfFileName, pdfBlob, {contentType:'application/pdf'});
+  if(!pdfUpErr){
+    const {data:pdfUrlData} = db.storage.from('bons-intervention').getPublicUrl(pdfFileName);
+    await db.from('interventions_ponctuelles').update({pdf_url: pdfUrlData.publicUrl, pdf_path: pdfFileName}).eq('id', ipData.id);
+  }
+
+  toast('Intervention enregistrée ✓');
+  btn.disabled = false; btn.textContent = '✅ Enregistrer l\'intervention';
+  goTo('s-client');
+}
 
 // ============================================================
 // MON PLANNING — Consultation / Création / Modification / Suppression
