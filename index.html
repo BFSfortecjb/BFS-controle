@@ -589,7 +589,7 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Tarif HT (€)</label><input type="number" id="ct-tarif" step="0.01"></div>
       <div class="fg"><label>Périodicité</label><select id="ct-period"><option value="annuelle">Annuelle</option><option value="semestrielle">Semestrielle</option><option value="trimestrielle">Trimestrielle</option><option value="mensuelle">Mensuelle</option></select></div>
       <div class="fg"><label>Statut</label><select id="ct-statut"><option value="actif">Actif</option><option value="suspendu">Suspendu</option><option value="terminé">Terminé</option></select></div>
-      <div class="fg" style="grid-column:1/-1"><label>Équipements couverts</label><div id="ct-types-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:5px;margin-top:4px"></div></div>
+      <div class="fg" style="grid-column:1/-1"><label>Équipements couverts</label><div id="ct-types-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-top:6px"></div></div>
       <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="ct-notes"></textarea></div>
     </div>
     <div class="fa"><button class="btn btn-s" onclick="CM('mo-contrat')">Annuler</button><button class="btn btn-p" onclick="saveContrat()">Enregistrer</button></div>
@@ -1000,7 +1000,7 @@ window.adminSetAgence=function(btn,ag){
 async function loadDashSec(){
   const [{data:ec},{data:rdvSem}]=await Promise.all([
     db.from('vue_echeances').select('*'),
-    db.from('vue_planning').select('*').gte('date_rdv',new Date().toISOString().slice(0,10)).lte('date_rdv',new Date(Date.now()+7*86400000).toISOString().slice(0,10))
+    db.from('vue_planning').select('*').gte('date_rdv',dateLocale(new Date())).lte('date_rdv',dateLocale(new Date(Date.now()+7*86400000)))
   ]);
   const e=ec||[];
   $('sec-stats').innerHTML=`
@@ -1048,12 +1048,17 @@ async function exportEcheancesXLS(scope){
 // ============================================================
 const JOURS=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
 const MOIS=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+function dateLocale(d){
+  const pad=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+
 async function renderCal(containerId,date,rdvList){
   const el=$(containerId);if(!el)return;
   if(!rdvList){
     const d=new Date(date.getFullYear(),date.getMonth(),1);
     const f=new Date(date.getFullYear(),date.getMonth()+1,0);
-    const {data}=await db.from('vue_planning').select('*').gte('date_rdv',d.toISOString().slice(0,10)).lte('date_rdv',f.toISOString().slice(0,10));
+    const {data}=await db.from('vue_planning').select('*').gte('date_rdv',dateLocale(d)).lte('date_rdv',dateLocale(f));
     rdvList=data||[];
   }
   const lb=containerId==='calendrier'?$('cal-label'):$('calp-label');
@@ -1068,7 +1073,7 @@ async function renderCal(containerId,date,rdvList){
       const d2=new Date(date.getFullYear(),date.getMonth(),day);
       const cur=day>=1&&day<=last;
       const isToday=d2.getTime()===today.getTime();
-      const ds=d2.toISOString().slice(0,10);
+      const ds=dateLocale(d2);
       const dr=rdvList.filter(x=>x.date_rdv===ds);
       html+=`<div class="cal-day${!cur?' other-month':''}${isToday?' today':''}" onclick="onCalClick('${ds}')">
         <div class="cal-num">${cur?day:''}</div>
@@ -1087,11 +1092,16 @@ window.onCalClick=ds=>{$('rdv-date').value=ds;openRdvModal()};
 // ============================================================
 async function loadPlanningPage(){
   const tid=$('f-tech-plan')?.value;const ag=$('f-ag-plan')?.value;
-  const d=new Date(calpDate.getFullYear(),calpDate.getMonth(),1);
-  const f=new Date(calpDate.getFullYear(),calpDate.getMonth()+1,0);
-  let q=db.from('vue_planning').select('*').gte('date_rdv',d.toISOString().slice(0,10)).lte('date_rdv',f.toISOString().slice(0,10));
+  const y=calpDate.getFullYear(),m=calpDate.getMonth();
+  const pad=n=>String(n).padStart(2,'0');
+  const dStr=`${y}-${pad(m+1)}-01`;
+  const lastDay=new Date(y,m+1,0).getDate();
+  const fStr=`${y}-${pad(m+1)}-${pad(lastDay)}`;
+  let q=db.from('vue_planning').select('*').gte('date_rdv',dStr).lte('date_rdv',fStr);
   if(tid)q=q.eq('technicien_id',tid);if(ag)q=q.eq('agence_code',ag);
-  const {data}=await q;rdvs=data||[];
+  const {data,error}=await q;
+  if(error)console.error('Erreur planning:',error);
+  rdvs=data||[];
   renderCal('cal-planning',calpDate,rdvs);
 }
 
@@ -1103,7 +1113,7 @@ async function openRdvModal(prefill=null){
   $('rdv-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
   $('rdv-tech').innerHTML=profils.map(p=>`<option value="${p.id}">${p.prenom||''} ${p.nom}</option>`).join('');
   ['rdv-id','rdv-notes'].forEach(id=>$(id).value='');
-  $('rdv-date').value=new Date().toISOString().slice(0,10);$('rdv-heure').value='09:00';
+  $('rdv-date').value=dateLocale(new Date());$('rdv-heure').value='09:00';
   $('rdv-duree').value=60;$('rdv-statut').value='planifié';$('mo-rdv-t').textContent='Nouveau RDV';
   if(ME.role==='technicien')$('rdv-tech').value=ME.id;
   if(prefill){Object.assign($,{});$('rdv-id').value=prefill.id||'';$('rdv-client').value=prefill.client_id||'';$('rdv-tech').value=prefill.technicien_id||'';$('rdv-date').value=prefill.date_rdv||'';$('rdv-heure').value=prefill.heure_debut?.slice(0,5)||'';$('rdv-duree').value=prefill.duree_minutes||60;$('rdv-type-int').value=prefill.type_intervention||'';$('rdv-statut').value=prefill.statut||'planifié';$('rdv-notes').value=prefill.notes||'';$('mo-rdv-t').textContent='Modifier le RDV';}
@@ -1327,7 +1337,7 @@ async function loadVerifs(){
 async function openVerifModal(prefill=null){
   if(!clients.length)await loadClients();
   $('v-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
-  $('v-id').value='';$('v-date').value=new Date().toISOString().slice(0,10);
+  $('v-id').value='';$('v-date').value=dateLocale(new Date());
   $('v-echeance').value='';$('v-tech').value=`${ME.prenom||''} ${ME.nom}`.trim();
   $('v-resultat').value='conforme';$('v-obs').value='';$('pc-list').innerHTML='';
   if(prefill?.client_id)$('v-client').value=prefill.client_id;
@@ -1510,7 +1520,7 @@ function renderContrats(){
 async function openContratModal(prefill=null){
   if(!clients.length)await loadClients();
   $('ct-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
-  $('ct-types-grid').innerHTML=typesEquip.map(t=>`<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:4px 8px;border:1px solid #e5e7eb;border-radius:6px"><input type="checkbox" name="ct-type" value="${t.code}" ${prefill?.types_couverts?.includes(t.code)?'checked':''}> ${t.icone} ${t.libelle}</label>`).join('');
+  $('ct-types-grid').innerHTML=typesEquip.map(t=>`<label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;line-height:1.3"><input type="checkbox" name="ct-type" value="${t.code}" style="flex-shrink:0;margin:0" ${prefill?.types_couverts?.includes(t.code)?'checked':''}><span>${t.icone} ${t.libelle}</span></label>`).join('');
   ['ct-id','ct-num','ct-tarif','ct-notes'].forEach(id=>$(id).value='');$('ct-debut').value='';$('ct-fin').value='';$('ct-type').value='annuel';$('ct-period').value='annuelle';$('ct-statut').value='actif';$('mo-ct-t').textContent='Nouveau contrat';
   if(prefill){$('ct-id').value=prefill.id;$('ct-client').value=prefill.client_id;$('ct-num').value=prefill.numero_contrat||'';$('ct-type').value=prefill.type_contrat||'annuel';$('ct-debut').value=prefill.date_debut||'';$('ct-fin').value=prefill.date_fin||'';$('ct-tarif').value=prefill.tarif_annuel||'';$('ct-period').value=prefill.periodicite_visite||'annuelle';$('ct-statut').value=prefill.statut||'actif';$('ct-notes').value=prefill.notes||'';$('mo-ct-t').textContent='Modifier';}
   OM('mo-contrat');
