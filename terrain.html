@@ -412,6 +412,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       </select>
     </div>
     <div class="fg"><label>Notes</label><textarea id="ef-notes" placeholder="Informations complémentaires…"></textarea></div>
+
+    <div class="sec" style="margin-top:16px">📜 Historique (informatif)</div>
+    <div style="font-size:12px;color:var(--txt-l);margin-bottom:10px">Opérations passées connues. N'impacte pas le calcul automatique des échéances.</div>
+    <div id="ef-historique-list" style="margin-bottom:8px"></div>
+    <button type="button" class="btn btn-s" onclick="ajouterLigneHistoriqueTerrain()" style="margin-bottom:10px">+ Ajouter une ligne</button>
+
     <div style="height:10px"></div>
   </div>
   <div class="footer">
@@ -871,11 +877,18 @@ async function ouvrirVerif(equipId){
       Dernière vérif. : ${fmt(last.date_verification)} — ${last.resultat||'—'} · Échéance : ${fmt(last.date_prochaine_echeance)}
     </div>`:''}
 
+    ${palierSuggere?.enRetard ? `
+    <div style="background:#1a1a2e;color:#fff;border-radius:10px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:3px">⚠️ OPÉRATION EN RETARD</div>
+      <div style="font-size:12px;opacity:.85">${palierSuggere.libelle} aurait dû être réalisée il y a ${palierSuggere.anneesRetard} an(s). À effectuer en priorité.</div>
+    </div>
+    ` : ''}
+
     ${palierSuggere ? `
     <div class="sec">Type d'opération</div>
     <div class="fg" style="margin-bottom:14px">
-      <select id="verif-palier" onchange="onPalierChange()" style="width:100%;padding:11px 13px;border:1.5px solid var(--rouge);border-radius:10px;font-size:14px;font-weight:600;background:#fff5f4">
-        ${(paliers||[]).map(p=>`<option value="${p.id}" data-code="${p.code}" data-reinit="${p.reinitialise_compteur}" ${p.id===palierSuggere.id?'selected':''}>${p.libelle}${p.id===palierSuggere.id?' (suggéré)':''}</option>`).join('')}
+      <select id="verif-palier" onchange="onPalierChange()" style="width:100%;padding:11px 13px;border:1.5px solid ${palierSuggere.enRetard?'#1a1a2e':'var(--rouge)'};border-radius:10px;font-size:14px;font-weight:600;background:${palierSuggere.enRetard?'#f3f4f6':'#fff5f4'}">
+        ${(paliers||[]).map(p=>`<option value="${p.id}" data-code="${p.code}" data-reinit="${p.reinitialise_compteur}" ${p.id===palierSuggere.id?'selected':''}>${p.libelle}${p.id===palierSuggere.id?(palierSuggere.enRetard?' (EN RETARD)':' (suggéré)'):''}</option>`).join('')}
       </select>
       ${palierSuggere.reference_normative ? `<div style="font-size:11px;color:var(--txt-l);margin-top:4px">📋 ${palierSuggere.reference_normative}</div>` : ''}
     </div>
@@ -979,30 +992,42 @@ function calculerPalierSuggere(equip, paliers){
   // Date de référence : dernière réinitialisation (recharge/révision) sinon mise en service sinon fabrication
   const dateRef = equip.date_derniere_reinitialisation || equip.date_mise_en_service || equip.date_fabrication;
   if(!dateRef){
-    // Pas de date connue → on suggère le palier le plus simple (premier dans l'ordre)
-    return paliers.find(p => !p.reinitialise_compteur) || paliers[0];
+    const p = paliers.find(p => !p.reinitialise_compteur) || paliers[0];
+    return {...p, enRetard:false, ageAnnees:null};
   }
 
   const ageAnnees = (new Date() - new Date(dateRef)) / (365.25 * 86400000);
 
-  // Trier les paliers du plus long intervalle au plus court pour trouver le palier applicable
-  const triesDesc = [...paliers].sort((a,b) => b.intervalle_annees - a.intervalle_annees);
+  // Paliers réinitialisants (MAA, révision...) triés du plus grand intervalle au plus petit
+  const reinitialisants = paliers.filter(p => p.reinitialise_compteur).sort((a,b) => b.intervalle_annees - a.intervalle_annees);
 
-  // Cherche le plus grand palier dont l'intervalle est atteint ou dépassé
-  for(const p of triesDesc){
-    // Tolérance : on considère le palier "dû" si on a atteint au moins 90% de l'intervalle
-    // et qu'il y a un nombre entier de fois cet intervalle dans l'âge (avec tolérance de ±2 mois comme la norme extincteur)
-    const ratio = ageAnnees / p.intervalle_annees;
-    const resteEntier = Math.abs(ratio - Math.round(ratio));
-    if(ratio >= 0.85 && resteEntier <= 0.2 && Math.round(ratio) >= 1){
-      return p;
+  // Cherche le palier réinitialisant le plus avancé dont l'échéance est DÉPASSÉE (retard réel, pas juste "dû cette année")
+  // On considère en retard si l'âge dépasse l'intervalle + tolérance de 2 mois (≈0.17 an, cf NF S61-919)
+  for(const p of reinitialisants){
+    if(ageAnnees >= p.intervalle_annees + 0.17){
+      // Calculer depuis combien de temps c'est en retard
+      const anneesRetard = ageAnnees - p.intervalle_annees;
+      return {...p, enRetard:true, anneesRetard:Math.round(anneesRetard*10)/10, ageAnnees};
     }
   }
 
-  // Par défaut : le palier le plus simple (non réinitialisant, plus petit intervalle)
+  // Pas de retard critique : palier normalement dû cette année (logique précédente)
+  const triesDesc = [...paliers].sort((a,b) => b.intervalle_annees - a.intervalle_annees);
+  for(const p of triesDesc){
+    const ratio = ageAnnees / p.intervalle_annees;
+    const resteEntier = Math.abs(ratio - Math.round(ratio));
+    if(ratio >= 0.85 && resteEntier <= 0.2 && Math.round(ratio) >= 1){
+      return {...p, enRetard:false, ageAnnees};
+    }
+  }
+
+  // Par défaut : palier le plus simple
   const simples = paliers.filter(p => !p.reinitialise_compteur);
-  if(simples.length) return simples.sort((a,b)=>a.intervalle_annees-b.intervalle_annees)[0];
-  return paliers[0];
+  if(simples.length){
+    const p = simples.sort((a,b)=>a.intervalle_annees-b.intervalle_annees)[0];
+    return {...p, enRetard:false, ageAnnees};
+  }
+  return {...paliers[0], enRetard:false, ageAnnees};
 }
 
 function onPalierChange(){
@@ -1532,7 +1557,8 @@ async function ouvrirFicheEquip(id){
       </div>
     </div>
     ${specRows||perso?`<div class="card" style="margin-bottom:14px"><div style="padding:14px 16px"><div class="sec">Caractéristiques</div>${specRows}${perso}</div></div>`:''}
-    ${equip.notes?`<div class="card"><div style="padding:14px 16px;font-size:13px;color:var(--txt-l)"><div class="sec">Notes</div>${equip.notes}</div></div>`:''}
+    ${equip.notes?`<div class="card" style="margin-bottom:14px"><div style="padding:14px 16px;font-size:13px;color:var(--txt-l)"><div class="sec">Notes</div>${equip.notes}</div></div>`:''}
+    ${(equip.historique&&equip.historique.length)?`<div class="card"><div style="padding:14px 16px"><div class="sec">📜 Historique</div>${[...equip.historique].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(h=>`<div style="padding:8px 0;border-bottom:1px solid #f0f0f0"><div style="font-size:13px;font-weight:600">${fmt(h.date)} — ${h.type}</div>${h.commentaire?`<div style="font-size:12px;color:var(--txt-l)">${h.commentaire}</div>`:''}</div>`).join('')}</div></div>`:''}
   `;
   goTo('s-fiche-equip');
 }
@@ -1547,6 +1573,7 @@ function verifierCetEquip(){
 async function creerEquipement(){
   _prevScreen = document.querySelector('.screen.active')?.id || 's-client';
   _efRestoreData = {};
+  _historiqueEquipTerrain = [];
   document.getElementById('ef-id').value = '';
   document.getElementById('ef-client-nom').value = currentClient?.raison_sociale||'';
   document.getElementById('equip-form-titre').textContent = 'Nouvel équipement';
@@ -1558,6 +1585,7 @@ async function creerEquipement(){
   const sel=document.getElementById('ef-type');
   sel.innerHTML=typesEquipTerrain.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
   onEFTypeChange();
+  renderHistoriqueTerrain();
   goTo('s-equip-form');
 }
 
@@ -1566,6 +1594,7 @@ async function editerEquipement(){
   const equip = currentEquipements.find(e=>e.id===_ficheEquipId);
   if(!equip){toast('Équipement introuvable','err');return}
   _efRestoreData = {...(equip.donnees_specifiques||{})};
+  _historiqueEquipTerrain = Array.isArray(equip.historique) ? [...equip.historique] : [];
   document.getElementById('ef-id').value = equip.id;
   document.getElementById('ef-client-nom').value = currentClient?.raison_sociale||'';
   document.getElementById('equip-form-titre').textContent = 'Modifier équipement';
@@ -1585,7 +1614,72 @@ async function editerEquipement(){
   sel.innerHTML=typesEquipTerrain.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
   sel.value = equip.type_equipement_code||'';
   onEFTypeChange();
+  renderHistoriqueTerrain();
   goTo('s-equip-form');
+}
+
+// ============================================================
+// HISTORIQUE INFORMATIF — TERRAIN
+// ============================================================
+let _historiqueEquipTerrain = [];
+const TYPES_OP_HISTORIQUE_TERRAIN = [
+  'Mise en service','Vérification annuelle','Maintenance approfondie (MAA)',
+  'Révision atelier','Recharge','Remplacement pièce','Percussion / incident',
+  'Réparation','Contrôle réglementaire','Autre'
+];
+
+function renderHistoriqueTerrain(){
+  const el = document.getElementById('ef-historique-list');
+  if(!el) return;
+  if(!_historiqueEquipTerrain.length){
+    el.innerHTML = '<div style="font-size:12px;color:var(--txt-l);padding:6px 0">Aucune ligne d\'historique.</div>';
+    return;
+  }
+  const sorted = [..._historiqueEquipTerrain].map((h,i)=>({...h,_idx:i})).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  el.innerHTML = sorted.map(h=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border-radius:10px;margin-bottom:6px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700">${fmt(h.date)} — ${h.type}</div>
+        ${h.commentaire?`<div style="font-size:12px;color:var(--txt-l)">${h.commentaire}</div>`:''}
+      </div>
+      <button type="button" onclick="supprimerLigneHistoriqueTerrain(${h._idx})" style="background:#fee2e2;color:#dc2626;border:none;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px;flex-shrink:0">✕</button>
+    </div>
+  `).join('');
+}
+
+function ajouterLigneHistoriqueTerrain(){
+  const modal = document.createElement('div');
+  modal.className = 'mo open';
+  modal.innerHTML = `<div class="mo-box">
+    <div class="mo-handle"></div>
+    <h3>Ajouter une ligne d'historique</h3>
+    <div class="fg"><label>Date</label><input type="date" id="hist-date-t"></div>
+    <div class="fg"><label>Type d'opération</label>
+      <select id="hist-type-t">${TYPES_OP_HISTORIQUE_TERRAIN.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+    </div>
+    <div class="fg"><label>Commentaire</label><input type="text" id="hist-commentaire-t" placeholder="Précisions (optionnel)"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-s" style="flex:1" onclick="this.closest('.mo').remove()">Annuler</button>
+      <button class="btn btn-p" style="flex:1" onclick="confirmerLigneHistoriqueTerrain(this)">Ajouter</button>
+    </div>
+  </div>`;
+  modal.addEventListener('click', e=>{ if(e.target===modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+function confirmerLigneHistoriqueTerrain(btn){
+  const date = document.getElementById('hist-date-t').value;
+  const type = document.getElementById('hist-type-t').value;
+  const commentaire = document.getElementById('hist-commentaire-t').value.trim();
+  if(!date){ toast('Date obligatoire','err'); return; }
+  _historiqueEquipTerrain.push({date, type, commentaire});
+  btn.closest('.mo').remove();
+  renderHistoriqueTerrain();
+}
+
+function supprimerLigneHistoriqueTerrain(idx){
+  _historiqueEquipTerrain.splice(idx,1);
+  renderHistoriqueTerrain();
 }
 
 async function saveEquipTerrain(){
@@ -1609,6 +1703,7 @@ async function saveEquipTerrain(){
     statut: document.getElementById('ef-statut').value,
     notes: document.getElementById('ef-notes').value.trim()||null,
     donnees_specifiques: getEFSpecificData(),
+    historique: _historiqueEquipTerrain,
     updated_at: new Date().toISOString()
   };
   const {data, error} = id

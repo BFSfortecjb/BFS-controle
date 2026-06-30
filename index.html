@@ -313,6 +313,12 @@ tr:hover td{background:#fafafa}
           <button class="ag-tab" onclick="adminSetAgence(this,'sevremont')">📍 Sevremont</button>
         </div>
         <div class="stats-grid" id="admin-stats"></div>
+        <div class="card" id="card-retard-operations" style="display:none">
+          <div class="card-header" style="background:#1a1a2e">
+            <h2 style="color:#fff">⛔ Opérations critiques en retard (MAA / Révision)</h2>
+          </div>
+          <div id="admin-retard-operations"></div>
+        </div>
         <div class="card">
           <div class="card-header">
             <h2>⚠️ Toutes les échéances</h2>
@@ -521,6 +527,12 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Statut</label><select id="e-statut"><option value="opérationnel">Opérationnel</option><option value="à remplacer">À remplacer</option><option value="en révision">En révision</option><option value="hors service">Hors service</option><option value="réformé">Réformé</option></select></div>
       <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="e-notes"></textarea></div>
     </div>
+
+    <div class="sec-title">📜 Historique (informatif)</div>
+    <div style="font-size:12px;color:var(--txt-l);margin-bottom:10px">Saisissez les opérations passées connues (vérifications, MAA, recharges…). N'impacte pas le calcul automatique des échéances.</div>
+    <div id="e-historique-list" style="margin-bottom:8px"></div>
+    <button type="button" class="btn btn-s btn-sm" onclick="ajouterLigneHistorique()">+ Ajouter une ligne d'historique</button>
+
     <div class="fa"><button class="btn btn-s" onclick="CM('mo-equip')">Annuler</button><button class="btn btn-p" onclick="saveEquip()">Enregistrer</button></div>
   </div></div>
 </div>
@@ -948,7 +960,9 @@ window.dashTechTab=async function(btn,scope){
 async function loadDashAdmin(){
   let q=db.from('vue_echeances').select('*');
   if(adminAgenceFilter)q=q.eq('agence_code',adminAgenceFilter);
-  const [{data:ec},{data:cl},{data:eq}]=await Promise.all([q,db.from('clients').select('id'),db.from('equipements').select('id')]);
+  let qRetard=db.from('vue_operations_en_retard').select('*');
+  if(adminAgenceFilter)qRetard=qRetard.eq('agence_code',adminAgenceFilter);
+  const [{data:ec},{data:cl},{data:eq},{data:retardOps}]=await Promise.all([q,db.from('clients').select('id'),db.from('equipements').select('id'),qRetard]);
   const e=ec||[];
   $('admin-stats').innerHTML=`
     <div class="stat-card bleu"><div class="val">${cl?.length??0}</div><div class="lab">Clients</div></div>
@@ -956,6 +970,23 @@ async function loadDashAdmin(){
     <div class="stat-card rouge"><div class="val">${e.filter(x=>x.statut_echeance==='en retard').length}</div><div class="lab">En retard</div></div>
     <div class="stat-card orange"><div class="val">${e.filter(x=>x.statut_echeance==='urgent').length}</div><div class="lab">Urgent &lt;30j</div></div>
     <div class="stat-card vert"><div class="val">${e.filter(x=>x.statut_echeance==='ok').length}</div><div class="lab">À jour</div></div>`;
+
+  const retard = retardOps||[];
+  const cardRetard = $('card-retard-operations');
+  if(retard.length){
+    cardRetard.style.display='block';
+    $('admin-retard-operations').innerHTML = `<table><thead><tr><th>Client</th><th>Agence</th><th>Équipement</th><th>Type</th><th>Opération due</th><th>Retard</th></tr></thead><tbody>${retard.map(r=>`<tr>
+      <td><strong>${r.raison_sociale}</strong><br><small style="color:var(--txt-l)">${r.ville||''}</small></td>
+      <td><span class="badge bg">${r.agence_nom||'—'}</span></td>
+      <td>${r.icone||''} ${r.numero_identification||'—'}<br><small>${r.localisation||''}</small></td>
+      <td>${r.type_libelle||'—'}</td>
+      <td><strong>${r.palier_libelle}</strong><br><small style="color:var(--txt-l)">${r.reference_normative||''}</small></td>
+      <td><span class="badge br">+${r.annees_retard} an(s)</span></td>
+    </tr>`).join('')}</tbody></table>`;
+  } else {
+    cardRetard.style.display='none';
+  }
+
   renderEcheancesTable(e.filter(x=>x.statut_echeance!=='ok'),$('admin-echeances'));
 }
 window.adminSetAgence=function(btn,ag){
@@ -1187,15 +1218,85 @@ async function openEquipModal(prefill=null){
       'e-fab':prefill.date_fabrication||'',
       'e-mis':prefill.date_mise_en_service||''
     };
+    _historiqueEquip = Array.isArray(prefill.historique) ? [...prefill.historique] : [];
+  } else {
+    _historiqueEquip = [];
   }
+  renderHistoriqueEquip();
   // Toujours appeler APRÈS avoir défini la valeur du select
   onEquipTypeChange();
   OM('mo-equip');
 }
 function editEquip(id){openEquipModal(equipements.find(e=>e.id===id))}
+
+// ============================================================
+// HISTORIQUE INFORMATIF ÉQUIPEMENT
+// ============================================================
+let _historiqueEquip = [];
+const TYPES_OPERATION_HISTORIQUE = [
+  'Mise en service','Vérification annuelle','Maintenance approfondie (MAA)',
+  'Révision atelier','Recharge','Remplacement pièce','Percussion / incident',
+  'Réparation','Contrôle réglementaire','Autre'
+];
+
+function renderHistoriqueEquip(){
+  const el = $('e-historique-list');
+  if(!el) return;
+  if(!_historiqueEquip.length){
+    el.innerHTML = '<div style="font-size:12px;color:var(--txt-l);padding:8px 0">Aucune ligne d\'historique.</div>';
+    return;
+  }
+  // Trier par date décroissante pour l'affichage
+  const sorted = [..._historiqueEquip].map((h,i)=>({...h,_idx:i})).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  el.innerHTML = sorted.map(h=>`
+    <div style="display:grid;grid-template-columns:130px 1fr auto;gap:8px;align-items:center;padding:8px 10px;background:var(--bg);border-radius:8px;margin-bottom:6px">
+      <div style="font-size:13px;font-weight:600">${fmt(h.date)}</div>
+      <div style="font-size:13px">${h.type}${h.commentaire?' — <span style="color:var(--txt-l)">'+h.commentaire+'</span>':''}</div>
+      <button type="button" onclick="supprimerLigneHistorique(${h._idx})" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px">✕</button>
+    </div>
+  `).join('');
+}
+
+function ajouterLigneHistorique(){
+  const modal = document.createElement('div');
+  modal.className = 'mo open';
+  modal.style.zIndex = '300';
+  modal.innerHTML = `<div class="modal" style="max-width:420px">
+    <div class="mh"><h3>Ajouter une ligne d'historique</h3><button class="mclose" onclick="this.closest('.mo').remove()">✕</button></div>
+    <div class="mc">
+      <div class="fg" style="margin-bottom:12px"><label>Date *</label><input type="date" id="hist-date"></div>
+      <div class="fg" style="margin-bottom:12px"><label>Type d'opération *</label>
+        <select id="hist-type">${TYPES_OPERATION_HISTORIQUE.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+      </div>
+      <div class="fg" style="margin-bottom:12px"><label>Commentaire</label><input type="text" id="hist-commentaire" placeholder="Précisions (optionnel)"></div>
+      <div class="fa">
+        <button class="btn btn-s" onclick="this.closest('.mo').remove()">Annuler</button>
+        <button class="btn btn-p" onclick="confirmerLigneHistorique(this)">Ajouter</button>
+      </div>
+    </div>
+  </div>`;
+  modal.addEventListener('click', e=>{ if(e.target===modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+function confirmerLigneHistorique(btn){
+  const date = document.getElementById('hist-date').value;
+  const type = document.getElementById('hist-type').value;
+  const commentaire = document.getElementById('hist-commentaire').value.trim();
+  if(!date){ toast('Date obligatoire','err'); return; }
+  _historiqueEquip.push({date, type, commentaire});
+  btn.closest('.mo').remove();
+  renderHistoriqueEquip();
+}
+
+function supprimerLigneHistorique(idx){
+  _historiqueEquip.splice(idx,1);
+  renderHistoriqueEquip();
+}
+
 async function saveEquip(){
   const id=$('e-id').value;
-  const p={client_id:$('e-client').value,technicien_id:$('e-tech').value||null,type_equipement_code:$('e-type').value,numero_identification:$('e-num').value.trim(),numero_serie:$('e-serie').value.trim()||null,numero_lot:$('e-lot').value.trim()||null,numero_entreprise:$('e-num-ent').value.trim()||null,emplacement:$('e-emplacement').value.trim()||null,marque:$('e-marque').value.trim(),modele:$('e-modele').value.trim(),capacite_valeur:parseFloat($('e-cap')?.value)||null,capacite_unite:$('e-unite')?.value?.trim()||null,donnees_specifiques:getEquipSpecificData(),date_fabrication:$('e-fab')?.value||null,date_mise_en_service:$('e-mis')?.value||null,localisation:$('e-loc').value.trim(),etage_zone:$('e-zone').value.trim(),statut:$('e-statut').value,notes:$('e-notes').value.trim(),updated_at:new Date().toISOString()};
+  const p={client_id:$('e-client').value,technicien_id:$('e-tech').value||null,type_equipement_code:$('e-type').value,numero_identification:$('e-num').value.trim(),numero_serie:$('e-serie').value.trim()||null,numero_lot:$('e-lot').value.trim()||null,numero_entreprise:$('e-num-ent').value.trim()||null,emplacement:$('e-emplacement').value.trim()||null,marque:$('e-marque').value.trim(),modele:$('e-modele').value.trim(),capacite_valeur:parseFloat($('e-cap')?.value)||null,capacite_unite:$('e-unite')?.value?.trim()||null,donnees_specifiques:getEquipSpecificData(),date_fabrication:$('e-fab')?.value||null,date_mise_en_service:$('e-mis')?.value||null,localisation:$('e-loc').value.trim(),etage_zone:$('e-zone').value.trim(),statut:$('e-statut').value,notes:$('e-notes').value.trim(),historique:_historiqueEquip,updated_at:new Date().toISOString()};
   const {error}=id?await db.from('equipements').update(p).eq('id',id):await db.from('equipements').insert(p);
   if(error){toast('Erreur: '+error.message,'err');return}
   toast(id?'Modifié':'Créé');CM('mo-equip');loadEquipements();
@@ -1260,9 +1361,13 @@ async function onVerifEquipChange(){
       const palierSuggere = calculerPalierSuggereBureau(equip, paliers);
       palierZone.style.display = 'block';
       palierZone.innerHTML = `
+        ${palierSuggere?.enRetard ? `<div style="background:#1a1a2e;color:#fff;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+          <div style="font-weight:700;font-size:13px">⚠️ OPÉRATION EN RETARD</div>
+          <div style="font-size:11px;opacity:.85">${palierSuggere.libelle} aurait dû être faite il y a ${palierSuggere.anneesRetard} an(s)</div>
+        </div>` : ''}
         <label>Type d'opération</label>
-        <select id="v-palier" style="width:100%;border-color:var(--rouge);background:#fdf5f4;font-weight:600">
-          ${paliers.map(p=>`<option value="${p.id}" data-code="${p.code}" data-reinit="${p.reinitialise_compteur}" ${palierSuggere&&p.id===palierSuggere.id?'selected':''}>${p.libelle}${palierSuggere&&p.id===palierSuggere.id?' (suggéré)':''}</option>`).join('')}
+        <select id="v-palier" style="width:100%;border-color:${palierSuggere?.enRetard?'#1a1a2e':'var(--rouge)'};background:${palierSuggere?.enRetard?'#f3f4f6':'#fdf5f4'};font-weight:600">
+          ${paliers.map(p=>`<option value="${p.id}" data-code="${p.code}" data-reinit="${p.reinitialise_compteur}" ${palierSuggere&&p.id===palierSuggere.id?'selected':''}>${p.libelle}${palierSuggere&&p.id===palierSuggere.id?(palierSuggere.enRetard?' (EN RETARD)':' (suggéré)'):''}</option>`).join('')}
         </select>
         ${palierSuggere?.reference_normative?`<div style="font-size:11px;color:var(--txt-l);margin-top:3px">📋 ${palierSuggere.reference_normative}</div>`:''}
       `;
@@ -1288,20 +1393,30 @@ function calculerPalierSuggereBureau(equip, paliers){
   if(!paliers || !paliers.length) return null;
   const dateRef = equip?.date_derniere_reinitialisation || equip?.date_mise_en_service || equip?.date_fabrication;
   if(!dateRef){
-    return paliers.find(p => !p.reinitialise_compteur) || paliers[0];
+    const p = paliers.find(p => !p.reinitialise_compteur) || paliers[0];
+    return {...p, enRetard:false};
   }
   const ageAnnees = (new Date() - new Date(dateRef)) / (365.25 * 86400000);
+
+  const reinitialisants = paliers.filter(p => p.reinitialise_compteur).sort((a,b) => b.intervalle_annees - a.intervalle_annees);
+  for(const p of reinitialisants){
+    if(ageAnnees >= p.intervalle_annees + 0.17){
+      const anneesRetard = ageAnnees - p.intervalle_annees;
+      return {...p, enRetard:true, anneesRetard:Math.round(anneesRetard*10)/10};
+    }
+  }
+
   const triesDesc = [...paliers].sort((a,b) => b.intervalle_annees - a.intervalle_annees);
   for(const p of triesDesc){
     const ratio = ageAnnees / p.intervalle_annees;
     const resteEntier = Math.abs(ratio - Math.round(ratio));
     if(ratio >= 0.85 && resteEntier <= 0.2 && Math.round(ratio) >= 1){
-      return p;
+      return {...p, enRetard:false};
     }
   }
   const simples = paliers.filter(p => !p.reinitialise_compteur);
-  if(simples.length) return simples.sort((a,b)=>a.intervalle_annees-b.intervalle_annees)[0];
-  return paliers[0];
+  if(simples.length) return {...simples.sort((a,b)=>a.intervalle_annees-b.intervalle_annees)[0], enRetard:false};
+  return {...paliers[0], enRetard:false};
 }
 
 window.selPC=function(lbl,type,name){lbl.closest('.pc-radio').querySelectorAll('label').forEach(l=>l.classList.remove('ok-sel','nok-sel'));lbl.classList.add(type==='ok'?'ok-sel':'nok-sel');const item=lbl.closest('.pc-item');item.classList.remove('ok','nc');item.classList.add(type==='ok'?'ok':'nc')};
