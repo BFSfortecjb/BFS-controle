@@ -270,6 +270,10 @@ tr:hover td{background:#fafafa}
         <div class="ag-tabs" id="dash-tech-tabs" style="display:none"></div>
         <div class="stats-grid" id="dash-tech-stats"></div>
         <div class="card">
+          <div class="card-header"><h2>📅 Mes prochains RDV</h2><a href="#" onclick="navigate('planning');return false" style="font-size:12px;color:var(--rouge)">Voir tout →</a></div>
+          <div id="dash-tech-rdv"><div class="loading"><span class="spin"></span></div></div>
+        </div>
+        <div class="card">
           <div class="card-header">
             <h2 id="dash-tech-title">Mes échéances</h2>
             <button class="btn btn-s btn-sm" onclick="exportEcheancesXLS('tech')">⬇ Excel</button>
@@ -313,6 +317,10 @@ tr:hover td{background:#fafafa}
           <button class="ag-tab" onclick="adminSetAgence(this,'sevremont')">📍 Sevremont</button>
         </div>
         <div class="stats-grid" id="admin-stats"></div>
+        <div class="card">
+          <div class="card-header"><h2>📅 RDV des 7 prochains jours</h2><a href="#" onclick="navigate('planning');return false" style="font-size:12px;color:var(--rouge)">Voir tout →</a></div>
+          <div id="admin-rdv"><div class="loading"><span class="spin"></span></div></div>
+        </div>
         <div class="card" id="card-retard-operations" style="display:none">
           <div class="card-header" style="background:#1a1a2e">
             <h2 style="color:#fff">⛔ Opérations critiques en retard (MAA / Révision)</h2>
@@ -942,6 +950,23 @@ async function loadDashTech(){
     <div class="stat-card rouge"><div class="val">${retard}</div><div class="lab">En retard</div></div>
     <div class="stat-card orange"><div class="val">${urgent}</div><div class="lab">Urgent &lt;30j</div></div>
     <div class="stat-card vert"><div class="val">${proche}</div><div class="lab">Proche &lt;90j</div></div>`;
+
+  // Mes prochains RDV (30 prochains jours)
+  const {data:rdvData,error:rdvErr}=await db.from('vue_planning').select('*')
+    .eq('technicien_id',ME.id)
+    .gte('date_rdv',dateLocale(new Date()))
+    .lte('date_rdv',dateLocale(new Date(Date.now()+30*86400000)))
+    .order('date_rdv').order('heure_debut');
+  if(rdvErr)console.error('Erreur RDV dashboard:',rdvErr);
+  const rdvList=rdvData||[];
+  $('dash-tech-rdv').innerHTML = rdvList.length
+    ? `<table><thead><tr><th>Date</th><th>Heure</th><th>Client</th><th>Intervention</th><th>Statut</th></tr></thead><tbody>${rdvList.map(r=>`<tr style="cursor:pointer" onclick="navigate('planning')">
+        <td>${fmt(r.date_rdv)}</td><td>${fmtH(r.heure_debut)}</td><td>${r.raison_sociale}</td>
+        <td>${r.type_intervention||'—'}</td>
+        <td><span class="badge ${r.statut==='confirmé'?'bv':r.statut==='annulé'?'br':'bb'}">${r.statut}</span></td>
+      </tr>`).join('')}</tbody></table>`
+    : '<div class="t-empty">Aucun RDV planifié dans les 30 prochains jours</div>';
+
   renderEcheancesTable(ec.filter(e=>e.statut_echeance!=='ok'),$('dash-tech-table'));
 }
 window.dashTechTab=async function(btn,scope){
@@ -970,6 +995,20 @@ async function loadDashAdmin(){
     <div class="stat-card rouge"><div class="val">${e.filter(x=>x.statut_echeance==='en retard').length}</div><div class="lab">En retard</div></div>
     <div class="stat-card orange"><div class="val">${e.filter(x=>x.statut_echeance==='urgent').length}</div><div class="lab">Urgent &lt;30j</div></div>
     <div class="stat-card vert"><div class="val">${e.filter(x=>x.statut_echeance==='ok').length}</div><div class="lab">À jour</div></div>`;
+
+  // RDV des 7 prochains jours
+  let qRdv=db.from('vue_planning').select('*').gte('date_rdv',dateLocale(new Date())).lte('date_rdv',dateLocale(new Date(Date.now()+7*86400000))).order('date_rdv').order('heure_debut');
+  if(adminAgenceFilter)qRdv=qRdv.eq('agence_code',adminAgenceFilter);
+  const {data:rdvData,error:rdvErr}=await qRdv;
+  if(rdvErr)console.error('Erreur RDV admin:',rdvErr);
+  const rdvList=rdvData||[];
+  $('admin-rdv').innerHTML = rdvList.length
+    ? `<table><thead><tr><th>Date</th><th>Heure</th><th>Client</th><th>Technicien</th><th>Intervention</th><th>Statut</th></tr></thead><tbody>${rdvList.map(r=>`<tr style="cursor:pointer" onclick="navigate('planning')">
+        <td>${fmt(r.date_rdv)}</td><td>${fmtH(r.heure_debut)}</td><td>${r.raison_sociale}</td>
+        <td>${r.tech_prenom||''} ${r.tech_nom||'—'}</td><td>${r.type_intervention||'—'}</td>
+        <td><span class="badge ${r.statut==='confirmé'?'bv':r.statut==='annulé'?'br':'bb'}">${r.statut}</span></td>
+      </tr>`).join('')}</tbody></table>`
+    : '<div class="t-empty">Aucun RDV planifié cette semaine</div>';
 
   const retard = retardOps||[];
   const cardRetard = $('card-retard-operations');
