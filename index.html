@@ -456,6 +456,19 @@ tr:hover td{background:#fafafa}
         </div>
       </div>
 
+      <!-- BONS D'INTERVENTION -->
+      <div class="page" id="page-bons">
+        <div class="stats-grid" id="bons-stats"></div>
+        <div class="search-bar">
+          <select id="f-statut-bons" onchange="loadBons()" style="max-width:200px">
+            <option value="à_facturer">À facturer</option>
+            <option value="facturé">Facturés</option>
+            <option value="">Tous</option>
+          </select>
+        </div>
+        <div class="card"><div id="bons-list"><div class="loading"><span class="spin"></span></div></div></div>
+      </div>
+
       <!-- UTILISATEURS (admin) -->
       <div class="page" id="page-utilisateurs">
         <div class="search-bar">
@@ -829,6 +842,7 @@ function buildNav(){
   html+=navA('planning','📅','Planning');
   if(role==='admin'||role==='secretariat'){
     html+=navA('commandes','📦','Commandes à prévoir');
+    html+=navA('bons','📝','Bons d\'intervention');
   }
   if(role==='admin'){
     html+=`<div class="nav-sec">Administration</div>`;
@@ -851,7 +865,8 @@ function navigate(page){
   const titles={
     'dash-admin':'Vue globale','dash-tech':'Mon tableau de bord','dash-sec':'Secrétariat',
     profil:'Mon profil',clients:'Clients',equipements:'Équipements',verifications:'Vérifications',
-    contrats:'Contrats',planning:'Planning',utilisateurs:'Utilisateurs','config-points':'Points de contrôle'
+    contrats:'Contrats',planning:'Planning',utilisateurs:'Utilisateurs','config-points':'Points de contrôle',
+    commandes:'Commandes à prévoir',bons:'Bons d\'intervention'
   };
   $('page-title').textContent=titles[page]||page;
   if(page==='dash-admin')loadDashAdmin();
@@ -865,6 +880,7 @@ function navigate(page){
   if(page==='planning')loadPlanningPage();
   if(page==='utilisateurs')loadUsers();
   if(page==='commandes')loadCommandes();
+  if(page==='bons')loadBons();
   if(page==='config-points')loadConfigPage();
 }
 
@@ -1720,6 +1736,49 @@ async function exportCommandesXLS(){
   XLSX.utils.book_append_sheet(wb,ws,'Commandes');
   XLSX.writeFile(wb,`BFS_commandes_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast('Export généré');
+}
+
+// ============================================================
+// BONS D'INTERVENTION
+// ============================================================
+async function loadBons(){
+  const statut = $('f-statut-bons').value;
+  let q = db.from('vue_bons_intervention').select('*');
+  if(statut) q = q.eq('statut_facturation', statut);
+  const {data, error} = await q;
+  if(error){console.error('Erreur bons:',error);}
+  const bons = data || [];
+
+  const {data:allBons} = await db.from('bons_intervention').select('statut_facturation');
+  const aFacturer = (allBons||[]).filter(b=>b.statut_facturation==='à_facturer').length;
+  const factures = (allBons||[]).filter(b=>b.statut_facturation==='facturé').length;
+  $('bons-stats').innerHTML = `
+    <div class="stat-card orange"><div class="val">${aFacturer}</div><div class="lab">À facturer</div></div>
+    <div class="stat-card vert"><div class="val">${factures}</div><div class="lab">Facturés</div></div>
+    <div class="stat-card bleu"><div class="val">${(allBons||[]).length}</div><div class="lab">Total</div></div>
+  `;
+
+  const el = $('bons-list');
+  if(!bons.length){el.innerHTML='<div class="t-empty">Aucun bon d\'intervention</div>';return}
+  el.innerHTML = `<table><thead><tr><th>Date</th><th>Client</th><th>Agence</th><th>Technicien</th><th>Équipements</th><th>Signataire</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${bons.map(b=>`<tr>
+    <td>${fmt(b.date_intervention)}</td>
+    <td><strong>${b.raison_sociale}</strong><br><small style="color:var(--txt-l)">${b.ville||''}</small></td>
+    <td><span class="badge bg">${b.agence_nom||'—'}</span></td>
+    <td>${b.tech_prenom||''} ${b.tech_nom||''}</td>
+    <td>${b.nb_equipements_verifies}</td>
+    <td>${b.signataire_nom||'—'}</td>
+    <td>${b.statut_facturation==='facturé'?'<span class="badge bv">Facturé</span>':'<span class="badge bo">À facturer</span>'}</td>
+    <td><div class="ia">
+      <a class="btn btn-s btn-xs" href="${b.pdf_url}" target="_blank">📄 PDF</a>
+      ${b.statut_facturation==='à_facturer'?`<button class="btn btn-s btn-xs" onclick="marquerFacture('${b.id}')">✓ Facturé</button>`:''}
+    </div></td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+async function marquerFacture(id){
+  await db.from('bons_intervention').update({statut_facturation:'facturé',facture_le:new Date().toISOString(),facture_par:ME.id}).eq('id',id);
+  toast('Marqué comme facturé');
+  loadBons();
 }
 
 async function loadUsers(){

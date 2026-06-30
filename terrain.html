@@ -53,6 +53,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 /* FOOTER FIXE */
 .footer{padding:12px 16px calc(12px + var(--safe-bot));background:var(--blanc);border-top:1px solid #e5e7eb;flex-shrink:0}
 
+/* TAB BAR */
+.tabbar{display:flex;background:#fff;border-top:1px solid #e5e7eb;padding:6px 0 calc(6px + var(--safe-bot));flex-shrink:0}
+.tab-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;background:none;border:none;cursor:pointer;color:var(--txt-l);font-size:10px;font-weight:600}
+.tab-item.active{color:var(--rouge)}
+.tab-item .tab-ico{font-size:20px}
+
 /* LOGIN */
 #s-login{background:linear-gradient(135deg,var(--dark) 0%,#2d2d5e 100%);align-items:center;justify-content:center}
 .login-box{background:#fff;border-radius:20px;padding:36px 28px;width:100%;max-width:360px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
@@ -226,6 +232,78 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <div class="content" id="parc-list">
     <div class="loading"><div class="spin spin-dark"></div></div>
   </div>
+  <div class="tabbar">
+    <button class="tab-item active" onclick="goTo('s-parc')"><span class="tab-ico">🏢</span>Mon parc</button>
+    <button class="tab-item" onclick="ouvrirPlanning()"><span class="tab-ico">📅</span>Planning</button>
+  </div>
+</div>
+
+<!-- ===== MON PLANNING ===== -->
+<div class="screen" id="s-planning">
+  <div class="hdr">
+    <div style="flex:1">
+      <div style="font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:1px">BFS Terrain</div>
+      <h1>Mon planning</h1>
+    </div>
+    <div class="hdr-right">
+      <button style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:18px;cursor:pointer;line-height:1" onclick="openRdvFormTerrain()">+</button>
+    </div>
+  </div>
+  <div style="padding:10px 16px;background:#fff;border-bottom:1px solid #f0f0f0;flex-shrink:0;display:flex;align-items:center;justify-content:space-between">
+    <button class="btn btn-s btn-xs" onclick="planNav(-1)">‹</button>
+    <span id="plan-label" style="font-size:14px;font-weight:700"></span>
+    <button class="btn btn-s btn-xs" onclick="planNav(1)">›</button>
+  </div>
+  <div class="content" id="planning-list">
+    <div class="loading"><div class="spin spin-dark"></div></div>
+  </div>
+  <div class="tabbar">
+    <button class="tab-item" onclick="goTo('s-parc')"><span class="tab-ico">🏢</span>Mon parc</button>
+    <button class="tab-item active" onclick="ouvrirPlanning()"><span class="tab-ico">📅</span>Planning</button>
+  </div>
+</div>
+
+<!-- ===== FORMULAIRE RDV TERRAIN ===== -->
+<div class="screen" id="s-rdv-form">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-planning')">←</button>
+    <h1 id="rdv-form-titre">Nouveau RDV</h1>
+  </div>
+  <div class="content">
+    <input type="hidden" id="rf-id">
+    <div class="fg"><label>Client *</label>
+      <select id="rf-client"></select>
+    </div>
+    <div class="fg"><label>Date *</label><input type="date" id="rf-date"></div>
+    <div class="fg"><label>Heure</label><input type="time" id="rf-heure" value="09:00"></div>
+    <div class="fg"><label>Durée (minutes)</label><input type="number" id="rf-duree" value="60" min="15" step="15"></div>
+    <div class="fg"><label>Type d'intervention</label>
+      <select id="rf-type">
+        <option value="vérification extincteurs">Vérification extincteurs</option>
+        <option value="vérification RIA">Vérification RIA</option>
+        <option value="vérification BAES">Vérification BAES</option>
+        <option value="VGP nacelle">VGP nacelle</option>
+        <option value="VGP engin">VGP engin</option>
+        <option value="VGP antichute">VGP antichute</option>
+        <option value="maintenance préventive">Maintenance préventive</option>
+        <option value="dépannage">Dépannage</option>
+        <option value="autre">Autre</option>
+      </select>
+    </div>
+    <div class="fg"><label>Statut</label>
+      <select id="rf-statut">
+        <option value="planifié">Planifié</option>
+        <option value="confirmé">Confirmé</option>
+        <option value="effectué">Effectué</option>
+        <option value="annulé">Annulé</option>
+      </select>
+    </div>
+    <div class="fg"><label>Notes</label><textarea id="rf-notes" placeholder="Instructions, précisions…"></textarea></div>
+  </div>
+  <div class="footer" style="display:flex;flex-direction:column;gap:8px">
+    <button class="btn btn-p" onclick="saveRdvTerrain()">💾 Enregistrer</button>
+    <button class="btn btn-s" id="btn-delete-rdv-terrain" style="display:none;background:#fee2e2;color:#dc2626" onclick="deleteRdvTerrain()">🗑 Supprimer ce RDV</button>
+  </div>
 </div>
 
 <!-- ===== DÉTAIL CLIENT ===== -->
@@ -354,8 +432,35 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
   <div class="content" id="recap-content"></div>
   <div class="footer" style="display:flex;flex-direction:column;gap:8px">
-    <button class="btn btn-p" onclick="exportSessionPDF()">📄 Rapport PDF</button>
-    <button class="btn btn-vert" onclick="cloturerSession()">✅ Clôturer la session</button>
+    <button class="btn btn-vert" onclick="document.getElementById('sig-nom').value='';goTo('s-signature');setTimeout(initSignatureCanvas,100)">✍️ Faire signer et clôturer</button>
+  </div>
+</div>
+
+<!-- ===== SIGNATURE CLIENT ===== -->
+<div class="screen" id="s-signature">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-recap')">←</button>
+    <h1>Signature du bon d'intervention</h1>
+  </div>
+  <div class="content">
+    <div class="card" style="margin-bottom:14px">
+      <div style="padding:14px 16px">
+        <div style="font-size:13px;color:var(--txt-l)">En signant, le client atteste de la présence du technicien et de la bonne réalisation de l'intervention décrite dans ce bon.</div>
+      </div>
+    </div>
+    <div class="fg" style="margin-bottom:14px">
+      <label>Nom du signataire *</label>
+      <input type="text" id="sig-nom" placeholder="Nom et prénom du client / responsable">
+    </div>
+    <div class="sec">Signature</div>
+    <div style="background:#fff;border:2px dashed #d1d5db;border-radius:12px;position:relative;margin-bottom:8px">
+      <canvas id="sig-canvas" style="width:100%;height:220px;display:block;touch-action:none"></canvas>
+      <div id="sig-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;pointer-events:none">Signez ici avec votre doigt</div>
+    </div>
+    <button class="btn btn-s btn-sm" onclick="effacerSignature()">🗑 Effacer la signature</button>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="validerSignatureEtCloturer()" id="btn-valider-signature">✅ Valider et clôturer</button>
   </div>
 </div>
 
@@ -1321,9 +1426,9 @@ function allerRecap(){
 }
 
 // ============================================================
-// EXPORT PDF SESSION
+// EXPORT PDF SESSION (avec signature optionnelle)
 // ============================================================
-async function exportSessionPDF(){
+function genererPdfSession(signatureDataUrl, signataireNom){
   const {jsPDF}=window.jspdf;const doc=new jsPDF();
   const total=currentEquipements.length;
   const verifs=Object.values(sessionVerifs);
@@ -1332,22 +1437,19 @@ async function exportSessionPDF(){
   const hs=verifs.filter(v=>v.resultat==='hors service').length;
   const c=currentClient;
 
-  // Header
   doc.setFillColor(192,57,43);doc.rect(0,0,210,26,'F');
   doc.setTextColor(255);doc.setFontSize(13);doc.setFont('helvetica','bold');
-  doc.text('BFS — Rapport de session de contrôle',14,11);
+  doc.text(signatureDataUrl?'BFS — Bon d\'intervention':'BFS — Rapport de session de contrôle',14,11);
   doc.setFontSize(9);doc.setFont('helvetica','normal');
   doc.text(`${c?.raison_sociale||''} · ${c?.ville||''}`,14,19);
   doc.text(`${new Date().toLocaleDateString('fr-FR')} · ${ME.prenom||''} ${ME.nom}`,140,19);
   doc.setTextColor(30);let y=32;
 
-  // Résumé
   doc.autoTable({startY:y,margin:{left:14,right:14},head:[['Conformes','À surveiller','Non conformes','Hors service','Non vérifiés']],
     body:[[conformes,verifs.filter(v=>v.resultat==='à surveiller').length,nc,hs,total-verifs.length]],
     styles:{fontSize:11,halign:'center'},headStyles:{fillColor:[192,57,43]}});
   y=doc.lastAutoTable.finalY+10;
 
-  // Détail
   doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('Détail des vérifications',14,y);y+=2;
   doc.autoTable({startY:y,margin:{left:14,right:14},
     head:[['Équipement','Localisation','Statut','Prochaine échéance','Obs.']],
@@ -1357,37 +1459,135 @@ async function exportSessionPDF(){
   });
   y=doc.lastAutoTable.finalY+8;
 
-  // Pièces à remplacer
   const aRem=[];
   Object.entries(sessionVerifs).forEach(([eid,v])=>{
     const eq=currentEquipements.find(e=>e.id===eid);
     (v.pieces||[]).filter(p=>p.type_action==='à_remplacer').forEach(p=>aRem.push([`${eq?.numero_identification||'?'}`,p.libelle,p.quantite+' '+p.unite,p.delai_remplacement||'—']));
   });
   if(aRem.length){
-    if(y>240){doc.addPage();y=20}
+    if(y>230){doc.addPage();y=20}
     doc.setFont('helvetica','bold');doc.text('Pièces à remplacer',14,y);y+=2;
     doc.autoTable({startY:y,margin:{left:14,right:14},head:[['Équipement','Pièce','Quantité','Délai']],body:aRem,styles:{fontSize:9},headStyles:{fillColor:[192,57,43]}});
+    y=doc.lastAutoTable.finalY+10;
   }
 
-  y=doc.lastAutoTable?.finalY+10||y+10;
-  doc.setDrawColor(200);doc.line(14,y,82,y);doc.line(122,y,196,y);
-  doc.setFontSize(9);doc.text(`Technicien : ${ME.prenom||''} ${ME.nom}`,14,y+5);doc.text('Cachet BFS',122,y+5);
+  // Zone signature
+  if(y>225){doc.addPage();y=20}
+  y=Math.max(y+10,235);
+  doc.setDrawColor(200);
+  doc.text('Technicien',14,y);
+  doc.text('Client / Signataire',122,y);
+  doc.line(14,y+3,82,y+3);doc.line(122,y+3,196,y+3);
+  doc.setFontSize(9);
+  doc.text(`${ME.prenom||''} ${ME.nom}`,14,y+8);
+  if(signatureDataUrl){
+    doc.addImage(signatureDataUrl,'PNG',122,y-22,70,24);
+    doc.text(signataireNom||'',122,y+8);
+  } else {
+    doc.text('(non signé)',122,y+8);
+  }
 
-  doc.save(`BFS_session_${c?.raison_sociale||''}_${new Date().toISOString().slice(0,10)}.pdf`);
+  return doc;
+}
+
+async function exportSessionPDF(){
+  const doc = genererPdfSession(null,null);
+  doc.save(`BFS_session_${currentClient?.raison_sociale||''}_${new Date().toISOString().slice(0,10)}.pdf`);
   toast('PDF généré');
 }
 
 // ============================================================
-// CLÔTURER SESSION
+// SIGNATURE CANVAS (tactile)
 // ============================================================
-async function cloturerSession(){
-  if(!currentSession)return;
-  if(!confirm('Clôturer et terminer la session ?'))return;
-  const obs=currentEquipements.filter(e=>!sessionVerifs[e.id]).length>0?`${currentEquipements.filter(e=>!sessionVerifs[e.id]).length} équipement(s) non vérifié(s).`:'';
-  await db.from('sessions_controle').update({statut:'terminée',observations_generales:obs,updated_at:new Date().toISOString()}).eq('id',currentSession.id);
+let sigCtx=null, sigDrawing=false, sigHasContent=false;
+
+function initSignatureCanvas(){
+  const canvas=document.getElementById('sig-canvas');
+  if(!canvas)return;
+  const rect=canvas.getBoundingClientRect();
+  const dpr=window.devicePixelRatio||1;
+  canvas.width=rect.width*dpr;
+  canvas.height=rect.height*dpr;
+  sigCtx=canvas.getContext('2d');
+  sigCtx.scale(dpr,dpr);
+  sigCtx.lineWidth=2.5;
+  sigCtx.lineCap='round';
+  sigCtx.strokeStyle='#1a1a2e';
+  sigHasContent=false;
+  document.getElementById('sig-placeholder').style.display='flex';
+
+  const getPos=(e)=>{
+    const r=canvas.getBoundingClientRect();
+    const t=e.touches?e.touches[0]:e;
+    return {x:t.clientX-r.left, y:t.clientY-r.top};
+  };
+  const start=(e)=>{e.preventDefault();sigDrawing=true;sigHasContent=true;document.getElementById('sig-placeholder').style.display='none';const p=getPos(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);};
+  const move=(e)=>{if(!sigDrawing)return;e.preventDefault();const p=getPos(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();};
+  const end=(e)=>{sigDrawing=false;};
+
+  canvas.ontouchstart=start;canvas.ontouchmove=move;canvas.ontouchend=end;
+  canvas.onmousedown=start;canvas.onmousemove=move;canvas.onmouseup=end;canvas.onmouseleave=end;
+}
+
+function effacerSignature(){
+  const canvas=document.getElementById('sig-canvas');
+  if(sigCtx)sigCtx.clearRect(0,0,canvas.width,canvas.height);
+  sigHasContent=false;
+  document.getElementById('sig-placeholder').style.display='flex';
+}
+
+async function validerSignatureEtCloturer(){
+  const nom=document.getElementById('sig-nom').value.trim();
+  if(!nom){toast('Nom du signataire obligatoire','err');return}
+  if(!sigHasContent){toast('Signature obligatoire','err');return}
+
+  const btn=document.getElementById('btn-valider-signature');
+  btn.disabled=true;btn.textContent='⏳ Envoi en cours…';
+
+  const canvas=document.getElementById('sig-canvas');
+  const signatureDataUrl=canvas.toDataURL('image/png');
+
+  // Générer le PDF avec signature
+  const doc=genererPdfSession(signatureDataUrl,nom);
+  const pdfBlob=doc.output('blob');
+  const fileName=`bon_${currentClient.id}_${Date.now()}.pdf`;
+
+  // Upload vers Supabase Storage
+  const {data:uploadData,error:uploadErr}=await db.storage.from('bons-intervention').upload(fileName,pdfBlob,{contentType:'application/pdf'});
+  if(uploadErr){
+    toast('Erreur upload: '+uploadErr.message,'err');
+    btn.disabled=false;btn.textContent='✅ Valider et clôturer';
+    return;
+  }
+  const {data:urlData}=db.storage.from('bons-intervention').getPublicUrl(fileName);
+
+  const nbVerifies=Object.keys(sessionVerifs).length;
+
+  // Enregistrer le bon d'intervention
+  await db.from('bons_intervention').insert({
+    session_id:currentSession?.id,
+    client_id:currentClient.id,
+    agence_id:currentClient.agence_id,
+    technicien_id:ME.id,
+    date_intervention:new Date().toISOString().slice(0,10),
+    nb_equipements_verifies:nbVerifies,
+    signataire_nom:nom,
+    pdf_url:urlData.publicUrl,
+    pdf_path:fileName,
+    statut_facturation:'à_facturer'
+  });
+
+  // Clôturer la session
+  if(currentSession){
+    const obs=currentEquipements.filter(e=>!sessionVerifs[e.id]).length>0?`${currentEquipements.filter(e=>!sessionVerifs[e.id]).length} équipement(s) non vérifié(s).`:'';
+    await db.from('sessions_controle').update({statut:'terminée',observations_generales:obs,updated_at:new Date().toISOString()}).eq('id',currentSession.id);
+  }
+
   currentSession=null;sessionVerifs={};currentEquipements=[];
-  toast('Session clôturée ✓','ok');
-  await loadParc();goTo('s-parc');
+  toast('Bon d\'intervention signé et envoyé ✓');
+  btn.disabled=false;btn.textContent='✅ Valider et clôturer';
+  await loadParc();
+  goTo('s-parc');
 }
 
 // ============================================================
@@ -1734,6 +1934,167 @@ async function saveEquipTerrain(){
 
 // Types équipements chargés au démarrage terrain
 let typesEquipTerrain = [];
+
+// ============================================================
+// MON PLANNING — Consultation / Création / Modification / Suppression
+// ============================================================
+const MOIS_PLAN=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+let planDate = new Date();
+let planRdvs = [];
+
+function dateLocaleT(d){
+  const pad=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+
+async function ouvrirPlanning(){
+  goTo('s-planning');
+  await chargerPlanning();
+}
+
+async function chargerPlanning(){
+  const y=planDate.getFullYear(), m=planDate.getMonth();
+  $('plan-label').textContent = `${MOIS_PLAN[m]} ${y}`;
+  const pad=n=>String(n).padStart(2,'0');
+  const debut = `${y}-${pad(m+1)}-01`;
+  const lastDay = new Date(y,m+1,0).getDate();
+  const fin = `${y}-${pad(m+1)}-${pad(lastDay)}`;
+
+  const {data, error} = await db.from('vue_planning').select('*')
+    .eq('technicien_id', ME.id)
+    .gte('date_rdv', debut).lte('date_rdv', fin)
+    .order('date_rdv').order('heure_debut');
+  if(error){toast('Erreur chargement planning','err');return}
+  planRdvs = data || [];
+  renderPlanningList();
+}
+
+function renderPlanningList(){
+  const el = $('planning-list');
+  if(!planRdvs.length){
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--txt-l)">Aucun RDV ce mois-ci</div>';
+    return;
+  }
+  // Grouper par jour
+  const parJour = {};
+  planRdvs.forEach(r=>{
+    if(!parJour[r.date_rdv]) parJour[r.date_rdv]=[];
+    parJour[r.date_rdv].push(r);
+  });
+  const joursTries = Object.keys(parJour).sort();
+  const today = dateLocaleT(new Date());
+
+  el.innerHTML = joursTries.map(ds=>{
+    const d = new Date(ds+'T00:00:00');
+    const jourLabel = d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
+    const isToday = ds===today;
+    return `<div style="margin-bottom:18px">
+      <div style="font-size:13px;font-weight:700;color:${isToday?'var(--rouge)':'var(--txt-l)'};text-transform:capitalize;margin-bottom:8px;padding-left:2px">${isToday?'📍 ':''}${jourLabel}</div>
+      ${parJour[ds].map(r=>{
+        const statutColor = r.statut==='confirmé'?'var(--vert)':r.statut==='annulé'?'#9ca3af':r.statut==='effectué'?'#6b7280':'var(--bleu)';
+        const statutBg = r.statut==='confirmé'?'var(--vert-l)':r.statut==='annulé'?'#f3f4f6':r.statut==='effectué'?'#f3f4f6':'var(--bleu-l)';
+        return `<div class="client-card" style="border-left:4px solid ${statutColor}" onclick="editerRdvTerrain('${r.id}')">
+          <div class="client-icon" style="background:${statutBg};font-size:16px;font-weight:700;color:${statutColor}">${(r.heure_debut||'').slice(0,5)||'—'}</div>
+          <div class="client-info">
+            <div class="client-name">${r.raison_sociale}</div>
+            <div class="client-meta">${r.type_intervention||'—'} · ${r.duree_minutes||60}min</div>
+          </div>
+          <span class="client-badge" style="background:${statutBg};color:${statutColor}">${r.statut}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+}
+
+function planNav(dir){
+  planDate = new Date(planDate.getFullYear(), planDate.getMonth()+dir, 1);
+  chargerPlanning();
+}
+
+async function openRdvFormTerrain(prefill){
+  if(!clientsPourRdv.length) await chargerClientsPourRdv();
+  $('rf-client').innerHTML = clientsPourRdv.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
+  $('rf-id').value='';
+  $('rf-date').value = dateLocaleT(new Date());
+  $('rf-heure').value = '09:00';
+  $('rf-duree').value = 60;
+  $('rf-type').value = 'vérification extincteurs';
+  $('rf-statut').value = 'planifié';
+  $('rf-notes').value = '';
+  $('rdv-form-titre').textContent = 'Nouveau RDV';
+  $('btn-delete-rdv-terrain').style.display = 'none';
+
+  if(prefill){
+    $('rf-id').value = prefill.id;
+    $('rf-client').value = prefill.client_id || '';
+    $('rf-date').value = prefill.date_rdv;
+    $('rf-heure').value = (prefill.heure_debut||'09:00').slice(0,5);
+    $('rf-duree').value = prefill.duree_minutes || 60;
+    $('rf-type').value = prefill.type_intervention || 'vérification extincteurs';
+    $('rf-statut').value = prefill.statut || 'planifié';
+    $('rf-notes').value = prefill.notes || '';
+    $('rdv-form-titre').textContent = 'Modifier le RDV';
+    $('btn-delete-rdv-terrain').style.display = 'block';
+  }
+  goTo('s-rdv-form');
+}
+
+let clientsPourRdv = [];
+async function chargerClientsPourRdv(){
+  const vis = ME.visibilite || 'perso';
+  let q = db.from('clients').select('*').order('raison_sociale');
+  if(vis === 'perso_agence' && ME.agence_id) q = q.eq('agence_id', ME.agence_id);
+  const {data} = await q;
+  clientsPourRdv = data || [];
+}
+
+async function editerRdvTerrain(id){
+  const r = planRdvs.find(x=>x.id===id);
+  if(!r){toast('RDV introuvable','err');return}
+  // Récupérer le client_id réel (la vue ne l'expose pas forcément)
+  const {data:rdvFull} = await db.from('rdv').select('*').eq('id', id).single();
+  await openRdvFormTerrain({...r, client_id: rdvFull?.client_id});
+}
+
+async function saveRdvTerrain(){
+  const id = $('rf-id').value;
+  const clientId = $('rf-client').value;
+  const date = $('rf-date').value;
+  if(!clientId || !date){toast('Client et date obligatoires','err');return}
+
+  const payload = {
+    client_id: clientId,
+    technicien_id: ME.id,
+    date_rdv: date,
+    heure_debut: $('rf-heure').value || null,
+    duree_minutes: parseInt($('rf-duree').value) || 60,
+    type_intervention: $('rf-type').value,
+    statut: $('rf-statut').value,
+    notes: $('rf-notes').value.trim() || null,
+    cree_par: ME.id,
+    updated_at: new Date().toISOString()
+  };
+
+  const {error} = id
+    ? await db.from('rdv').update(payload).eq('id', id)
+    : await db.from('rdv').insert(payload);
+
+  if(error){toast('Erreur: '+error.message,'err');return}
+  toast(id ? 'RDV modifié ✓' : 'RDV créé ✓');
+  goTo('s-planning');
+  await chargerPlanning();
+}
+
+async function deleteRdvTerrain(){
+  const id = $('rf-id').value;
+  if(!id) return;
+  if(!confirm('Supprimer ce RDV ?')) return;
+  const {error} = await db.from('rdv').delete().eq('id', id);
+  if(error){toast('Erreur: '+error.message,'err');return}
+  toast('RDV supprimé');
+  goTo('s-planning');
+  await chargerPlanning();
+}
 
 </script>
 </body>
