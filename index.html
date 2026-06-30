@@ -1066,15 +1066,47 @@ async function loadDashSec(){
 
 function renderEcheancesTable(data,el){
   if(!data.length){el.innerHTML='<div class="t-empty">✅ Tout est à jour</div>';return}
-  el.innerHTML=`<table><thead><tr><th>Client</th><th>Agence</th><th>Équipement</th><th>Type</th><th>Technicien</th><th>Dernière vérif.</th><th>Prochaine échéance</th></tr></thead><tbody>${data.map(e=>`<tr>
-    <td><strong>${e.raison_sociale}</strong><br><small style="color:var(--txt-l)">${e.ville||''}</small></td>
-    <td><span class="badge bg">${e.agence_nom||'—'}</span></td>
-    <td>${e.icone||''} ${e.numero_identification||'—'}<br><small>${e.marque||''} ${e.modele||''}</small></td>
-    <td>${e.type_libelle||'—'}</td>
-    <td>${e.tech_prenom||''} ${e.tech_nom||'—'}</td>
-    <td>${fmt(e.date_verification)}</td>
-    <td class="${ecClass(e.date_prochaine_echeance)}">${fmt(e.date_prochaine_echeance)}</td>
-  </tr>`).join('')}</tbody></table>`;
+
+  // Regroupement par client
+  const groupes = {};
+  data.forEach(e=>{
+    const key = e.client_id || e.raison_sociale;
+    if(!groupes[key]) groupes[key] = {raison_sociale:e.raison_sociale, ville:e.ville, agence_nom:e.agence_nom, items:[]};
+    groupes[key].items.push(e);
+  });
+  const clientsList = Object.entries(groupes).sort((a,b)=>{
+    const pireA = a[1].items.some(i=>i.statut_echeance==='en retard')?0:a[1].items.some(i=>i.statut_echeance==='urgent')?1:2;
+    const pireB = b[1].items.some(i=>i.statut_echeance==='en retard')?0:b[1].items.some(i=>i.statut_echeance==='urgent')?1:2;
+    return pireA-pireB;
+  });
+
+  el.innerHTML = `<table><thead><tr><th></th><th>Client</th><th>Agence</th><th>Équipements concernés</th><th>Plus proche échéance</th></tr></thead><tbody>${clientsList.map(([key,g],idx)=>{
+    const plusProche = g.items.reduce((min,i)=>!min||i.date_prochaine_echeance<min?i.date_prochaine_echeance:min,null);
+    const nbRetard = g.items.filter(i=>i.statut_echeance==='en retard').length;
+    const nbUrgent = g.items.filter(i=>i.statut_echeance==='urgent').length;
+    return `<tr style="cursor:pointer" onclick="toggleClientEcheances('${idx}')">
+      <td style="width:24px"><span id="chev-${idx}">▸</span></td>
+      <td><strong>${g.raison_sociale}</strong><br><small style="color:var(--txt-l)">${g.ville||''}</small></td>
+      <td><span class="badge bg">${g.agence_nom||'—'}</span></td>
+      <td>${g.items.length} équip.${nbRetard?' · <span style="color:#dc2626;font-weight:600">'+nbRetard+' en retard</span>':''}${nbUrgent?' · <span style="color:#d97706;font-weight:600">'+nbUrgent+' urgent</span>':''}</td>
+      <td class="${ecClass(plusProche)}">${fmt(plusProche)}</td>
+    </tr>
+    <tr id="detail-${idx}" style="display:none"><td></td><td colspan="4" style="padding:0">
+      <table style="width:100%;background:var(--bg)"><tbody>${g.items.map(e=>`<tr>
+        <td style="width:30%">${e.icone||''} ${e.numero_identification||'—'}<br><small>${e.marque||''} ${e.modele||''}</small></td>
+        <td style="width:20%">${e.type_libelle||'—'}</td>
+        <td style="width:20%">${e.tech_prenom||''} ${e.tech_nom||'—'}</td>
+        <td style="width:15%">${fmt(e.date_verification)}</td>
+        <td style="width:15%" class="${ecClass(e.date_prochaine_echeance)}">${fmt(e.date_prochaine_echeance)}</td>
+      </tr>`).join('')}</tbody></table>
+    </td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+function toggleClientEcheances(idx){
+  const row = $('detail-'+idx);
+  const chev = $('chev-'+idx);
+  if(row.style.display==='none'){row.style.display='table-row';chev.textContent='▾'}
+  else{row.style.display='none';chev.textContent='▸'}
 }
 async function exportEcheancesXLS(scope){
   let q=db.from('vue_echeances').select('*').order('date_prochaine_echeance');
@@ -1611,13 +1643,14 @@ let users=[];
 async function loadCommandes(){
   const statutFiltre = $('f-statut-cmd').value;
 
-  let q = db.from('vue_commandes_a_prevoir').select('*').order('date_echeance');
-  const {data: all} = await q;
+  let q = db.from('vue_anticipation_pieces').select('*').order('date_echeance_calculee');
+  const {data: all, error} = await q;
+  if(error){console.error('Erreur anticipation:',error);}
   const data = all || [];
 
-  const expirees = data.filter(d => d.statut_commande === 'expirée');
-  const aCommander = data.filter(d => d.statut_commande === 'à_commander');
-  const aSurveiller = data.filter(d => d.statut_commande === 'à_surveiller');
+  const expirees = data.filter(d => d.statut_anticipation === 'expirée');
+  const aCommander = data.filter(d => d.statut_anticipation === 'à_commander');
+  const aSurveiller = data.filter(d => d.statut_anticipation === 'à_surveiller');
 
   $('commandes-stats').innerHTML = `
     <div class="stat-card rouge"><div class="val">${expirees.length}</div><div class="lab">⛔ Expirées</div></div>
@@ -1626,37 +1659,38 @@ async function loadCommandes(){
   `;
 
   // Commandes groupées par référence
-  const {data: groupees} = await db.from('vue_commandes_groupees').select('*');
+  const {data: groupees} = await db.from('vue_anticipation_groupee').select('*');
   const elG = $('commandes-groupees');
   if(!groupees || !groupees.length){
     elG.innerHTML = '<div class="t-empty">✅ Aucune commande urgente à prévoir</div>';
   } else {
-    elG.innerHTML = `<table><thead><tr><th>Pièce</th><th>Référence</th><th>Quantité</th><th>Échéance la plus proche</th><th>Statut</th><th>Clients concernés</th></tr></thead><tbody>${groupees.map(g=>`<tr>
-      <td><strong>${g.libelle}</strong></td>
+    elG.innerHTML = `<table><thead><tr><th>Pièce</th><th>Marque</th><th>Référence</th><th>Quantité</th><th>Échéance la plus proche</th><th>Statut</th><th>Clients concernés</th></tr></thead><tbody>${groupees.map(g=>`<tr>
+      <td><strong>${g.piece_libelle}</strong></td>
+      <td>${g.marque||'—'}</td>
       <td>${g.reference||'—'}</td>
       <td><span class="badge bb">${g.quantite_necessaire}</span></td>
       <td class="${ecClass(g.echeance_la_plus_proche)}">${fmt(g.echeance_la_plus_proche)}</td>
-      <td>${g.statut_commande==='expirée'?'<span class="badge br">⛔ Expirée</span>':'<span class="badge bo">🔴 À commander</span>'}</td>
+      <td>${g.statut_anticipation==='expirée'?'<span class="badge br">⛔ Expirée</span>':'<span class="badge bo">🔴 À commander</span>'}</td>
       <td style="font-size:12px;color:var(--txt-l)">${(g.clients_concernes||[]).slice(0,3).join(', ')}${(g.clients_concernes||[]).length>3?' +'+((g.clients_concernes||[]).length-3):''}</td>
     </tr>`).join('')}</tbody></table>`;
   }
 
   // Détail filtré
-  const filtered = statutFiltre ? data.filter(d=>d.statut_commande===statutFiltre) : data.filter(d=>d.statut_commande!=='ok');
+  const filtered = statutFiltre ? data.filter(d=>d.statut_anticipation===statutFiltre) : data.filter(d=>d.statut_anticipation!=='ok');
   const elD = $('commandes-detail');
   if(!filtered.length){
     elD.innerHTML = '<div class="t-empty">Aucune pièce dans cette catégorie</div>';
   } else {
-    elD.innerHTML = `<table><thead><tr><th>Statut</th><th>Pièce</th><th>Équipement</th><th>Client</th><th>Agence</th><th>Date pose</th><th>Échéance</th></tr></thead><tbody>${filtered.map(d=>{
-      const badge = d.statut_commande==='expirée'?'<span class="badge br">⛔ Expirée</span>':d.statut_commande==='à_commander'?'<span class="badge bo">🔴 À commander</span>':'<span class="badge bb">🟠 Surveiller</span>';
-      return `<tr>
+    elD.innerHTML = `<table><thead><tr><th>Statut</th><th>Pièce</th><th>Équipement</th><th>Client</th><th>Agence</th><th>Réf. depuis</th><th>Échéance</th></tr></thead><tbody>${filtered.map(d=>{
+      const badge = d.statut_anticipation==='expirée'?'<span class="badge br">⛔ Expirée</span>':d.statut_anticipation==='à_commander'?'<span class="badge bo">🔴 À commander</span>':'<span class="badge bb">🟠 Surveiller</span>';
+      return `<tr${!d.deja_trackee_reellement?' style="opacity:.8"':''}>
         <td>${badge}</td>
-        <td><strong>${d.libelle}</strong>${d.reference?'<br><small style="color:var(--txt-l)">'+d.reference+'</small>':''}</td>
+        <td><strong>${d.piece_libelle}</strong>${d.reference?'<br><small style="color:var(--txt-l)">'+d.reference+'</small>':''}${!d.deja_trackee_reellement?'<br><small style="color:var(--orange)">estimation</small>':''}</td>
         <td>${d.icone||''} ${d.numero_identification||'—'}<br><small>${d.localisation||''}</small></td>
         <td>${d.raison_sociale}</td>
         <td><span class="badge bg">${d.agence_nom||'—'}</span></td>
-        <td>${fmt(d.date_pose)}</td>
-        <td class="${ecClass(d.date_echeance)}">${fmt(d.date_echeance)}</td>
+        <td>${fmt(d.date_reference)}</td>
+        <td class="${ecClass(d.date_echeance_calculee)}">${fmt(d.date_echeance_calculee)}</td>
       </tr>`;
     }).join('')}</tbody></table>`;
   }
