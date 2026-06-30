@@ -1572,6 +1572,15 @@ async function saveVerif(){
     resultats.push(r);
   });
   if(resultats.length)await db.from('resultats_controle').insert(resultats);
+
+  // Auto-valider le RDV du jour pour ce client si la vérification a lieu aujourd'hui
+  if(date===dateLocale(new Date())){
+    const {data:rdvDuJour}=await db.from('rdv').select('id').eq('client_id',cid).eq('technicien_id',ME.id).eq('date_rdv',date).neq('statut','annulé').neq('statut','effectué');
+    if(rdvDuJour&&rdvDuJour.length){
+      await db.from('rdv').update({statut:'effectué',updated_at:new Date().toISOString()}).in('id',rdvDuJour.map(r=>r.id));
+    }
+  }
+
   toast('Vérification enregistrée');CM('mo-verif');loadVerifs();
 }
 async function deleteVerif(id){if(!confirm('Supprimer ?'))return;await db.from('verifications').delete().eq('id',id);toast('Supprimé');loadVerifs()}

@@ -1438,10 +1438,38 @@ async function validerVerif(){
     await db.from('sessions_controle').update({nb_equip_verifies:done,nb_non_conformes:nc,nb_hs:hs}).eq('id',currentSession.id);
   }
 
+  // Auto-valider le RDV du jour pour ce client si non déjà fait
+  await autoValiderRdvDuJour();
+
   toast('Vérification enregistrée ✓','ok');
   updateSessionProgress();
   renderSessionEquipList();
   goTo('s-session');
+}
+
+// ============================================================
+// AUTO-VALIDATION RDV DU JOUR
+// ============================================================
+let _rdvAutoValideSessionIds = new Set();
+async function autoValiderRdvDuJour(){
+  if(!currentClient) return;
+  const cacheKey = currentClient.id + '_' + dateLocaleT(new Date());
+  if(_rdvAutoValideSessionIds.has(cacheKey)) return; // déjà fait pour ce client aujourd'hui
+
+  const today = dateLocaleT(new Date());
+  const {data: rdvDuJour} = await db.from('rdv')
+    .select('id, statut')
+    .eq('client_id', currentClient.id)
+    .eq('technicien_id', ME.id)
+    .eq('date_rdv', today)
+    .neq('statut', 'annulé')
+    .neq('statut', 'effectué');
+
+  if(rdvDuJour && rdvDuJour.length){
+    await db.from('rdv').update({statut:'effectué', updated_at:new Date().toISOString()}).in('id', rdvDuJour.map(r=>r.id));
+    _rdvAutoValideSessionIds.add(cacheKey);
+    toast(`RDV du jour marqué "effectué" ✓`);
+  }
 }
 
 // ============================================================
