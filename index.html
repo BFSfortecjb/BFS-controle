@@ -580,7 +580,11 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Statut</label><select id="rdv-statut"><option value="planifié">Planifié</option><option value="confirmé">Confirmé</option><option value="effectué">Effectué</option><option value="annulé">Annulé</option></select></div>
       <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="rdv-notes"></textarea></div>
     </div>
-    <div class="fa"><button class="btn btn-s" onclick="CM('mo-rdv')">Annuler</button><button class="btn btn-p" onclick="saveRdv()">Enregistrer</button></div>
+    <div class="fa">
+      <button class="btn btn-s" id="btn-delete-rdv" onclick="deleteRdv()" style="display:none;background:#fee2e2;color:#dc2626;margin-right:auto">🗑 Supprimer</button>
+      <button class="btn btn-s" onclick="CM('mo-rdv')">Annuler</button>
+      <button class="btn btn-p" onclick="saveRdv()">Enregistrer</button>
+    </div>
   </div></div>
 </div>
 
@@ -1154,8 +1158,11 @@ async function openRdvModal(prefill=null){
   ['rdv-id','rdv-notes'].forEach(id=>$(id).value='');
   $('rdv-date').value=dateLocale(new Date());$('rdv-heure').value='09:00';
   $('rdv-duree').value=60;$('rdv-statut').value='planifié';$('mo-rdv-t').textContent='Nouveau RDV';
+  $('btn-delete-rdv').style.display='none';
   if(ME.role==='technicien')$('rdv-tech').value=ME.id;
-  if(prefill){Object.assign($,{});$('rdv-id').value=prefill.id||'';$('rdv-client').value=prefill.client_id||'';$('rdv-tech').value=prefill.technicien_id||'';$('rdv-date').value=prefill.date_rdv||'';$('rdv-heure').value=prefill.heure_debut?.slice(0,5)||'';$('rdv-duree').value=prefill.duree_minutes||60;$('rdv-type-int').value=prefill.type_intervention||'';$('rdv-statut').value=prefill.statut||'planifié';$('rdv-notes').value=prefill.notes||'';$('mo-rdv-t').textContent='Modifier le RDV';}
+  if(prefill){Object.assign($,{});$('rdv-id').value=prefill.id||'';$('rdv-client').value=prefill.client_id||'';$('rdv-tech').value=prefill.technicien_id||'';$('rdv-date').value=prefill.date_rdv||'';$('rdv-heure').value=prefill.heure_debut?.slice(0,5)||'';$('rdv-duree').value=prefill.duree_minutes||60;$('rdv-type-int').value=prefill.type_intervention||'';$('rdv-statut').value=prefill.statut||'planifié';$('rdv-notes').value=prefill.notes||'';$('mo-rdv-t').textContent='Modifier le RDV';
+    if(prefill.id)$('btn-delete-rdv').style.display='inline-flex';
+  }
   OM('mo-rdv');
 }
 window.editRdv=function(id){const r=rdvs.find(x=>x.id===id);if(r)openRdvModal(r)};
@@ -1166,6 +1173,15 @@ async function saveRdv(){
   const {error}=id?await db.from('rdv').update(p).eq('id',id):await db.from('rdv').insert(p);
   if(error){toast('Erreur: '+error.message,'err');return}
   toast(id?'RDV modifié':'RDV créé');CM('mo-rdv');
+  if($('page-dash-sec').classList.contains('active'))loadDashSec();else loadPlanningPage();
+}
+async function deleteRdv(){
+  const id=$('rdv-id').value;
+  if(!id)return;
+  if(!confirm('Supprimer ce RDV ?'))return;
+  const {error}=await db.from('rdv').delete().eq('id',id);
+  if(error){toast('Erreur: '+error.message,'err');return}
+  toast('RDV supprimé');CM('mo-rdv');
   if($('page-dash-sec').classList.contains('active'))loadDashSec();else loadPlanningPage();
 }
 
