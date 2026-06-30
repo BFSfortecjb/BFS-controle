@@ -1213,12 +1213,13 @@ async function loadVerifs(){
   if(cid)q=q.eq('client_id',cid);if(tid)q=q.eq('type_equipement_code',tid);
   const {data}=await q;const el=$('tbl-verifs');
   if(!data?.length){el.innerHTML='<div class="t-empty">Aucune vérification</div>';return}
-  el.innerHTML=`<table><thead><tr><th>Client</th><th>Agence</th><th>Équipement</th><th>Type</th><th>Date vérif.</th><th>Prochaine échéance</th><th>Technicien</th><th>Résultat</th><th>Actions</th></tr></thead><tbody>${data.map(v=>`<tr>
+  el.innerHTML=`<table><thead><tr><th>Client</th><th>Agence</th><th>Équipement</th><th>Type</th><th>Date vérif.</th><th>Prochaine échéance</th><th>Technicien</th><th>Résultat</th><th>Actions</th></tr></thead><tbody>${data.map(v=>`<tr${v.realisee_par_bfs===false?' style="opacity:.75"':''}>
     <td>${v.clients?.raison_sociale||'—'}</td><td><span class="badge bg">${v.agences?.nom||'—'}</span></td>
     <td>${v.equipements?.numero_identification||'—'}<br><small>${v.equipements?.marque||''}</small></td>
     <td>${v.types_equipements?.icone||''} ${v.types_equipements?.libelle||'—'}</td>
     <td>${fmt(v.date_verification)}</td><td class="${ecClass(v.date_prochaine_echeance)}">${fmt(v.date_prochaine_echeance)}</td>
-    <td>${v.technicien||'—'}</td><td>${badgeR(v.resultat)}</td>
+    <td>${v.technicien||'—'}${v.realisee_par_bfs===false?'<br><span class="badge bg" style="font-size:10px">⚠ '+(v.prestataire_externe||'Externe')+'</span>':''}</td>
+    <td>${badgeR(v.resultat)}</td>
     <td><div class="ia"><button class="btn btn-s btn-xs" onclick="exportVerifPDF('${v.id}')">📄</button><button class="btn btn-s btn-xs" onclick="deleteVerif('${v.id}')">🗑</button></div></td>
   </tr>`).join('')}</tbody></table>`;
 }
