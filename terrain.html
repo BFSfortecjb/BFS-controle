@@ -861,12 +861,26 @@ async function ouvrirVerif(equipId){
   const {data:lastV}=await db.from('verifications').select('date_verification,date_prochaine_echeance,resultat').eq('equipement_id',equipId).order('date_verification',{ascending:false}).limit(1);
   const last=lastV?.[0];
 
+  // ===== CALCUL DU PALIER DE MAINTENANCE SUGGÉRÉ =====
+  const {data:paliers}=await db.from('paliers_maintenance').select('*').eq('type_equipement_code',equip.type_equipement_code).eq('actif',true).order('ordre');
+  const palierSuggere = calculerPalierSuggere(equip, paliers||[]);
+
   const content=$('verif-content');
   content.innerHTML=`
     ${last?`<div style="background:var(--bleu-l);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--bleu)">
       Dernière vérif. : ${fmt(last.date_verification)} — ${last.resultat||'—'} · Échéance : ${fmt(last.date_prochaine_echeance)}
     </div>`:''}
-    
+
+    ${palierSuggere ? `
+    <div class="sec">Type d'opération</div>
+    <div class="fg" style="margin-bottom:14px">
+      <select id="verif-palier" onchange="onPalierChange()" style="width:100%;padding:11px 13px;border:1.5px solid var(--rouge);border-radius:10px;font-size:14px;font-weight:600;background:#fff5f4">
+        ${(paliers||[]).map(p=>`<option value="${p.id}" data-code="${p.code}" data-reinit="${p.reinitialise_compteur}" ${p.id===palierSuggere.id?'selected':''}>${p.libelle}${p.id===palierSuggere.id?' (suggéré)':''}</option>`).join('')}
+      </select>
+      ${palierSuggere.reference_normative ? `<div style="font-size:11px;color:var(--txt-l);margin-top:4px">📋 ${palierSuggere.reference_normative}</div>` : ''}
+    </div>
+    ` : ''}
+
     <div class="sec">Points de contrôle</div>
     <div id="pc-container">
       ${points.map(p=>{
@@ -954,6 +968,46 @@ async function ouvrirVerif(equipId){
   });
   refreshPiecesManuelles();
   goTo('s-verif');
+}
+
+// ============================================================
+// CALCUL DU PALIER DE MAINTENANCE SUGGÉRÉ
+// ============================================================
+function calculerPalierSuggere(equip, paliers){
+  if(!paliers || !paliers.length) return null;
+
+  // Date de référence : dernière réinitialisation (recharge/révision) sinon mise en service sinon fabrication
+  const dateRef = equip.date_derniere_reinitialisation || equip.date_mise_en_service || equip.date_fabrication;
+  if(!dateRef){
+    // Pas de date connue → on suggère le palier le plus simple (premier dans l'ordre)
+    return paliers.find(p => !p.reinitialise_compteur) || paliers[0];
+  }
+
+  const ageAnnees = (new Date() - new Date(dateRef)) / (365.25 * 86400000);
+
+  // Trier les paliers du plus long intervalle au plus court pour trouver le palier applicable
+  const triesDesc = [...paliers].sort((a,b) => b.intervalle_annees - a.intervalle_annees);
+
+  // Cherche le plus grand palier dont l'intervalle est atteint ou dépassé
+  for(const p of triesDesc){
+    // Tolérance : on considère le palier "dû" si on a atteint au moins 90% de l'intervalle
+    // et qu'il y a un nombre entier de fois cet intervalle dans l'âge (avec tolérance de ±2 mois comme la norme extincteur)
+    const ratio = ageAnnees / p.intervalle_annees;
+    const resteEntier = Math.abs(ratio - Math.round(ratio));
+    if(ratio >= 0.85 && resteEntier <= 0.2 && Math.round(ratio) >= 1){
+      return p;
+    }
+  }
+
+  // Par défaut : le palier le plus simple (non réinitialisant, plus petit intervalle)
+  const simples = paliers.filter(p => !p.reinitialise_compteur);
+  if(simples.length) return simples.sort((a,b)=>a.intervalle_annees-b.intervalle_annees)[0];
+  return paliers[0];
+}
+
+function onPalierChange(){
+  // Pourrait déclencher un re-filtrage des points de contrôle selon le palier choisi
+  // (à étendre plus tard si des points spécifiques par palier sont définis)
 }
 
 function getDefaultEcheance(){
@@ -1066,6 +1120,13 @@ async function validerVerif(){
   const echeance=$('verif-echeance').value;
   const resultatDB=currentStatut==='hors service'?'non conforme':currentStatut;
 
+  // Palier sélectionné
+  const palierSel = $('verif-palier');
+  const palierId = palierSel ? palierSel.value : null;
+  const palierOpt = palierSel ? palierSel.options[palierSel.selectedIndex] : null;
+  const palierCode = palierOpt ? palierOpt.dataset.code : null;
+  const reinitialise = palierOpt ? palierOpt.dataset.reinit === 'true' : false;
+
   // Enregistrer en base
   const {data:vData,error:ve}=await db.from('verifications').insert({
     equipement_id:currentEquipId,client_id:currentClient.id,
@@ -1075,9 +1136,17 @@ async function validerVerif(){
     date_prochaine_echeance:echeance||null,
     technicien:`${ME.prenom||''} ${ME.nom}`.trim(),
     resultat:resultatDB,observations:obs,
-    session_id:currentSession?.id
+    session_id:currentSession?.id,
+    palier_id:palierId||null,
+    palier_code:palierCode||null,
+    reinitialise_compteur:reinitialise
   }).select().single();
   if(ve){toast('Erreur enregistrement','err');return}
+
+  // Si le palier réinitialise le compteur (recharge, révision...), mettre à jour l'équipement
+  if(reinitialise){
+    await db.from('equipements').update({date_derniere_reinitialisation:new Date().toISOString().slice(0,10)}).eq('id',currentEquipId);
+  }
 
   // Résultats points de contrôle
   const resPts=[];
@@ -1110,6 +1179,34 @@ async function validerVerif(){
       delai_remplacement:p.delai_remplacement||null
     }));
     await db.from('pieces_verif').insert(piecesData);
+
+    // Pour chaque pièce CHANGÉE (pas "à remplacer"), créer une entrée pieces_installees
+    // avec sa propre date de pose → relance son compteur individuel
+    const piecesChangees = currentPieces.filter(p => p.type_action === 'changée');
+    if(piecesChangees.length){
+      // Récupérer la durée de vie pour les pièces du catalogue
+      const catalogueIds = piecesChangees.filter(p=>p.piece_catalogue_id).map(p=>p.piece_catalogue_id);
+      let dureesParId = {};
+      if(catalogueIds.length){
+        const {data:catData} = await db.from('pieces_catalogue').select('id,duree_vie_annees,delai_commande_jours').in('id', catalogueIds);
+        (catData||[]).forEach(c => dureesParId[c.id] = c);
+      }
+      const installeesData = piecesChangees.map(p => {
+        const info = p.piece_catalogue_id ? dureesParId[p.piece_catalogue_id] : null;
+        return {
+          equipement_id: currentEquipId,
+          piece_catalogue_id: p.piece_catalogue_id || null,
+          libelle: p.libelle,
+          reference: p.reference || null,
+          date_pose: new Date().toISOString().slice(0,10),
+          duree_vie_annees: info?.duree_vie_annees || null,
+          delai_commande_jours: info?.delai_commande_jours || 30,
+          pose_par: ME.id,
+          verification_id: vData.id
+        };
+      });
+      await db.from('pieces_installees').insert(installeesData);
+    }
   }
 
   // Mettre à jour statut équipement si HS
@@ -1365,7 +1462,7 @@ function ajouterChampPersoEF(label, value){
   const div=document.createElement('div');
   div.id='efcp-row-'+i;
   div.style.cssText='display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;margin-bottom:8px';
-  div.innerHTML='<input type="text" id="efcp-label-'+i+'" placeholder="Libellé" value="'+label+'" style="padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"><input type="text" id="efcp-value-'+i+'" placeholder="Valeur" value="'+value+'" style="padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"><button type="button" onclick="document.getElementById('efcp-row-'+i+'').remove()" style="padding:8px;background:#fee2e2;color:#dc2626;border:none;border-radius:8px;cursor:pointer;font-size:16px">✕</button>';
+  div.innerHTML=`<input type="text" id="efcp-label-${i}" placeholder="Libellé" value="${label}" style="padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"><input type="text" id="efcp-value-${i}" placeholder="Valeur" value="${value}" style="padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"><button type="button" onclick="document.getElementById('efcp-row-${i}').remove()" style="padding:8px;background:#fee2e2;color:#dc2626;border:none;border-radius:8px;cursor:pointer;font-size:16px">✕</button>`;
   zone.appendChild(div);
 }
 

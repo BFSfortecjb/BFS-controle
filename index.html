@@ -298,6 +298,10 @@ tr:hover td{background:#fafafa}
             <div class="card-header"><h2>⚠️ Urgences</h2></div>
             <div id="sec-urgences"><div class="loading"><span class="spin"></span></div></div>
           </div>
+          <div class="card">
+            <div class="card-header"><h2>📦 Commandes</h2><a href="#" onclick="navigate('commandes');return false" style="font-size:12px;color:var(--rouge)">Voir tout →</a></div>
+            <div id="sec-commandes-widget"><div class="loading"><span class="spin"></span></div></div>
+          </div>
         </div>
       </div>
 
@@ -406,6 +410,28 @@ tr:hover td{background:#fafafa}
         </div>
       </div>
 
+      <!-- COMMANDES À PRÉVOIR -->
+      <div class="page" id="page-commandes">
+        <div class="stats-grid" id="commandes-stats"></div>
+        <div class="search-bar">
+          <select id="f-statut-cmd" onchange="loadCommandes()" style="max-width:200px">
+            <option value="">Toutes</option>
+            <option value="expirée">⛔ Expirées</option>
+            <option value="à_commander">🔴 À commander</option>
+            <option value="à_surveiller">🟠 À surveiller</option>
+          </select>
+          <button class="btn btn-s btn-sm" onclick="exportCommandesXLS()">⬇ Excel</button>
+        </div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-header"><h2>📦 Pièces groupées à commander</h2></div>
+          <div id="commandes-groupees"><div class="loading"><span class="spin"></span></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2>📋 Détail par équipement</h2></div>
+          <div id="commandes-detail"><div class="loading"><span class="spin"></span></div></div>
+        </div>
+      </div>
+
       <!-- UTILISATEURS (admin) -->
       <div class="page" id="page-utilisateurs">
         <div class="search-bar">
@@ -511,6 +537,7 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Technicien</label><input type="text" id="v-tech"></div>
       <div class="fg"><label>Résultat global</label><select id="v-resultat"><option value="conforme">Conforme</option><option value="non conforme">Non conforme</option><option value="à surveiller">À surveiller</option></select></div>
     </div>
+    <div class="fg" id="palier-zone" style="display:none;margin-top:10px"></div>
     <div class="sec-title">Points de contrôle</div>
     <div id="pc-loading" style="display:none" class="loading"><span class="spin"></span>Chargement…</div>
     <div id="pc-list" class="pc-list"></div>
@@ -766,6 +793,9 @@ function buildNav(){
   html+=navA('verifications','✅','Vérifications');
   html+=navA('contrats','📋','Contrats');
   html+=navA('planning','📅','Planning');
+  if(role==='admin'||role==='secretariat'){
+    html+=navA('commandes','📦','Commandes à prévoir');
+  }
   if(role==='admin'){
     html+=`<div class="nav-sec">Administration</div>`;
     html+=navA('utilisateurs','👥','Utilisateurs');
@@ -800,6 +830,7 @@ function navigate(page){
   if(page==='contrats')loadContrats();
   if(page==='planning')loadPlanningPage();
   if(page==='utilisateurs')loadUsers();
+  if(page==='commandes')loadCommandes();
   if(page==='config-points')loadConfigPage();
 }
 
@@ -948,6 +979,14 @@ async function loadDashSec(){
     <div class="stat-card violet"><div class="val">${e.filter(x=>x.statut_echeance==='proche').length}</div><div class="lab">Proche &lt;90j</div></div>`;
   const urgentes=e.filter(x=>['en retard','urgent'].includes(x.statut_echeance)).slice(0,6);
   $('sec-urgences').innerHTML=urgentes.length?'<div style="padding:8px">'+urgentes.map(x=>`<div style="padding:7px 12px;border-left:3px solid ${x.statut_echeance==='en retard'?'#dc2626':'#d97706'};margin-bottom:5px;background:#fafafa;border-radius:0 6px 6px 0;font-size:12px"><strong>${x.raison_sociale}</strong> — ${x.icone} ${x.type_libelle}<br><span class="${ecClass(x.date_prochaine_echeance)}">${fmt(x.date_prochaine_echeance)}</span></div>`).join('')+'</div>':'<div class="t-empty">✅ Aucune urgence</div>';
+
+  // Widget commandes
+  const {data:cmdData} = await db.from('vue_commandes_a_prevoir').select('*').order('date_echeance').limit(6);
+  const cmdUrgentes = (cmdData||[]).filter(c=>['expirée','à_commander'].includes(c.statut_commande));
+  $('sec-commandes-widget').innerHTML = cmdUrgentes.length
+    ? '<div style="padding:8px">'+cmdUrgentes.map(c=>`<div style="padding:7px 12px;border-left:3px solid ${c.statut_commande==='expirée'?'#dc2626':'#d97706'};margin-bottom:5px;background:#fafafa;border-radius:0 6px 6px 0;font-size:12px"><strong>${c.libelle}</strong><br><span style="color:var(--txt-l)">${c.raison_sociale} — ${c.numero_identification||''}</span><br><span class="${ecClass(c.date_echeance)}">${fmt(c.date_echeance)}</span></div>`).join('')+'</div>'
+    : '<div class="t-empty">✅ Aucune commande urgente</div>';
+
   renderCal('calendrier',calDate);
 }
 
@@ -1206,8 +1245,32 @@ async function onVerifEquipChange(){
   const typeCode=opt.dataset.type;const equipId=sel.value;
   const equip=equipements.find(e=>e.id===equipId);
   $('pc-loading').style.display='block';$('pc-list').innerHTML='';
-  const {data:pts}=await db.from('points_controle').select('*').eq('type_equipement_code',typeCode).eq('actif',true).order('ordre');
+
+  const [{data:pts},{data:paliers}]=await Promise.all([
+    db.from('points_controle').select('*').eq('type_equipement_code',typeCode).eq('actif',true).order('ordre'),
+    db.from('paliers_maintenance').select('*').eq('type_equipement_code',typeCode).eq('actif',true).order('ordre')
+  ]);
   $('pc-loading').style.display='none';
+
+  // Calcul et affichage du palier suggéré
+  const palierZone = $('palier-zone');
+  if(palierZone){
+    if(paliers && paliers.length){
+      const palierSuggere = calculerPalierSuggereBureau(equip, paliers);
+      palierZone.style.display = 'block';
+      palierZone.innerHTML = `
+        <label>Type d'opération</label>
+        <select id="v-palier" style="width:100%;border-color:var(--rouge);background:#fdf5f4;font-weight:600">
+          ${paliers.map(p=>`<option value="${p.id}" data-code="${p.code}" data-reinit="${p.reinitialise_compteur}" ${palierSuggere&&p.id===palierSuggere.id?'selected':''}>${p.libelle}${palierSuggere&&p.id===palierSuggere.id?' (suggéré)':''}</option>`).join('')}
+        </select>
+        ${palierSuggere?.reference_normative?`<div style="font-size:11px;color:var(--txt-l);margin-top:3px">📋 ${palierSuggere.reference_normative}</div>`:''}
+      `;
+    } else {
+      palierZone.style.display = 'none';
+      palierZone.innerHTML = '';
+    }
+  }
+
   const marque=(equip?.marque||'').toLowerCase();const modele=(equip?.modele||'').toLowerCase();
   const filtered=(pts||[]).filter(p=>{if(!p.marque&&!p.modele)return true;if(p.marque&&marque&&p.marque.toLowerCase()===marque){if(!p.modele)return true;if(p.modele&&modele&&p.modele.toLowerCase()===modele)return true;return false}return false});
   $('pc-list').innerHTML=filtered.map(p=>{
@@ -1219,13 +1282,46 @@ async function onVerifEquipChange(){
     return`<div class="pc-item" id="pci-${p.id}" data-id="${p.id}" data-type="${p.type_reponse}"><div class="pc-label">${p.libelle}${p.obligatoire?'<span style="color:var(--rouge)">*</span>':''}</div><div>${inp}</div></div>`;
   }).join('');
 }
+
+function calculerPalierSuggereBureau(equip, paliers){
+  if(!paliers || !paliers.length) return null;
+  const dateRef = equip?.date_derniere_reinitialisation || equip?.date_mise_en_service || equip?.date_fabrication;
+  if(!dateRef){
+    return paliers.find(p => !p.reinitialise_compteur) || paliers[0];
+  }
+  const ageAnnees = (new Date() - new Date(dateRef)) / (365.25 * 86400000);
+  const triesDesc = [...paliers].sort((a,b) => b.intervalle_annees - a.intervalle_annees);
+  for(const p of triesDesc){
+    const ratio = ageAnnees / p.intervalle_annees;
+    const resteEntier = Math.abs(ratio - Math.round(ratio));
+    if(ratio >= 0.85 && resteEntier <= 0.2 && Math.round(ratio) >= 1){
+      return p;
+    }
+  }
+  const simples = paliers.filter(p => !p.reinitialise_compteur);
+  if(simples.length) return simples.sort((a,b)=>a.intervalle_annees-b.intervalle_annees)[0];
+  return paliers[0];
+}
+
 window.selPC=function(lbl,type,name){lbl.closest('.pc-radio').querySelectorAll('label').forEach(l=>l.classList.remove('ok-sel','nok-sel'));lbl.classList.add(type==='ok'?'ok-sel':'nok-sel');const item=lbl.closest('.pc-item');item.classList.remove('ok','nc');item.classList.add(type==='ok'?'ok':'nc')};
 async function saveVerif(){
   const cid=$('v-client').value;const eid=$('v-equip').value;const date=$('v-date').value;
   if(!eid||!date){toast('Champs obligatoires manquants','err');return}
   const opt=$('v-equip').options[$('v-equip').selectedIndex];const typeCode=opt?.dataset?.type||'';
-  const {data:vData,error}=await db.from('verifications').insert({equipement_id:eid,client_id:cid,type_equipement_code:typeCode,date_verification:date,date_prochaine_echeance:$('v-echeance').value||null,technicien:$('v-tech').value.trim(),technicien_id:ME.id,resultat:$('v-resultat').value,observations:$('v-obs').value.trim()}).select().single();
+
+  const palierSel=$('v-palier');
+  const palierId=palierSel?palierSel.value:null;
+  const palierOpt=palierSel?palierSel.options[palierSel.selectedIndex]:null;
+  const palierCode=palierOpt?palierOpt.dataset.code:null;
+  const reinitialise=palierOpt?palierOpt.dataset.reinit==='true':false;
+
+  const {data:vData,error}=await db.from('verifications').insert({equipement_id:eid,client_id:cid,type_equipement_code:typeCode,date_verification:date,date_prochaine_echeance:$('v-echeance').value||null,technicien:$('v-tech').value.trim(),technicien_id:ME.id,resultat:$('v-resultat').value,observations:$('v-obs').value.trim(),palier_id:palierId||null,palier_code:palierCode||null,reinitialise_compteur:reinitialise}).select().single();
   if(error){toast('Erreur: '+error.message,'err');return}
+
+  if(reinitialise){
+    await db.from('equipements').update({date_derniere_reinitialisation:date}).eq('id',eid);
+  }
+
   const items=document.querySelectorAll('.pc-item[data-id]');const resultats=[];
   items.forEach(item=>{
     const pid=item.dataset.id;const tt=item.dataset.type;
@@ -1328,6 +1424,79 @@ async function exportContratPDF(id){
 // UTILISATEURS (admin)
 // ============================================================
 let users=[];
+// ============================================================
+// COMMANDES À PRÉVOIR
+// ============================================================
+async function loadCommandes(){
+  const statutFiltre = $('f-statut-cmd').value;
+
+  let q = db.from('vue_commandes_a_prevoir').select('*').order('date_echeance');
+  const {data: all} = await q;
+  const data = all || [];
+
+  const expirees = data.filter(d => d.statut_commande === 'expirée');
+  const aCommander = data.filter(d => d.statut_commande === 'à_commander');
+  const aSurveiller = data.filter(d => d.statut_commande === 'à_surveiller');
+
+  $('commandes-stats').innerHTML = `
+    <div class="stat-card rouge"><div class="val">${expirees.length}</div><div class="lab">⛔ Expirées</div></div>
+    <div class="stat-card orange"><div class="val">${aCommander.length}</div><div class="lab">🔴 À commander</div></div>
+    <div class="stat-card bleu"><div class="val">${aSurveiller.length}</div><div class="lab">🟠 À surveiller (90j)</div></div>
+  `;
+
+  // Commandes groupées par référence
+  const {data: groupees} = await db.from('vue_commandes_groupees').select('*');
+  const elG = $('commandes-groupees');
+  if(!groupees || !groupees.length){
+    elG.innerHTML = '<div class="t-empty">✅ Aucune commande urgente à prévoir</div>';
+  } else {
+    elG.innerHTML = `<table><thead><tr><th>Pièce</th><th>Référence</th><th>Quantité</th><th>Échéance la plus proche</th><th>Statut</th><th>Clients concernés</th></tr></thead><tbody>${groupees.map(g=>`<tr>
+      <td><strong>${g.libelle}</strong></td>
+      <td>${g.reference||'—'}</td>
+      <td><span class="badge bb">${g.quantite_necessaire}</span></td>
+      <td class="${ecClass(g.echeance_la_plus_proche)}">${fmt(g.echeance_la_plus_proche)}</td>
+      <td>${g.statut_commande==='expirée'?'<span class="badge br">⛔ Expirée</span>':'<span class="badge bo">🔴 À commander</span>'}</td>
+      <td style="font-size:12px;color:var(--txt-l)">${(g.clients_concernes||[]).slice(0,3).join(', ')}${(g.clients_concernes||[]).length>3?' +'+((g.clients_concernes||[]).length-3):''}</td>
+    </tr>`).join('')}</tbody></table>`;
+  }
+
+  // Détail filtré
+  const filtered = statutFiltre ? data.filter(d=>d.statut_commande===statutFiltre) : data.filter(d=>d.statut_commande!=='ok');
+  const elD = $('commandes-detail');
+  if(!filtered.length){
+    elD.innerHTML = '<div class="t-empty">Aucune pièce dans cette catégorie</div>';
+  } else {
+    elD.innerHTML = `<table><thead><tr><th>Statut</th><th>Pièce</th><th>Équipement</th><th>Client</th><th>Agence</th><th>Date pose</th><th>Échéance</th></tr></thead><tbody>${filtered.map(d=>{
+      const badge = d.statut_commande==='expirée'?'<span class="badge br">⛔ Expirée</span>':d.statut_commande==='à_commander'?'<span class="badge bo">🔴 À commander</span>':'<span class="badge bb">🟠 Surveiller</span>';
+      return `<tr>
+        <td>${badge}</td>
+        <td><strong>${d.libelle}</strong>${d.reference?'<br><small style="color:var(--txt-l)">'+d.reference+'</small>':''}</td>
+        <td>${d.icone||''} ${d.numero_identification||'—'}<br><small>${d.localisation||''}</small></td>
+        <td>${d.raison_sociale}</td>
+        <td><span class="badge bg">${d.agence_nom||'—'}</span></td>
+        <td>${fmt(d.date_pose)}</td>
+        <td class="${ecClass(d.date_echeance)}">${fmt(d.date_echeance)}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+  }
+}
+
+async function exportCommandesXLS(){
+  const {data} = await db.from('vue_commandes_a_prevoir').select('*').order('date_echeance');
+  const filtered = (data||[]).filter(d=>d.statut_commande!=='ok');
+  if(!filtered.length){toast('Aucune commande à exporter','err');return}
+  const rows = filtered.map(d=>({
+    'Statut':d.statut_commande,'Pièce':d.libelle,'Référence':d.reference,
+    'Équipement':d.numero_identification,'Localisation':d.localisation,
+    'Client':d.raison_sociale,'Agence':d.agence_nom,
+    'Date pose':fmt(d.date_pose),'Date échéance':fmt(d.date_echeance)
+  }));
+  const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Commandes');
+  XLSX.writeFile(wb,`BFS_commandes_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('Export généré');
+}
+
 async function loadUsers(){
   const {data}=await db.from('profils').select('*,agences(nom)').order('nom');
   users=data||[];renderUsers();
