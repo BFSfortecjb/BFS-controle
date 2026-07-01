@@ -1671,10 +1671,23 @@ async function confirmerSupprSession(sessionId, btn){
   const motif=document.getElementById('motif-sess-sel').value;
   if(!motif){toast('Motif obligatoire','err');return}
   btn.disabled=true;btn.textContent='Suppression…';
-  // Dissocier les vérifications de cette session avant de supprimer
-  await db.from('verifications').update({session_id:null}).eq('session_id',sessionId);
-  const {error}=await db.from('sessions_controle').delete().eq('id',sessionId);
-  if(error){toast('Erreur: '+error.message,'err');btn.disabled=false;btn.textContent='Supprimer';return}
+
+  // Dissocier les vérifications de cette session
+  const {error:e1}=await db.from('verifications').update({session_id:null}).eq('session_id',sessionId);
+  if(e1){toast('Erreur dissociation verifs: '+e1.message,'err');btn.disabled=false;btn.textContent='Supprimer';return}
+
+  // Supprimer la session
+  const {error:e2,count}=await db.from('sessions_controle').delete().eq('id',sessionId).select();
+  if(e2){toast('Erreur suppression: '+e2.message,'err');btn.disabled=false;btn.textContent='Supprimer';return}
+
+  // Vérifier que la suppression a bien eu lieu
+  const {data:check}=await db.from('sessions_controle').select('id').eq('id',sessionId).single();
+  if(check){
+    toast('Suppression bloquée — vérifiez les droits Supabase (RLS)','err');
+    btn.disabled=false;btn.textContent='Supprimer';
+    return;
+  }
+
   btn.closest('.mo').remove();
   toast('Session supprimée ✓');
   loadVerifs();
