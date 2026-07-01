@@ -1671,7 +1671,7 @@ async function validerSignatureEtCloturer(){
   if(!sigHasContent){toast('Signature obligatoire','err');return}
 
   const btn=document.getElementById('btn-valider-signature');
-  btn.disabled=true;btn.textContent='⏳ Envoi en cours…';
+  btn.disabled=true;btn.textContent='⏳ Clôture en cours…';
 
   const canvas=document.getElementById('sig-canvas');
   const signatureDataUrl=canvas.toDataURL('image/png');
@@ -1681,39 +1681,45 @@ async function validerSignatureEtCloturer(){
   const pdfBlob=doc.output('blob');
   const fileName=`bon_${currentClient.id}_${Date.now()}.pdf`;
 
-  // Upload vers Supabase Storage
-  const {data:uploadData,error:uploadErr}=await db.storage.from('bons-intervention').upload(fileName,pdfBlob,{contentType:'application/pdf'});
-  if(uploadErr){
-    toast('Erreur upload: '+uploadErr.message,'err');
-    btn.disabled=false;btn.textContent='✅ Valider et clôturer';
-    return;
-  }
-  const {data:urlData}=db.storage.from('bons-intervention').getPublicUrl(fileName);
+  // Upload vers Supabase Storage — non bloquant
+  let pdfUrl=null;
+  try{
+    const {data:uploadData,error:uploadErr}=await db.storage.from('bons-intervention').upload(fileName,pdfBlob,{contentType:'application/pdf'});
+    if(!uploadErr){
+      const {data:urlData}=db.storage.from('bons-intervention').getPublicUrl(fileName);
+      pdfUrl=urlData.publicUrl;
+    } else {
+      console.warn('Upload PDF échoué (bucket absent?):', uploadErr.message);
+      // On continue quand même — le PDF sera généré côté local si besoin
+    }
+  }catch(e){console.warn('Erreur upload PDF:',e);}
 
   const nbVerifies=Object.keys(sessionVerifs).length;
 
-  // Enregistrer le bon d'intervention
-  await db.from('bons_intervention').insert({
-    session_id:currentSession?.id,
-    client_id:currentClient.id,
-    agence_id:currentClient.agence_id,
-    technicien_id:ME.id,
-    date_intervention:new Date().toISOString().slice(0,10),
-    nb_equipements_verifies:nbVerifies,
-    signataire_nom:nom,
-    pdf_url:urlData.publicUrl,
-    pdf_path:fileName,
-    statut_facturation:'à_facturer'
-  });
+  // Enregistrer le bon d'intervention (même sans PDF uploadé)
+  try{
+    await db.from('bons_intervention').insert({
+      session_id:currentSession?.id,
+      client_id:currentClient.id,
+      agence_id:currentClient.agence_id,
+      technicien_id:ME.id,
+      date_intervention:new Date().toISOString().slice(0,10),
+      nb_equipements_verifies:nbVerifies,
+      signataire_nom:nom,
+      pdf_url:pdfUrl,
+      pdf_path:pdfUrl?fileName:null,
+      statut_facturation:'à_facturer'
+    });
+  }catch(e){console.warn('Erreur enregistrement bon:',e);}
 
-  // Clôturer la session
+  // Clôturer la session — toujours exécuté
   if(currentSession){
     const obs=currentEquipements.filter(e=>!sessionVerifs[e.id]).length>0?`${currentEquipements.filter(e=>!sessionVerifs[e.id]).length} équipement(s) non vérifié(s).`:'';
     await db.from('sessions_controle').update({statut:'terminée',observations_generales:obs,updated_at:new Date().toISOString()}).eq('id',currentSession.id);
   }
 
   currentSession=null;sessionVerifs={};currentEquipements=[];
-  toast('Bon d\'intervention signé et envoyé ✓');
+  toast(pdfUrl?'Bon d\'intervention signé et enregistré ✓':'Session clôturée ✓ (PDF à configurer: créer bucket bons-intervention dans Supabase Storage)');
   btn.disabled=false;btn.textContent='✅ Valider et clôturer';
   await loadParc();
   goTo('s-parc');
