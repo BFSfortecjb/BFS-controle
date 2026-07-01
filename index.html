@@ -478,6 +478,27 @@ tr:hover td{background:#fafafa}
         <div class="card"><div id="tbl-users"><div class="loading"><span class="spin"></span></div></div></div>
       </div>
 
+      <!-- JOURNAL D'AUDIT -->
+      <div class="page" id="page-audit">
+        <div class="search-bar">
+          <select id="f-audit-table" onchange="loadAudit()" style="max-width:180px">
+            <option value="">Toutes les tables</option>
+            <option value="verifications">Vérifications</option>
+            <option value="equipements">Équipements</option>
+            <option value="clients">Clients</option>
+            <option value="bons_intervention">Bons d'intervention</option>
+            <option value="rdv">RDV</option>
+          </select>
+          <select id="f-audit-action" onchange="loadAudit()" style="max-width:140px">
+            <option value="">Toutes actions</option>
+            <option value="DELETE">Suppressions</option>
+            <option value="UPDATE">Modifications</option>
+            <option value="INSERT">Créations</option>
+          </select>
+        </div>
+        <div class="card"><div id="tbl-audit"><div class="loading"><span class="spin"></span></div></div></div>
+      </div>
+
       <!-- CONFIG POINTS DE CONTRÔLE -->
       <div class="page" id="page-config-points">
         <div class="search-bar">
@@ -847,6 +868,7 @@ function buildNav(){
   if(role==='admin'){
     html+=`<div class="nav-sec">Administration</div>`;
     html+=navA('utilisateurs','👥','Utilisateurs');
+    html+=navA('audit','🔍','Journal d\'audit');
     html+=navA('config-points','⚙️','Points de contrôle');
   }
   nav.innerHTML=html;
@@ -866,7 +888,7 @@ function navigate(page){
     'dash-admin':'Vue globale','dash-tech':'Mon tableau de bord','dash-sec':'Secrétariat',
     profil:'Mon profil',clients:'Clients',equipements:'Équipements',verifications:'Vérifications',
     contrats:'Contrats',planning:'Planning',utilisateurs:'Utilisateurs','config-points':'Points de contrôle',
-    commandes:'Commandes à prévoir',bons:'Bons d\'intervention'
+    commandes:'Commandes à prévoir',bons:'Bons d\'intervention',audit:'Journal d\'audit'
   };
   $('page-title').textContent=titles[page]||page;
   if(page==='dash-admin')loadDashAdmin();
@@ -879,6 +901,7 @@ function navigate(page){
   if(page==='contrats')loadContrats();
   if(page==='planning')loadPlanningPage();
   if(page==='utilisateurs')loadUsers();
+  if(page==='audit')loadAudit();
   if(page==='commandes')loadCommandes();
   if(page==='bons')loadBons();
   if(page==='config-points')loadConfigPage();
@@ -1788,6 +1811,43 @@ async function marquerFacture(id){
   await db.from('bons_intervention').update({statut_facturation:'facturé',facture_le:new Date().toISOString(),facture_par:ME.id}).eq('id',id);
   toast('Marqué comme facturé');
   loadBons();
+}
+
+async function loadAudit(){
+  const table=$('f-audit-table').value;
+  const action=$('f-audit-action').value;
+  let q=db.from('vue_audit_log').select('*').limit(200);
+  if(table) q=q.eq('table_name',table);
+  if(action) q=q.eq('action',action);
+  const {data,error}=await q;
+  const el=$('tbl-audit');
+  if(error){el.innerHTML=`<div class="t-empty">Erreur: ${error.message}</div>`;return}
+  const logs=data||[];
+  if(!logs.length){el.innerHTML='<div class="t-empty">Aucune action enregistrée</div>';return}
+
+  const badgeAction=a=>a==='DELETE'?'<span class="badge br">🗑 Suppression</span>':a==='INSERT'?'<span class="badge bv">✚ Création</span>':'<span class="badge bo">✎ Modification</span>';
+
+  el.innerHTML=`<table><thead><tr><th>Date</th><th>Action</th><th>Table</th><th>Utilisateur</th><th>Résumé</th><th>Détail</th></tr></thead><tbody>${logs.map(l=>`<tr>
+    <td style="white-space:nowrap;font-size:12px">${new Date(l.created_at).toLocaleString('fr-FR')}</td>
+    <td>${badgeAction(l.action)}</td>
+    <td style="font-size:12px;color:var(--txt-l)">${l.table_name}</td>
+    <td>${l.utilisateur||'—'}<br><small style="color:var(--txt-l)">${l.user_role||''}</small></td>
+    <td style="font-size:12px">${l.resume||'—'}</td>
+    <td><button class="btn btn-s btn-xs" onclick='showAuditDetail(${JSON.stringify(JSON.stringify(l))})'>👁</button></td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+function showAuditDetail(jsonStr){
+  const l=JSON.parse(jsonStr);
+  const modal=document.createElement('div');
+  modal.className='mo open';
+  modal.innerHTML=`<div class="modal" style="max-width:600px"><div class="mh"><h3>Détail de l'action</h3><button class="mclose" onclick="this.closest('.mo').remove()">✕</button></div><div class="mc">
+    <div style="margin-bottom:8px"><strong>Table :</strong> ${l.table_name} · <strong>Action :</strong> ${l.action} · <strong>Par :</strong> ${l.utilisateur||'?'} (${l.user_role||'?'})</div>
+    ${l.old_data?`<div class="sec">Avant</div><pre style="background:var(--bg);padding:10px;border-radius:8px;font-size:11px;overflow:auto;max-height:200px">${JSON.stringify(JSON.parse(l.old_data||'{}'),null,2)}</pre>`:''}
+    ${l.new_data?`<div class="sec">Après</div><pre style="background:var(--bg);padding:10px;border-radius:8px;font-size:11px;overflow:auto;max-height:200px">${JSON.stringify(JSON.parse(l.new_data||'{}'),null,2)}</pre>`:''}
+  </div></div>`;
+  modal.addEventListener('click',e=>{if(e.target===modal)modal.remove()});
+  document.body.appendChild(modal);
 }
 
 async function loadUsers(){
