@@ -229,6 +229,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <button style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer" onclick="doLogout()">⎋</button>
     </div>
   </div>
+  <div style="padding:8px 12px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;gap:6px">
+    <button id="filtre-mes-clients" class="btn btn-p" style="flex:1;font-size:12px;padding:7px" onclick="setFiltreParc('mes')">Mes clients</button>
+    <button id="filtre-tous-clients" class="btn btn-s" style="flex:1;font-size:12px;padding:7px" onclick="setFiltreParc('tous')">Tous</button>
+    <button id="filtre-agence-clients" class="btn btn-s" style="flex:1;font-size:12px;padding:7px" onclick="setFiltreParc('agence')">Mon agence</button>
+  </div>
   <div class="content" id="parc-list">
     <div class="loading"><div class="spin spin-dark"></div></div>
   </div>
@@ -344,21 +349,24 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     </div>
     <div class="sec">Équipements</div>
     <div id="client-equip-stats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px"></div>
-    <button class="btn btn-p" onclick="demarrerSession()" style="margin-bottom:10px">
-      🔧 Démarrer une session de contrôle
-    </button>
-    <button class="btn btn-s btn-sm" onclick="voirEquipements()" style="margin-bottom:8px">
-      📋 Voir tous les équipements
-    </button>
-    <button class="btn btn-s btn-sm" onclick="ouvrirCreerRdvClient()" style="margin-bottom:8px">
-      📅 Créer un RDV
-    </button>
-    <button class="btn btn-s btn-sm" onclick="creerEquipement()" style="margin-bottom:8px">
-      ➕ Ajouter un équipement
-    </button>
-    <button class="btn btn-s btn-sm" onclick="ouvrirInterventionPonctuelle()" style="background:var(--orange-l);color:var(--orange)">
-      🔧 Intervention ponctuelle (hors planning)
-    </button>
+
+    <!-- Bloc équipements par type avec boutons vérification ciblée -->
+    <div id="client-equip-par-type" style="display:none;margin-bottom:14px"></div>
+
+    <div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:4px">
+      <button class="btn btn-s btn-sm" onclick="voirEquipements()" style="margin-bottom:8px">
+        📋 Voir tous les équipements
+      </button>
+      <button class="btn btn-s btn-sm" onclick="ouvrirCreerRdvClient()" style="margin-bottom:8px">
+        📅 Créer un RDV
+      </button>
+      <button class="btn btn-s btn-sm" onclick="creerEquipement()" style="margin-bottom:8px">
+        ➕ Ajouter un équipement
+      </button>
+      <button class="btn btn-s btn-sm" onclick="ouvrirInterventionPonctuelle()" style="background:var(--orange-l);color:var(--orange)">
+        🔧 Intervention ponctuelle (hors planning)
+      </button>
+    </div>
   </div>
 </div>
 
@@ -740,19 +748,23 @@ db.auth.getSession().then(async({data:{session}})=>{if(session)await onLogin(ses
 async function loadParc(){
   const el=$('parc-list');el.innerHTML='<div class="loading"><div class="spin spin-dark"></div></div>';
   const vis=ME.visibilite||'perso';
-  let q=db.from('clients').select('*,agences(nom,code)').order('raison_sociale');
-  // Filtre selon visibilité
-  // Pour terrain : technicien voit ses clients affectés via équipements
+  // Clients affectés directement à ce technicien via affectations_client
+  const {data:affectations}=await db.from('affectations_client').select('client_id').eq('technicien_id',ME.id);
+  const affectedClientIds=[...new Set((affectations||[]).map(a=>a.client_id))];
+
+  // Clients avec équipements affectés (ancienne logique)
   const {data:mesequip}=await db.from('equipements').select('client_id').eq('technicien_id',ME.id);
-  const myClientIds=[...new Set((mesequip||[]).map(e=>e.client_id))];
-  
+  const myClientIds=[...new Set([...affectedClientIds,...(mesequip||[]).map(e=>e.client_id)])];
+
+  // Appliquer le filtre actif
   let allClients=[];
-  if(vis==='perso'&&myClientIds.length>0){
-    const {data}=await db.from('clients').select('*,agences(nom,code)').in('id',myClientIds).order('raison_sociale');
-    allClients=data||[];
-  } else if(vis==='perso'&&myClientIds.length===0){
-    allClients=[];
-  } else if(vis==='perso_agence'&&ME.agence_id){
+  const filtre=_filtreParc||'mes';
+  if(filtre==='mes'){
+    if(myClientIds.length){
+      const {data}=await db.from('clients').select('*,agences(nom,code)').in('id',myClientIds).order('raison_sociale');
+      allClients=data||[];
+    }
+  } else if(filtre==='agence'&&ME.agence_id){
     const {data}=await db.from('clients').select('*,agences(nom,code)').eq('agence_id',ME.agence_id).order('raison_sociale');
     allClients=data||[];
   } else {
@@ -760,8 +772,11 @@ async function loadParc(){
     allClients=data||[];
   }
 
-  if(!allClients.length){el.innerHTML='<div style="text-align:center;padding:40px;color:var(--txt-l)">Aucun client affecté.<br>Contactez votre administrateur.</div>';return}
-  
+  if(!allClients.length){
+    el.innerHTML=`<div style="text-align:center;padding:40px;color:var(--txt-l)">${filtre==='mes'?'Aucun client affecté.<br>Utilisez le filtre "Tous" ou contactez votre administrateur.':'Aucun client.'}</div>`;
+    return;
+  }
+
   // Récup échéances
   const {data:ech}=await db.from('vue_echeances').select('client_id,statut_echeance');
   const echMap={};
@@ -774,7 +789,8 @@ async function loadParc(){
     const st=echMap[c.id]||'ok';
     const badge=st==='en retard'?'cb-rouge':st==='urgent'?'cb-orange':st==='proche'?'cb-orange':'cb-vert';
     const label=st==='en retard'?'En retard':st==='urgent'?'Urgent':st==='proche'?'Proche':'À jour';
-    const myDot=myClientIds.includes(c.id)?'<span style="position:absolute;top:-2px;right:-2px;width:10px;height:10px;background:var(--rouge);border-radius:50%;border:2px solid #fff"></span>':'';
+    const isAffecte=myClientIds.includes(c.id);
+    const myDot=isAffecte?'<span style="position:absolute;top:-2px;right:-2px;width:10px;height:10px;background:var(--rouge);border-radius:50%;border:2px solid #fff"></span>':'';
     return`<div class="client-card" onclick="ouvrirClient('${c.id}')">
       <div class="client-icon" style="background:${st==='en retard'?'#fee2e2':st==='urgent'?'#fef3c7':'#dcfce7'};position:relative">🏢${myDot}</div>
       <div class="client-info">
@@ -785,6 +801,18 @@ async function loadParc(){
     </div>`;
   }).join('');
 }
+
+let _filtreParc='mes';
+function setFiltreParc(filtre){
+  _filtreParc=filtre;
+  ['mes','tous','agence'].forEach(f=>{
+    const btn=$(`filtre-${f}-clients`);
+    if(btn){btn.className=f===filtre?'btn btn-p':'btn btn-s';btn.style.flex='1';btn.style.fontSize='12px';btn.style.padding='7px';}
+  });
+  loadParc();
+}
+
+
 
 async function ouvrirClient(clientId){
   const {data:c}=await db.from('clients').select('*,agences(nom,code)').eq('id',clientId).single();
@@ -804,12 +832,17 @@ async function ouvrirClient(clientId){
   if(c.contact_email)actions.push(`<a class="contact-btn cb-mail" href="mailto:${c.contact_email}">✉ Email</a>`);
   $('client-contact-actions').innerHTML=actions.join('');
 
-  // Stats équipements
-  const {data:equips}=await db.from('equipements').select('id,statut,types_equipements(libelle,icone)').eq('client_id',clientId);
+  // Stats équipements + groupement par type
+  const {data:equips}=await db.from('equipements')
+    .select('*,types_equipements(libelle,icone,code)')
+    .eq('client_id',clientId)
+    .neq('statut','réformé')
+    .order('type_equipement_code');
   currentEquipements=equips||[];
   const total=equips?.length||0;
   const hs=(equips||[]).filter(e=>e.statut==='hors service'||e.statut==='à remplacer').length;
   const op=(equips||[]).filter(e=>e.statut==='opérationnel').length;
+
   $('client-equip-stats').innerHTML=`
     <div style="background:var(--bleu-l);border-radius:10px;padding:10px;text-align:center">
       <div style="font-size:22px;font-weight:700;color:var(--bleu)">${total}</div>
@@ -824,6 +857,54 @@ async function ouvrirClient(clientId){
       <div style="font-size:11px;color:${hs>0?'var(--rouge)':'var(--txt-l)'}">HS / Rempl.</div>
     </div>
   `;
+
+  // Affectations techniciens de ce client
+  const {data:aff}=await db.from('affectations_client')
+    .select('*,types_equipements(libelle,icone)')
+    .eq('client_id',clientId)
+    .eq('technicien_id',ME.id);
+  const mesAffectations=aff||[];
+
+  // Grouper équipements par type pour affichage + bouton vérification ciblée
+  const parType={};
+  (equips||[]).forEach(e=>{
+    const code=e.type_equipement_code;
+    if(!parType[code]) parType[code]={libelle:e.types_equipements?.libelle||code,icone:e.types_equipements?.icone||'',equips:[]};
+    parType[code].equips.push(e);
+  });
+
+  // Insérer le bloc équipements par type avant les boutons d'action
+  const blocEquip=document.getElementById('client-equip-par-type');
+  if(blocEquip){
+    const typesKeys=Object.keys(parType);
+    if(typesKeys.length){
+      blocEquip.innerHTML=`<div style="font-size:12px;font-weight:700;color:var(--txt-l);text-transform:uppercase;margin:14px 0 8px">Équipements en entretien chez BFS</div>`+
+      typesKeys.map(code=>{
+        const g=parType[code];
+        const estAffecte=mesAffectations.some(a=>a.type_equipement_code===code||a.type_equipement_code===null);
+        const nbUrgent=g.equips.filter(e=>{
+          // TODO : calculer depuis vue_echeances si disponible
+          return false;
+        }).length;
+        return `<div style="border:1px solid ${estAffecte?'var(--rouge)':'#e5e7eb'};border-radius:12px;padding:12px 14px;margin-bottom:8px;background:${estAffecte?'#fff5f4':'#fff'}">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="font-weight:700;font-size:14px">${g.icone} ${g.libelle} <span style="font-weight:400;color:var(--txt-l);font-size:12px">(${g.equips.length} unité${g.equips.length>1?'s':''})</span></div>
+            ${estAffecte?'<span style="font-size:11px;background:var(--rouge);color:#fff;padding:2px 8px;border-radius:20px">Mes interventions</span>':''}
+          </div>
+          <button class="btn btn-p" style="width:100%;font-size:13px" onclick="demarrerSessionType('${code}')">
+            🔧 Vérifier les ${g.libelle.toLowerCase()} (${g.equips.length})
+          </button>
+        </div>`;
+      }).join('')+
+      `<button class="btn btn-s" style="width:100%;margin-top:4px" onclick="demarrerSession()">
+        📋 Session complète (tous équipements)
+      </button>`;
+      blocEquip.style.display='block';
+    } else {
+      blocEquip.innerHTML='';
+    }
+  }
+
   goTo('s-client');
 }
 
@@ -869,6 +950,31 @@ async function voirFicheEquip(id){
 // ============================================================
 // SESSION DE CONTRÔLE
 // ============================================================
+async function demarrerSessionType(typeCode){
+  // Filtrer les équipements sur ce type uniquement
+  const equipsDuType=currentEquipements.filter(e=>e.type_equipement_code===typeCode);
+  if(!equipsDuType.length){toast('Aucun équipement de ce type','err');return}
+
+  const {data:sess,error}=await db.from('sessions_controle').insert({
+    client_id:currentClient.id,
+    technicien_id:ME.id,
+    agence_id:currentClient.agence_id,
+    date_session:new Date().toISOString().slice(0,10),
+    statut:'en_cours',
+    nb_equip_total:equipsDuType.length
+  }).select().single();
+  if(error){toast('Erreur création session','err');return}
+  currentSession=sess;
+  sessionVerifs={};
+  // Limiter currentEquipements au type sélectionné pour cette session
+  currentEquipements=equipsDuType;
+  sauvegarderSessionLocale();
+  $('session-client-nom').textContent=currentClient.raison_sociale;
+  updateSessionProgress();
+  renderSessionEquipList();
+  goTo('s-session');
+}
+
 async function demarrerSession(){
   // Créer session en base
   const {data:sess,error}=await db.from('sessions_controle').insert({

@@ -551,6 +551,11 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Email</label><input type="email" id="c-email"></div>
       <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="c-notes"></textarea></div>
     </div>
+
+    <div class="sec-title" id="c-affectations-section" style="display:none">👷 Affectations techniciens par type d'équipement</div>
+    <div id="c-affectations-list" style="display:none;margin-bottom:10px"></div>
+    <button type="button" class="btn btn-s btn-sm" id="c-btn-affectation" style="display:none;margin-bottom:14px" onclick="ajouterAffectation()">+ Ajouter une affectation</button>
+
     <div class="fa"><button class="btn btn-s" onclick="CM('mo-client')">Annuler</button><button class="btn btn-p" onclick="saveClient()">Enregistrer</button></div>
   </div></div>
 </div>
@@ -1294,10 +1299,96 @@ async function openClientModal(prefill=null){
   $('c-agence').innerHTML='<option value="">—</option>'+(ag||[]).map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
   ['c-id','c-rs','c-adr','c-cp','c-ville','c-siret','c-contact','c-tel','c-email','c-notes'].forEach(id=>$(id).value='');
   $('mo-cl-t').textContent='Nouveau client';
-  if(prefill){$('c-id').value=prefill.id;$('c-agence').value=prefill.agence_id||'';$('c-rs').value=prefill.raison_sociale||'';$('c-adr').value=prefill.adresse||'';$('c-cp').value=prefill.code_postal||'';$('c-ville').value=prefill.ville||'';$('c-siret').value=prefill.siret||'';$('c-contact').value=prefill.contact_nom||'';$('c-tel').value=prefill.contact_telephone||'';$('c-email').value=prefill.contact_email||'';$('c-notes').value=prefill.notes||'';$('mo-cl-t').textContent='Modifier le client';}
+  $('c-affectations-section').style.display='none';
+  $('c-affectations-list').style.display='none';
+  $('c-btn-affectation').style.display='none';
+  _affectationsClient=[];
+  if(prefill){
+    $('c-id').value=prefill.id;$('c-agence').value=prefill.agence_id||'';$('c-rs').value=prefill.raison_sociale||'';
+    $('c-adr').value=prefill.adresse||'';$('c-cp').value=prefill.code_postal||'';$('c-ville').value=prefill.ville||'';
+    $('c-siret').value=prefill.siret||'';$('c-contact').value=prefill.contact_nom||'';
+    $('c-tel').value=prefill.contact_telephone||'';$('c-email').value=prefill.contact_email||'';$('c-notes').value=prefill.notes||'';
+    $('mo-cl-t').textContent='Modifier le client';
+    $('c-affectations-section').style.display='block';
+    $('c-affectations-list').style.display='block';
+    $('c-btn-affectation').style.display='inline-flex';
+    const {data:aff}=await db.from('vue_affectations').select('*').eq('client_id',prefill.id);
+    _affectationsClient=aff||[];
+    renderAffectations();
+  }
   OM('mo-client');
 }
 function editClient(id){openClientModal(clients.find(c=>c.id===id))}
+
+// ============================================================
+// AFFECTATIONS TECHNICIENS
+// ============================================================
+let _affectationsClient=[];
+
+function renderAffectations(){
+  const el=$('c-affectations-list');
+  if(!el)return;
+  if(!_affectationsClient.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--txt-l);padding:8px 0">Aucune affectation — tous les techniciens de l\'agence voient ce client.</div>';
+    return;
+  }
+  el.innerHTML=_affectationsClient.map(a=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg);border-radius:8px;margin-bottom:6px">
+      <div style="flex:1;font-size:13px">
+        <strong>${a.tech_prenom||''} ${a.tech_nom||''}</strong>
+        <span style="color:var(--txt-l)"> → ${a.icone||''} ${a.type_libelle||'Tous types'}</span>
+      </div>
+      <button type="button" onclick="supprimerAffectation('${a.id}')" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px">✕</button>
+    </div>
+  `).join('');
+}
+
+async function ajouterAffectation(){
+  if(!profils.length)await loadUsers();
+  const techs=profils.filter(p=>p.role==='technicien');
+  const modal=document.createElement('div');
+  modal.className='mo open';
+  modal.innerHTML=`<div class="modal" style="max-width:380px"><div class="mh"><h3>Affecter un technicien</h3><button class="mclose" onclick="this.closest('.mo').remove()">✕</button></div>
+  <div class="mc">
+    <div class="fg"><label>Technicien *</label>
+      <select id="aff-tech">${techs.map(t=>`<option value="${t.id}">${t.prenom||''} ${t.nom}</option>`).join('')}</select>
+    </div>
+    <div class="fg"><label>Type d'équipement *</label>
+      <select id="aff-type">
+        <option value="">Tous les types</option>
+        ${typesEquip.map(t=>`<option value="${t.code}">${t.icone||''} ${t.libelle}</option>`).join('')}
+      </select>
+    </div>
+    <div class="fa">
+      <button class="btn btn-s" onclick="this.closest('.mo').remove()">Annuler</button>
+      <button class="btn btn-p" onclick="confirmerAffectation(this)">Ajouter</button>
+    </div>
+  </div></div>`;
+  modal.addEventListener('click',e=>{if(e.target===modal)modal.remove()});
+  document.body.appendChild(modal);
+}
+
+async function confirmerAffectation(btn){
+  const clientId=$('c-id').value;
+  if(!clientId){toast('Enregistrez d\'abord le client','err');return}
+  const techId=document.getElementById('aff-tech').value;
+  const typeCode=document.getElementById('aff-type').value||null;
+  const {error}=await db.from('affectations_client').insert({client_id:clientId,technicien_id:techId,type_equipement_code:typeCode});
+  if(error){toast(error.code==='23505'?'Déjà affecté':error.message,'err');return}
+  btn.closest('.mo').remove();
+  const {data:aff}=await db.from('vue_affectations').select('*').eq('client_id',clientId);
+  _affectationsClient=aff||[];
+  renderAffectations();
+  toast('Affectation ajoutée ✓');
+}
+
+async function supprimerAffectation(affId){
+  await db.from('affectations_client').delete().eq('id',affId);
+  _affectationsClient=_affectationsClient.filter(a=>a.id!==affId);
+  renderAffectations();
+}
+
+
 async function saveClient(){
   const id=$('c-id').value;const rs=$('c-rs').value.trim();
   if(!rs){toast('Raison sociale obligatoire','err');return}
