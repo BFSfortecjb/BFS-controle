@@ -235,6 +235,26 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <div class="tabbar">
     <button class="tab-item active" onclick="goTo('s-parc')"><span class="tab-ico">🏢</span>Mon parc</button>
     <button class="tab-item" onclick="ouvrirPlanning()"><span class="tab-ico">📅</span>Planning</button>
+    <button class="tab-item" onclick="ouvrirMesSessions()"><span class="tab-ico">📋</span>Sessions</button>
+  </div>
+</div>
+
+<!-- ===== MES SESSIONS ===== -->
+<div class="screen" id="s-mes-sessions">
+  <div class="hdr">
+    <div style="flex:1">
+      <div style="font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:1px">BFS Terrain</div>
+      <h1>Mes sessions</h1>
+    </div>
+    <button style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:13px;cursor:pointer" onclick="ouvrirMesSessions()">🔄</button>
+  </div>
+  <div class="content" id="mes-sessions-list" style="padding:12px">
+    <div class="loading"><span class="spin"></span></div>
+  </div>
+  <div class="tabbar">
+    <button class="tab-item" onclick="goTo('s-parc')"><span class="tab-ico">🏢</span>Mon parc</button>
+    <button class="tab-item" onclick="ouvrirPlanning()"><span class="tab-ico">📅</span>Planning</button>
+    <button class="tab-item active"><span class="tab-ico">📋</span>Sessions</button>
   </div>
 </div>
 
@@ -2641,8 +2661,91 @@ async function validerInterventionPonctuelle(){
 }
 
 // ============================================================
-// MON PLANNING — Consultation / Création / Modification / Suppression
+// MES SESSIONS — consultation + gestion terrain
 // ============================================================
+async function ouvrirMesSessions(){
+  goTo('s-mes-sessions');
+  const el=$('mes-sessions-list');
+  el.innerHTML='<div class="loading"><span class="spin"></span></div>';
+
+  const {data:sessions,error}=await db.from('sessions_controle')
+    .select('*,clients(raison_sociale,ville)')
+    .eq('technicien_id',ME.id)
+    .order('created_at',{ascending:false})
+    .limit(30);
+
+  if(error||!sessions||!sessions.length){
+    el.innerHTML='<div style="text-align:center;padding:40px;color:var(--txt-l)">Aucune session</div>';
+    return;
+  }
+
+  el.innerHTML=sessions.map(sess=>{
+    const enCours=sess.statut==='en_cours';
+    const terminee=sess.statut==='terminée';
+    const couleur=terminee?'var(--vert)':enCours?'var(--orange)':'#9ca3af';
+    const label=terminee?'✓ Terminée':enCours?'⏳ En cours':'Abandonnée';
+    return `<div style="border:1px solid #e5e7eb;border-radius:12px;margin-bottom:10px;overflow:hidden">
+      <div style="padding:14px 16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="font-weight:700;font-size:15px">${sess.clients?.raison_sociale||'—'}</div>
+          <span style="background:${terminee?'#dcfce7':enCours?'#fef3c7':'#f3f4f6'};color:${couleur};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">${label}</span>
+        </div>
+        <div style="font-size:12px;color:var(--txt-l);margin-bottom:${enCours?'12px':'0'}">
+          ${fmt(sess.date_session)} · ${sess.nb_equip_verifies||0}/${sess.nb_equip_total||'?'} équipements vérifiés
+        </div>
+        ${enCours?`<div style="display:flex;gap:8px">
+          <button class="btn btn-p" style="flex:1;font-size:13px" onclick="reprendreSession('${sess.id}')">▶️ Reprendre</button>
+          <button class="btn btn-s" style="color:#dc2626;font-size:13px" onclick="supprimerSessionTerrain('${sess.id}')">🗑</button>
+        </div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function supprimerSessionTerrain(sessionId){
+  const modal=document.createElement('div');
+  modal.className='mo open';
+  modal.innerHTML=`<div class="mo-box">
+    <div class="mo-handle"></div>
+    <h3>🗑 Supprimer cette session</h3>
+    <div style="background:#fee2e2;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13px;color:#dc2626">
+      Les vérifications déjà enregistrées seront conservées mais dissociées de cette session.
+    </div>
+    <div class="fg"><label>Motif</label>
+      <select id="motif-sess-terrain">
+        <option value="">-- Choisir --</option>
+        <option value="doublon">Session en doublon</option>
+        <option value="vide">Créée par erreur (vide)</option>
+        <option value="autre">Autre</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-s" style="flex:1" onclick="this.closest('.mo').remove()">Annuler</button>
+      <button class="btn" style="flex:1;background:#dc2626;color:#fff" onclick="confirmerSupprSessionTerrain('${sessionId}',this)">Supprimer</button>
+    </div>
+  </div>`;
+  modal.addEventListener('click',e=>{if(e.target===modal)modal.remove()});
+  document.body.appendChild(modal);
+}
+
+async function confirmerSupprSessionTerrain(sessionId, btn){
+  const motif=document.getElementById('motif-sess-terrain').value;
+  if(!motif){toast('Motif obligatoire','err');return}
+  btn.disabled=true;btn.textContent='…';
+  await db.from('verifications').update({session_id:null}).eq('session_id',sessionId);
+  const {error}=await db.from('sessions_controle').delete().eq('id',sessionId);
+  if(error){toast('Erreur: '+error.message,'err');btn.disabled=false;btn.textContent='Supprimer';return}
+  // Nettoyer localStorage si c'était la session en cours
+  try{
+    const saved=localStorage.getItem('bfs_session_en_cours');
+    if(saved&&JSON.parse(saved).sessionId===sessionId) effacerSessionLocale();
+  }catch(e){}
+  btn.closest('.mo').remove();
+  toast('Session supprimée ✓');
+  ouvrirMesSessions();
+}
+
+
 const MOIS_PLAN=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 let planDate = new Date();
 let planRdvs = [];
