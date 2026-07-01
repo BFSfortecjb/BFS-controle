@@ -330,6 +330,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button class="btn btn-s btn-sm" onclick="voirEquipements()" style="margin-bottom:8px">
       📋 Voir tous les équipements
     </button>
+    <button class="btn btn-s btn-sm" onclick="ouvrirCreerRdvClient()" style="margin-bottom:8px">
+      📅 Créer un RDV
+    </button>
     <button class="btn btn-s btn-sm" onclick="creerEquipement()" style="margin-bottom:8px">
       ➕ Ajouter un équipement
     </button>
@@ -521,8 +524,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button onclick="editerEquipement()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer">✏️ Modifier</button>
   </div>
   <div class="content" id="fiche-content"></div>
-  <div class="footer">
+  <div class="footer" style="display:flex;flex-direction:column;gap:8px">
     <button class="btn btn-p" onclick="verifierCetEquip()">✅ Vérifier cet équipement</button>
+    <button class="btn btn-s" onclick="proposerReforme(_ficheEquipId)" style="background:#fee2e2;color:#dc2626;border-color:#fecaca">⚠️ Réformer cet équipement</button>
   </div>
 </div>
 
@@ -993,24 +997,49 @@ async function ouvrirVerif(equipId){
   const equip=currentEquipements.find(e=>e.id===equipId);
   if(!equip){toast('Équipement introuvable','err');return}
 
-  $('verif-equip-nom').textContent=`${equip.types_equipements?.icone||''} ${equip.types_equipements?.libelle||''} — ${equip.numero_identification||'?'}`;
-  $('verif-equip-loc').textContent=`${equip.localisation||'—'}${equip.etage_zone?' · '+equip.etage_zone:''}`;
+  // Infos enrichies : type + agent + capacité + N° interne
+  const agent = equip.donnees_specifiques?.['ef-agent']||equip.donnees_specifiques?.['e-agent']||'';
+  const modePress = equip.donnees_specifiques?.['ef-mode-press']||equip.donnees_specifiques?.['mode_press']||'';
+  const capLib = equip.capacite_valeur?(equip.capacite_valeur+(equip.capacite_unite||'')):'';
+  const numInterne = equip.numero_entreprise ? ' — N°'+equip.numero_entreprise : '';
+  $('verif-equip-nom').textContent=`${equip.types_equipements?.icone||''} ${equip.types_equipements?.libelle||''} — ${equip.numero_identification||'?'}${numInterne}`;
+  $('verif-equip-loc').textContent=[equip.marque,equip.modele,agent,capLib,equip.localisation,equip.etage_zone].filter(Boolean).join(' · ');
 
-  // Charger points de contrôle
+  // Charger points de contrôle avec filtrage PP/PA/CO2
   const marque=(equip.marque||'').toLowerCase();const modele=(equip.modele||'').toLowerCase();
+  const estCO2 = agent.toLowerCase().includes('co2') || agent.toLowerCase().includes('co₂');
+  const estPA = modePress.toUpperCase().includes('PA') || agent.toLowerCase().includes('auxiliaire');
+  const estPP = !estPA && !estCO2; // PP = tout ce qui n'est ni PA ni CO2
+
   const {data:pts}=await db.from('points_controle').select('*')
     .eq('type_equipement_code',equip.type_equipement_code)
     .eq('actif',true).order('ordre');
 
   const points=(pts||[]).filter(p=>{
-    if(!p.marque&&!p.modele)return true;
-    if(p.marque&&marque&&p.marque.toLowerCase()===marque){
-      if(!p.modele)return true;
-      if(p.modele&&modele&&p.modele.toLowerCase()===modele)return true;
-      return false;
+    // Filtre marque/modèle standard
+    if(p.marque||p.modele){
+      if(p.marque&&marque&&p.marque.toLowerCase()!==marque) return false;
+      if(p.modele&&modele&&p.modele.toLowerCase()!==modele) return false;
     }
-    return false;
+    // Filtre conditionnel par mode de pressurisation / agent
+    // Convention : si le libellé du point contient des mots-clés de condition, on filtre
+    const lib = (p.libelle||'').toLowerCase();
+    if(lib.includes('[pp_eau_poudre]') && !estPP) return false;
+    if(lib.includes('[pa]') && !estPA) return false;
+    if(lib.includes('[co2]') && !estCO2) return false;
+    // Cas spécifique "indicateur de pression" = uniquement PP eau/poudre
+    if((lib.includes('indicateur de pression')||lib.includes('manomètre')) && !estPP) return false;
+    // "Peser la sparklet" = PA seulement
+    if(lib.includes('sparklet') && !estPA) return false;
+    // "Peser l'extincteur" / "poids" = CO2 seulement
+    if((lib.includes('peser') && lib.includes('extincteur') || lib.includes('poids total')) && !estCO2) return false;
+    // Points RIA quinquennaux : uniquement si palier = quinquennale
+    if(lib.includes('[quinquennal]') && palierSuggere?.code !== 'quinquennale' && palierSuggere?.code !== 'decennale') return false;
+    return true;
   });
+
+  // Nettoyer les libellés (retirer les balises de condition [xxx])
+  const pointsAffiches = points.map(p=>({...p, libelle: p.libelle.replace(/\s*\[(pp_eau_poudre|pa|co2|quinquennal)\]/gi,'').trim()}));
 
   // Charger pièces catalogue
   const {data:cat}=await db.from('pieces_catalogue').select('*').eq('type_equipement_code',equip.type_equipement_code).eq('actif',true).order('ordre');
@@ -1056,7 +1085,7 @@ async function ouvrirVerif(equipId){
 
     <div class="sec">Points de contrôle</div>
     <div id="pc-container">
-      ${points.map(p=>{
+      ${pointsAffiches.map(p=>{
         const sv=savedPts[p.id];
         if(p.type_reponse==='oui_non'){
           const okSel=sv===true?'ok-sel':'';const nokSel=sv===false?'nok-sel':'';
@@ -2033,6 +2062,115 @@ async function saveEquipTerrain(){
 }
 
 // Types équipements chargés au démarrage terrain
+// ============================================================
+// RDV DEPUIS FICHE CLIENT
+// ============================================================
+function ouvrirCreerRdvClient(){
+  if(!currentClient){toast('Aucun client sélectionné','err');return}
+  // Pré-remplir le formulaire RDV avec ce client
+  if(!clientsPourRdv.length) chargerClientsPourRdv().then(()=>{
+    _ouvrirRdvFormClient();
+  });
+  else _ouvrirRdvFormClient();
+}
+function _ouvrirRdvFormClient(){
+  openRdvFormTerrain({client_id: currentClient.id});
+}
+
+// ============================================================
+// RÉFORME EXTINCTEUR — deux scénarios
+// ============================================================
+function proposerReforme(equipId){
+  const equip = currentEquipements.find(e=>e.id===equipId);
+  if(!equip) return;
+  const modal = document.createElement('div');
+  modal.className = 'mo open';
+  modal.innerHTML = `<div class="mo-box">
+    <div class="mo-handle"></div>
+    <h3>⚠️ Réforme de l'équipement</h3>
+    <div style="font-size:13px;color:var(--txt-l);margin-bottom:16px">${equip.types_equipements?.icone||''} ${equip.numero_identification} — ${equip.marque||''}</div>
+    <button class="btn btn-p" style="width:100%;margin-bottom:10px" onclick="reforme_surPlace('${equipId}');this.closest('.mo').remove()">
+      🔄 Remplacement immédiat sur place
+      <div style="font-size:11px;font-weight:400;opacity:.8">Saisir le nouvel extincteur maintenant</div>
+    </button>
+    <button class="btn btn-s" style="width:100%;margin-bottom:10px" onclick="reforme_aPrevoir('${equipId}');this.closest('.mo').remove()">
+      📋 Remplacement à planifier
+      <div style="font-size:11px;font-weight:400;opacity:.7">Crée une alerte dans le dashboard</div>
+    </button>
+    <button class="btn btn-s" style="width:100%" onclick="this.closest('.mo').remove()">Annuler</button>
+  </div>`;
+  modal.addEventListener('click', e=>{if(e.target===modal)modal.remove();});
+  document.body.appendChild(modal);
+}
+
+async function reforme_aPrevoir(equipId){
+  // Archiver l'équipement existant en statut "réformé"
+  await db.from('equipements').update({
+    statut: 'réformé',
+    notes: ((currentEquipements.find(e=>e.id===equipId)?.notes)||'') + `\nRéformé le ${new Date().toLocaleDateString('fr-FR')} par ${ME.prenom||''} ${ME.nom}`,
+    updated_at: new Date().toISOString()
+  }).eq('id', equipId);
+
+  // Créer une tâche "remplacement à prévoir" via intervention ponctuelle
+  await db.from('interventions_ponctuelles').insert({
+    client_id: currentClient.id,
+    agence_id: currentClient.agence_id,
+    technicien_id: ME.id,
+    date_intervention: new Date().toISOString().slice(0,10),
+    type_intervention: 'remplacement_urgent',
+    description: `Remplacement à planifier — Extincteur réformé : ${currentEquipements.find(e=>e.id===equipId)?.numero_identification||'?'} (${currentEquipements.find(e=>e.id===equipId)?.marque||''})`,
+    statut_facturation: 'à_facturer'
+  });
+
+  const eq = currentEquipements.find(e=>e.id===equipId);
+  if(eq) eq.statut = 'réformé';
+  toast('Équipement réformé — alerte créée dans le dashboard ✓');
+  goTo('s-client');
+  await ouvrirClient(currentClient.id);
+}
+
+async function reforme_surPlace(equipId){
+  const ancien = currentEquipements.find(e=>e.id===equipId);
+  // Archiver l'ancien
+  await db.from('equipements').update({
+    statut: 'réformé',
+    notes: ((ancien?.notes)||'') + `\nRéformé le ${new Date().toLocaleDateString('fr-FR')} par ${ME.prenom||''} ${ME.nom} — remplacé sur place`,
+    updated_at: new Date().toISOString()
+  }).eq('id', equipId);
+  if(ancien) ancien.statut = 'réformé';
+
+  // Ouvrir le formulaire de création pour le nouvel équipement
+  // Pré-remplir avec les infos de l'ancien (même type, même localisation)
+  _efRestoreData = {};
+  document.getElementById('ef-id').value = '';
+  document.getElementById('ef-client-nom').value = currentClient?.raison_sociale||'';
+  document.getElementById('equip-form-titre').textContent = '🔄 Nouvel extincteur (remplacement)';
+  ['ef-num','ef-serie','ef-lot','ef-num-ent','ef-emplacement','ef-marque','ef-modele','ef-loc','ef-zone','ef-notes'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.value='';
+  });
+  // Pré-remplir localisation, N° interne et emplacement de l'ancien
+  if(ancien){
+    document.getElementById('ef-loc').value = ancien.localisation||'';
+    document.getElementById('ef-zone').value = ancien.etage_zone||'';
+    document.getElementById('ef-emplacement').value = ancien.emplacement||'';
+    document.getElementById('ef-num-ent').value = ancien.numero_entreprise||'';
+    document.getElementById('ef-notes').value = `Remplace ${ancien.numero_identification||'?'} réformé le ${new Date().toLocaleDateString('fr-FR')}`;
+  }
+  document.getElementById('ef-statut').value = 'opérationnel';
+  const sel = document.getElementById('ef-type');
+  sel.innerHTML = typesEquipTerrain.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
+  if(ancien) sel.value = ancien.type_equipement_code||'extincteur';
+  onEFTypeChange();
+  _historiqueEquipTerrain = [{
+    date: new Date().toISOString().slice(0,10),
+    type: 'Mise en service',
+    commentaire: `Remplace ${ancien?.numero_identification||'?'} réformé`
+  }];
+  renderHistoriqueTerrain();
+  toast('Ancien extincteur archivé. Saisir le nouvel équipement.');
+  goTo('s-equip-form');
+}
+
 let typesEquipTerrain = [];
 
 // ============================================================
