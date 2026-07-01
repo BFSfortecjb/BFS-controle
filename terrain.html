@@ -1744,14 +1744,23 @@ function genererPdfSession(signatureDataUrl, signataireNom){
   const nc=verifs.filter(v=>v.resultat==='non conforme').length;
   const hs=verifs.filter(v=>v.resultat==='hors service').length;
   const c=currentClient;
+  const numSession = currentSession?.numero || '—';
 
   doc.setFillColor(192,57,43);doc.rect(0,0,210,26,'F');
   doc.setTextColor(255);doc.setFontSize(13);doc.setFont('helvetica','bold');
   doc.text(signatureDataUrl?'BFS — Bon d\'intervention':'BFS — Rapport de session de contrôle',14,11);
   doc.setFontSize(9);doc.setFont('helvetica','normal');
   doc.text(`${c?.raison_sociale||''} · ${c?.ville||''}`,14,19);
-  doc.text(`${new Date().toLocaleDateString('fr-FR')} · ${ME.prenom||''} ${ME.nom}`,140,19);
+  doc.text(`N° ${numSession} · ${new Date().toLocaleDateString('fr-FR')} · ${ME.prenom||''} ${ME.nom}`,110,19);
   doc.setTextColor(30);let y=32;
+
+  // Encart numéro de bon bien visible
+  doc.setFillColor(248,249,250);doc.rect(14,y,182,10,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(192,57,43);
+  doc.text(`Bon d'intervention N° ${numSession}`,16,y+7);
+  doc.setTextColor(100);doc.setFont('helvetica','normal');doc.setFontSize(9);
+  doc.text(`Client : ${c?.raison_sociale||'—'} · Date : ${new Date().toLocaleDateString('fr-FR')}`,100,y+7);
+  doc.setTextColor(30);y+=16;
 
   doc.autoTable({startY:y,margin:{left:14,right:14},head:[['Conformes','À surveiller','Non conformes','Hors service','Non vérifiés']],
     body:[[conformes,verifs.filter(v=>v.resultat==='à surveiller').length,nc,hs,total-verifs.length]],
@@ -2691,7 +2700,7 @@ async function ouvrirMesSessions(){
           <span style="background:${terminee?'#dcfce7':enCours?'#fef3c7':'#f3f4f6'};color:${couleur};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">${label}</span>
         </div>
         <div style="font-size:12px;color:var(--txt-l);margin-bottom:${enCours?'12px':'0'}">
-          ${fmt(sess.date_session)} · ${sess.nb_equip_verifies||0}/${sess.nb_equip_total||'?'} équipements vérifiés
+          ${sess.numero?`<span style="font-weight:700;color:var(--rouge)">N° ${sess.numero}</span> · `:''}${fmt(sess.date_session)} · ${sess.nb_equip_verifies||0}/${sess.nb_equip_total||'?'} équipements vérifiés
         </div>
         ${enCours?`<div style="display:flex;gap:8px">
           <button class="btn btn-p" style="flex:1;font-size:13px" onclick="reprendreSession('${sess.id}')">▶️ Reprendre</button>
