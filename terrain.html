@@ -947,7 +947,6 @@ async function verifierSessionEnCours(){
 }
 
 async function reprendreSession(sessionId){
-  // Recharger la session depuis la base
   const {data:sess}=await db.from('sessions_controle')
     .select('*,clients(*)')
     .eq('id',sessionId).single();
@@ -955,15 +954,6 @@ async function reprendreSession(sessionId){
 
   currentSession=sess;
   currentClient=sess.clients;
-
-  // Restaurer l'état local si disponible
-  try{
-    const saved=localStorage.getItem('bfs_session_en_cours');
-    if(saved){
-      const parsed=JSON.parse(saved);
-      if(parsed.sessionId===sessionId) sessionVerifs=parsed.sessionVerifs||{};
-    }
-  }catch(e){sessionVerifs={};}
 
   // Recharger les équipements du client
   const {data:equips}=await db.from('equipements')
@@ -973,10 +963,40 @@ async function reprendreSession(sessionId){
     .order('type_equipement_code');
   currentEquipements=equips||[];
 
+  // Reconstruire sessionVerifs depuis les vérifications déjà enregistrées en base
+  const {data:verifs}=await db.from('verifications').select('*').eq('session_id',sessionId);
+  sessionVerifs={};
+  if(verifs&&verifs.length){
+    verifs.forEach(v=>{
+      if(v.equipement_id) sessionVerifs[v.equipement_id]={
+        resultat:v.resultat||'',
+        obs:v.observations||'',
+        echeance:v.date_prochaine_echeance||'',
+        points:{},
+        pieces:[],
+        verifId:v.id
+      };
+    });
+  }
+
+  // Restaurer en plus l'état local non encore validé (équipement en cours)
+  try{
+    const saved=localStorage.getItem('bfs_session_en_cours');
+    if(saved){
+      const parsed=JSON.parse(saved);
+      if(parsed.sessionId===sessionId && parsed.sessionVerifs){
+        // Fusionner : la base est prioritaire pour les vérifs validées
+        Object.entries(parsed.sessionVerifs).forEach(([eid,v])=>{
+          if(!sessionVerifs[eid]) sessionVerifs[eid]=v; // état local non encore validé
+        });
+      }
+    }
+  }catch(e){}
+
   $('session-client-nom').textContent=currentClient.raison_sociale;
   updateSessionProgress();
   renderSessionEquipList();
-  toast('Session reprise ✓');
+  toast('Session reprise — '+Object.keys(sessionVerifs).length+' vérification(s) restaurée(s) ✓');
   goTo('s-session');
 }
 
