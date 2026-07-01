@@ -416,9 +416,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="sec">Équipements de cette session</div>
     <div id="session-equip-list"></div>
   </div>
-  <div class="footer">
+  <div class="footer" style="display:flex;flex-direction:column;gap:8px">
     <button class="btn btn-vert" onclick="allerRecap()" id="btn-recap" style="display:none">
       ✅ Voir le récapitulatif
+    </button>
+    <button class="btn btn-s" onclick="mettreEnPause()" style="background:#f3f4f6;color:var(--txt)">
+      ⏸ Mettre en pause (reprendre plus tard)
     </button>
   </div>
 </div>
@@ -701,6 +704,8 @@ async function onLogin(user){
   $('parc-titre').textContent=`${profil.prenom||''} ${profil.nom}`.trim();
   await loadParc();
   goTo('s-parc');
+  // Vérifier s'il existe une session en cours à reprendre
+  setTimeout(verifierSessionEnCours, 500);
 }
 
 async function doLogout(){
@@ -857,6 +862,7 @@ async function demarrerSession(){
   if(error){toast('Erreur création session','err');return}
   currentSession=sess;
   sessionVerifs={};
+  sauvegarderSessionLocale();
   
   // Charger équipements complets
   const {data:equips}=await db.from('equipements')
@@ -870,6 +876,122 @@ async function demarrerSession(){
   updateSessionProgress();
   renderSessionEquipList();
   goTo('s-session');
+}
+
+// ============================================================
+// SAUVEGARDE / REPRISE DE SESSION
+// ============================================================
+function sauvegarderSessionLocale(){
+  try{
+    const etat={
+      sessionId: currentSession?.id,
+      clientId: currentClient?.id,
+      sessionVerifs,
+      savedAt: new Date().toISOString()
+    };
+    localStorage.setItem('bfs_session_en_cours', JSON.stringify(etat));
+  }catch(e){console.warn('Sauvegarde locale échouée:',e);}
+}
+
+function effacerSessionLocale(){
+  try{localStorage.removeItem('bfs_session_en_cours');}catch(e){}
+}
+
+async function verifierSessionEnCours(){
+  // 1. Vérifier en base si une session en_cours existe pour ce technicien
+  const {data:sessions}=await db.from('sessions_controle')
+    .select('*,clients(raison_sociale,ville,agence_id)')
+    .eq('technicien_id',ME.id)
+    .eq('statut','en_cours')
+    .order('created_at',{ascending:false})
+    .limit(1);
+
+  if(!sessions||!sessions.length) return;
+  const sess=sessions[0];
+
+  // 2. Récupérer l'état local sauvegardé si disponible
+  let etatLocal={};
+  try{
+    const saved=localStorage.getItem('bfs_session_en_cours');
+    if(saved){
+      const parsed=JSON.parse(saved);
+      if(parsed.sessionId===sess.id) etatLocal=parsed;
+    }
+  }catch(e){}
+
+  // 3. Proposer la reprise
+  const savedAt=etatLocal.savedAt?new Date(etatLocal.savedAt).toLocaleString('fr-FR'):'inconnue';
+  const nbVerifs=etatLocal.sessionVerifs?Object.keys(etatLocal.sessionVerifs).length:0;
+
+  const modal=document.createElement('div');
+  modal.className='mo open';
+  modal.innerHTML=`<div class="mo-box">
+    <div class="mo-handle"></div>
+    <h3>📋 Session en cours détectée</h3>
+    <div style="background:var(--bleu-l);border-radius:10px;padding:12px 14px;margin:10px 0;font-size:13px;color:var(--bleu)">
+      <strong>${sess.clients?.raison_sociale||'Client'}</strong><br>
+      ${nbVerifs} vérification(s) réalisée(s)<br>
+      <span style="font-size:11px;opacity:.8">Dernière sauvegarde : ${savedAt}</span>
+    </div>
+    <button class="btn btn-p" style="width:100%;margin-bottom:10px" onclick="reprendreSession('${sess.id}');this.closest('.mo').remove()">
+      ▶️ Reprendre cette session
+    </button>
+    <button class="btn btn-s" style="width:100%;margin-bottom:10px;color:#dc2626" onclick="abandonnerSession('${sess.id}');this.closest('.mo').remove()">
+      🗑 Abandonner la session
+    </button>
+    <button class="btn btn-s" style="width:100%" onclick="this.closest('.mo').remove()">
+      Ignorer (continuer sans reprendre)
+    </button>
+  </div>`;
+  document.body.appendChild(modal);
+}
+
+async function reprendreSession(sessionId){
+  // Recharger la session depuis la base
+  const {data:sess}=await db.from('sessions_controle')
+    .select('*,clients(*)')
+    .eq('id',sessionId).single();
+  if(!sess){toast('Session introuvable','err');return}
+
+  currentSession=sess;
+  currentClient=sess.clients;
+
+  // Restaurer l'état local si disponible
+  try{
+    const saved=localStorage.getItem('bfs_session_en_cours');
+    if(saved){
+      const parsed=JSON.parse(saved);
+      if(parsed.sessionId===sessionId) sessionVerifs=parsed.sessionVerifs||{};
+    }
+  }catch(e){sessionVerifs={};}
+
+  // Recharger les équipements du client
+  const {data:equips}=await db.from('equipements')
+    .select('*,types_equipements(libelle,icone,code)')
+    .eq('client_id',currentClient.id)
+    .neq('statut','réformé')
+    .order('type_equipement_code');
+  currentEquipements=equips||[];
+
+  $('session-client-nom').textContent=currentClient.raison_sociale;
+  updateSessionProgress();
+  renderSessionEquipList();
+  toast('Session reprise ✓');
+  goTo('s-session');
+}
+
+async function abandonnerSession(sessionId){
+  if(!confirm('Abandonner définitivement cette session ? Les vérifications déjà validées restent enregistrées.')) return;
+  await db.from('sessions_controle').update({statut:'abandonnée',updated_at:new Date().toISOString()}).eq('id',sessionId);
+  effacerSessionLocale();
+  currentSession=null;sessionVerifs={};currentEquipements=[];
+  toast('Session abandonnée');
+}
+
+function mettreEnPause(){
+  sauvegarderSessionLocale();
+  toast('Session sauvegardée — tu peux quitter l\'app ✓');
+  goTo('s-parc');
 }
 
 function updateSessionProgress(){
@@ -1470,6 +1592,9 @@ async function validerVerif(){
   // Auto-valider le RDV du jour pour ce client si non déjà fait
   await autoValiderRdvDuJour();
 
+  // Sauvegarder l'état local (reprise possible si l'app est fermée)
+  sauvegarderSessionLocale();
+
   toast('Vérification enregistrée ✓','ok');
   updateSessionProgress();
   renderSessionEquipList();
@@ -1719,6 +1844,7 @@ async function validerSignatureEtCloturer(){
   }
 
   currentSession=null;sessionVerifs={};currentEquipements=[];
+  effacerSessionLocale();
   toast(pdfUrl?'Bon d\'intervention signé et enregistré ✓':'Session clôturée ✓ (PDF à configurer: créer bucket bons-intervention dans Supabase Storage)');
   btn.disabled=false;btn.textContent='✅ Valider et clôturer';
   await loadParc();
