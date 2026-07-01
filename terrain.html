@@ -1492,20 +1492,34 @@ async function validerVerif(){
   const palierCode = palierOpt ? palierOpt.dataset.code : null;
   const reinitialise = palierOpt ? palierOpt.dataset.reinit === 'true' : false;
 
-  // Enregistrer en base
-  const {data:vData,error:ve}=await db.from('verifications').insert({
-    equipement_id:currentEquipId,client_id:currentClient.id,
-    agence_id:currentClient.agence_id,technicien_id:ME.id,
+  // Enregistrer en base — UPDATE si déjà existant (reprise de session), INSERT sinon
+  const existingVerifId = sessionVerifs[currentEquipId]?.verifId;
+  const verifPayload = {
+    equipement_id:currentEquipId, client_id:currentClient.id,
+    agence_id:currentClient.agence_id, technicien_id:ME.id,
     type_equipement_code:equip.type_equipement_code,
     date_verification:new Date().toISOString().slice(0,10),
     date_prochaine_echeance:echeance||null,
     technicien:`${ME.prenom||''} ${ME.nom}`.trim(),
-    resultat:resultatDB,observations:obs,
+    resultat:resultatDB, observations:obs,
     session_id:currentSession?.id,
-    palier_id:palierId||null,
-    palier_code:palierCode||null,
-    reinitialise_compteur:reinitialise
-  }).select().single();
+    palier_id:palierId||null, palier_code:palierCode||null,
+    reinitialise_compteur:reinitialise,
+    updated_at:new Date().toISOString()
+  };
+
+  let vData, ve;
+  if(existingVerifId){
+    // Mise à jour de la vérification existante
+    const {data, error} = await db.from('verifications').update(verifPayload).eq('id',existingVerifId).select().single();
+    vData=data; ve=error;
+    // Supprimer les anciens résultats de points pour les remplacer
+    if(!ve) await db.from('resultats_controle').delete().eq('verification_id',existingVerifId);
+  } else {
+    // Nouvelle vérification
+    const {data, error} = await db.from('verifications').insert(verifPayload).select().single();
+    vData=data; ve=error;
+  }
   if(ve){toast('Erreur enregistrement','err');return}
 
   // Upload des photos d'anomalie
