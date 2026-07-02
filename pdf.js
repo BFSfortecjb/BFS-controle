@@ -262,4 +262,133 @@ async function regenererBon(bonId){
   loadBons();
 }
 
+// ============================================================
+// PDF — RAPPORT COMPLET (détail par équipement)
+// ============================================================
+// Pour un bon donné : reprend toutes les vérifications de la session
+// et détaille, équipement par équipement, chaque point de contrôle.
+// Archivé dans Supabase Storage (comme le bulletin) + téléchargé.
+async function rapportComplet(bonId){
+  toast('Génération du rapport complet…');
+  const {data:bon}=await db.from('bons_intervention').select('*').eq('id',bonId).single();
+  if(!bon){toast('Bon introuvable','err');return}
+  const {data:client}=await db.from('clients').select('*,agences(nom,code)').eq('id',bon.client_id).single();
+  const {data:tech}=await db.from('profils').select('nom,prenom').eq('id',bon.technicien_id).single();
+  const techNom=tech?`${tech.prenom||''} ${tech.nom}`.trim():'—';
+  const {data:sess}=await db.from('sessions_controle').select('numero').eq('id',bon.session_id).single();
+  const numSession=sess?.numero||bon.numero_session||'—';
+  const {data:verifs}=await db.from('verifications')
+    .select('*,equipements(numero_identification,localisation,etage_zone,marque,modele,capacite_valeur,capacite_unite,date_fabrication,date_mise_en_service,type_equipement_code,donnees_specifiques,types_equipements(libelle,icone))')
+    .eq('session_id',bon.session_id).order('created_at');
+  if(!verifs||!verifs.length){toast('Aucune vérification trouvée pour cette session','err');return}
+  const {data:allRes}=await db.from('resultats_controle')
+    .select('*').in('verification_id',verifs.map(v=>v.id)).order('libelle_snapshot');
+  const resByVerif={};(allRes||[]).forEach(r=>{(resByVerif[r.verification_id]=resByVerif[r.verification_id]||[]).push(r)});
+
+  const dateStr=new Date(bon.date_intervention).toLocaleDateString('fr-FR');
+  const raisonSocBFS=client?.agences?.code==='sevremont'?'Bocage Formation Sécurité':'Bretagne Formation Sécurité';
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF();
+
+  // ---- Page de garde / en-tête
+  doc.setFillColor(192,57,43);doc.rect(0,0,210,30,'F');
+  doc.setTextColor(255);doc.setFontSize(15);doc.setFont('helvetica','bold');
+  doc.text('RAPPORT COMPLET DE VÉRIFICATION',105,13,{align:'center'});
+  doc.setFontSize(9);doc.setFont('helvetica','normal');
+  doc.text(`${raisonSocBFS} — Bon n° ${numSession}`,105,21,{align:'center'});
+  doc.setTextColor(30);let y=38;
+  doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[
+    ['Client',client?.raison_sociale||'—'],
+    ['Adresse',[client?.adresse,client?.code_postal,client?.ville].filter(Boolean).join(', ')||'—'],
+    ['Date de l\'intervention',dateStr],
+    ['Technicien',techNom],
+    ['Équipements vérifiés',String(verifs.length)],
+  ],styles:{fontSize:10},columnStyles:{0:{fontStyle:'bold',cellWidth:55}}});
+  y=doc.lastAutoTable.finalY+10;
+
+  // ---- Détail par équipement
+  const valRes=r=>{
+    if(r.type_reponse==='oui_non')return r.valeur_oui_non===true?'✓ OK':r.valeur_oui_non===false?'✗ NON':'—';
+    if(r.type_reponse==='numerique')return r.valeur_numerique!=null?String(r.valeur_numerique):'—';
+    if(r.type_reponse==='texte')return r.valeur_texte||'—';
+    if(r.type_reponse==='date')return fmt(r.valeur_date);
+    return '—';
+  };
+  verifs.forEach((v,i)=>{
+    const eq=v.equipements||{};
+    if(y>235){doc.addPage();y=20}
+    // Bandeau équipement
+    doc.setFillColor(240,240,240);doc.rect(14,y,182,8,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(30);
+    doc.text(`${i+1}. ${eq.types_equipements?.libelle||'Équipement'} — ${eq.numero_identification||'—'}`,16,y+5.5);
+    const resTxt=(v.resultat||'—').toUpperCase();
+    doc.setTextColor(v.resultat==='conforme'?22:v.resultat==='non conforme'?220:180,v.resultat==='conforme'?163:v.resultat==='non conforme'?38:120,v.resultat==='conforme'?74:38);
+    doc.text(resTxt,194,y+5.5,{align:'right'});
+    doc.setTextColor(30);y+=11;
+    // Infos équipement
+    doc.setFont('helvetica','normal');doc.setFontSize(8.5);
+    const infos=[
+      `Marque/Modèle : ${[eq.marque,eq.modele].filter(Boolean).join(' ')||'—'}`,
+      eq.capacite_valeur?`Capacité : ${eq.capacite_valeur} ${eq.capacite_unite||''}`:null,
+      `Emplacement : ${eq.localisation||'—'}${eq.etage_zone?' / '+eq.etage_zone:''}`,
+      eq.date_fabrication?`Fabrication : ${fmt(eq.date_fabrication)}`:null,
+      v.date_prochaine_echeance?`Prochaine échéance : ${fmt(v.date_prochaine_echeance)}`:null
+    ].filter(Boolean).join('   ·   ');
+    const infoLines=doc.splitTextToSize(infos,180);
+    doc.text(infoLines,15,y);y+=infoLines.length*4+2;
+    // Points de contrôle
+    const res=resByVerif[v.id]||[];
+    if(res.length){
+      doc.autoTable({startY:y,margin:{left:14,right:14},
+        head:[['Point de contrôle','Résultat']],
+        body:res.map(r=>[r.libelle_snapshot,valRes(r)]),
+        styles:{fontSize:8.5,cellPadding:1.5},headStyles:{fillColor:[192,57,43],fontSize:8.5},
+        columnStyles:{1:{cellWidth:30,halign:'center'}},
+        didParseCell:(d)=>{if(d.column.index===1){
+          if(d.cell.text[0]==='✓ OK')d.cell.styles.textColor=[22,163,74];
+          if(d.cell.text[0]==='✗ NON')d.cell.styles.textColor=[220,38,38];
+        }}
+      });
+      y=doc.lastAutoTable.finalY+3;
+    } else {
+      doc.setFontSize(8.5);doc.setTextColor(120);doc.text('Aucun point de contrôle enregistré.',15,y);doc.setTextColor(30);y+=6;
+    }
+    if(v.observations){
+      if(y>265){doc.addPage();y=20}
+      doc.setFont('helvetica','bolditalic');doc.setFontSize(8.5);doc.text('Observations :',15,y);
+      doc.setFont('helvetica','normal');
+      const ol=doc.splitTextToSize(v.observations,155);doc.text(ol,42,y);y+=ol.length*4+3;
+    }
+    y+=4;
+  });
+
+  // ---- Filigrane + pied de page sur toutes les pages
+  const nb=doc.getNumberOfPages();
+  for(let p=1;p<=nb;p++){
+    doc.setPage(p);
+    try{
+      doc.saveGraphicsState();
+      doc.setGState(new doc.GState({opacity:0.04}));
+      doc.addImage(LOGO_BFS,'PNG',50,93,110,110);
+      doc.restoreGraphicsState();
+    }catch(e){}
+    doc.setFontSize(7);doc.setTextColor(150);
+    doc.text(`${raisonSocBFS} — Rapport complet ${numSession} — Page ${p}/${nb}`,105,292,{align:'center'});
+    doc.setTextColor(30);
+  }
+
+  // ---- Téléchargement + archivage Storage
+  const nomFichier=`BFS_rapport_${numSession}_${(client?.raison_sociale||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`;
+  doc.save(nomFichier);
+  const pdfBlob=doc.output('blob');
+  // Supprimer les anciens rapports de ce bon, puis uploader le nouveau
+  const {data:anciens}=await db.storage.from('bons-intervention').list('',{search:'rapport_'+bonId});
+  if(anciens&&anciens.length)await db.storage.from('bons-intervention').remove(anciens.map(f=>f.name));
+  const fileName=`rapport_${bonId}_${Date.now()}.pdf`;
+  const {error:upErr}=await db.storage.from('bons-intervention').upload(fileName,pdfBlob,{contentType:'application/pdf'});
+  if(!upErr){toast('Rapport complet archivé ✓')}
+  else{toast('Rapport téléchargé localement (erreur Storage)','err')}
+  loadBons();
+}
+
 console.log('✓ pdf.js chargé');

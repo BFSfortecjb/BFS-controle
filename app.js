@@ -1134,6 +1134,10 @@ async function loadBons(){
     <div class="stat-card bleu"><div class="val">${(allBons||[]).length}</div><div class="lab">Total</div></div>
   `;
 
+  // Rapports complets archivés dans Storage : rapport_<bonId>_<timestamp>.pdf
+  const {data:rapFiles}=await db.storage.from('bons-intervention').list('',{limit:1000,search:'rapport_'});
+  const rapports={};(rapFiles||[]).forEach(f=>{const id=f.name.slice(8,44);rapports[id]=f.name});
+
   const el = $('bons-list');
   if(!bons.length){el.innerHTML='<div class="t-empty">Aucun bon d\'intervention</div>';return}
   el.innerHTML = `<table><thead><tr><th>N° Session</th><th>Date</th><th>Client</th><th>Agence</th><th>Technicien</th><th>Équip.</th><th>Signataire</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${bons.map(b=>`<tr>
@@ -1146,8 +1150,10 @@ async function loadBons(){
     <td>${b.signataire_nom||'—'}</td>
     <td>${b.statut_facturation==='facturé'?'<span class="badge bv">Facturé</span>':'<span class="badge bo">À facturer</span>'}</td>
     <td><div class="ia">
-      ${b.pdf_url?`<a class="btn btn-s btn-xs" href="${b.pdf_url}" target="_blank">📄 PDF</a>`:'<span style="color:var(--txt-l);font-size:11px">Pas de PDF</span>'}
-      <button class="btn btn-s btn-xs" onclick="regenererBon('${b.id}')" title="Régénérer le PDF au nouveau format BFS">🔄</button>
+      ${b.pdf_url?`<a class="btn btn-s btn-xs" href="${b.pdf_url}" target="_blank">📄 Bulletin</a>`:''}
+      <button class="btn btn-s btn-xs" onclick="regenererBon('${b.id}')" title="Générer / régénérer le bulletin (résumé)">📄🔄</button>
+      ${rapports[b.id]?`<a class="btn btn-s btn-xs" href="${db.storage.from('bons-intervention').getPublicUrl(rapports[b.id]).data.publicUrl}" target="_blank">📋 Rapport</a>`:''}
+      <button class="btn btn-s btn-xs" onclick="rapportComplet('${b.id}')" title="Générer / régénérer le rapport complet (détail par équipement)">📋🔄</button>
       ${b.statut_facturation==='à_facturer'?`<button class="btn btn-s btn-xs" onclick="marquerFacture('${b.id}')">✓ Facturé</button>`:''}
     </div></td>
   </tr>`).join('')}</tbody></table>`;
