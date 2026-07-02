@@ -2186,44 +2186,75 @@ async function regenererBon(bonId){
   y+=6;doc.setFont('helvetica','normal');doc.text('Lieu d\'intervention :',14,y);
   const adresseLines=doc.splitTextToSize(adresse||client?.ville||'—',85);
   doc.text(adresseLines,65,y);
-  y+=adresseLines.length>1?10:6;
+  // Réserver 2 lignes pour l'adresse même si une seule
+  y+=12;
   doc.text('N° bon :',14,y);doc.setFont('helvetica','bold');doc.setTextColor(192,57,43);doc.text(numSession,65,y);doc.setTextColor(0);
   y+=6;doc.setFont('helvetica','normal');doc.text('Technicien :',14,y);doc.text(techNom,65,y);
 
-  // Tableau équipements avec colonnes Vérification/MES/MAA/Réforme
-  y=Math.max(y+8,72);
-  const colXB={desig:14,cap:69,loc:91,verif:124,mes:141,maa:158,reforme:175};
-  doc.setFillColor(240,240,240);doc.rect(14,y,182,10,'F');
-  doc.setDrawColor(180);doc.setFont('helvetica','bold');doc.setFontSize(7);
-  doc.text('DÉSIGNATION',colXB.desig+1,y+4);doc.text('TYPE/CAP.',colXB.cap+1,y+4);doc.text('EMPLACEMENT',colXB.loc+1,y+4);
-  doc.setFontSize(6.5);
-  doc.text('Vérifica-',colXB.verif+9,y+3.5,{align:'center'});doc.text('tion',colXB.verif+9,y+7,{align:'center'});
-  doc.text('MES',colXB.mes+8,y+5.5,{align:'center'});doc.text('MAA',colXB.maa+8,y+5.5,{align:'center'});doc.text('Réforme',colXB.reforme+8,y+5.5,{align:'center'});
-  [colXB.cap,colXB.loc,colXB.verif,colXB.mes,colXB.maa,colXB.reforme,196].forEach(x=>{doc.line(x,y,x,y+10);});
-  y+=10;
+  // Tableau équipements
+  // Colonnes : Désig=52, Cap=20, Loc=28, puis "TYPE DE VÉRIFICATION" regroupée=72 (5 sous-col de ~14)
+  y=Math.max(y+8,74);
+  const cB={desig:14,cap:66,loc:86,tv:114,v1:114,v2:128,v3:142,v4:156,v5:170,end:196};
+  // Largeurs sous-colonnes : 14 chacune, total=70
 
-  const rowH=6;const lignesMax=12;
-  doc.setFont('helvetica','normal');doc.setFontSize(8);
+  // En-tête : ligne 1 — titres principaux
+  doc.setFillColor(240,240,240);doc.rect(14,y,182,14,'F');
+  doc.setDrawColor(180);doc.setFont('helvetica','bold');doc.setFontSize(7);
+  doc.text('DÉSIGNATION',cB.desig+1,y+5);
+  doc.text('TYPE/CAP.',cB.cap+1,y+5);
+  doc.text('EMPLACEMENT',cB.loc+1,y+5);
+  // Titre regroupé "TYPE DE VÉRIFICATION"
+  doc.setFillColor(210,210,210);doc.rect(cB.tv,y,cB.end-cB.tv,14,'F');
+  doc.setFontSize(7.5);doc.text('TYPE DE VÉRIFICATION',(cB.tv+cB.end)/2,y+5,{align:'center'});
+  // Séparateurs principaux
+  [cB.cap,cB.loc,cB.tv,cB.end].forEach(x=>doc.line(x,y,x,y+14));
+  // Ligne de séparation entre titre et sous-colonnes
+  doc.line(cB.tv,y+8,cB.end,y+8);
+  // Sous-colonnes
+  doc.setFontSize(5.8);
+  [
+    [cB.v1,'Vérif.'],[cB.v2,'MES'],[cB.v3,'MAA'],[cB.v4,'Réforme'],[cB.v5,'Interv.']
+  ].forEach(([x,label])=>{
+    doc.text(label,x+7,y+12.5,{align:'center'});
+    doc.line(x,y+8,x,y+14);
+  });
+  doc.line(cB.end,y+8,cB.end,y+14);
+  y+=14;
+
+  // Lignes équipements (max 14, hauteur 7 pour avoir de la place)
+  const rowH=7;const lignesMax=14;
+  doc.setFont('helvetica','normal');doc.setFontSize(7.5);
   for(let idx=0;idx<lignesMax;idx++){
     const v=verifs[idx];
     doc.setDrawColor(200);doc.line(14,y,196,y);
-    [colXB.cap,colXB.loc,colXB.verif,colXB.mes,colXB.maa,colXB.reforme,196].forEach(x=>{doc.line(x,y,x,y+rowH);});
+    [cB.cap,cB.loc,cB.tv,cB.v2,cB.v3,cB.v4,cB.v5,cB.end].forEach(x=>doc.line(x,y,x,y+rowH));
     if(v){
       const eq=v.equipements;
       const agent=eq?.donnees_specifiques?.['ef-agent']||eq?.donnees_specifiques?.['e-agent']||'';
       const desig=`${idx+1} - ${eq?.types_equipements?.libelle||'—'}${agent?' '+agent:''}`;
       const cap=eq?.capacite_valeur?(eq.capacite_valeur+' '+(eq.capacite_unite||'')):'—';
-      doc.text(desig.slice(0,28),colXB.desig+1,y+4);
-      doc.text(cap.slice(0,12),colXB.cap+1,y+4);
-      doc.text((eq?.localisation||'—').slice(0,20),colXB.loc+1,y+4);
-      doc.setFont('helvetica','bold');doc.setTextColor(0,100,0);doc.text('X',colXB.verif+9,y+4,{align:'center'});doc.setTextColor(0);doc.setFont('helvetica','normal');
+      // Adresse emplacement sur 2 lignes si besoin
+      const locLines=doc.splitTextToSize(eq?.localisation||'—',26);
+      doc.text(desig.slice(0,30),cB.desig+1,y+4.5);
+      doc.text(cap.slice(0,12),cB.cap+1,y+4.5);
+      doc.text(locLines,cB.loc+1,y+(locLines.length>1?2.5:4.5));
+      // Cocher la bonne colonne selon le palier
+      const palierCode=v.palier_code||'';
+      doc.setFont('helvetica','bold');doc.setTextColor(0,100,0);
+      if(palierCode==='mise_en_service')doc.text('X',cB.v2+7,y+4.5,{align:'center'});
+      else if(palierCode==='approfondie'||palierCode==='maa')doc.text('X',cB.v3+7,y+4.5,{align:'center'});
+      else if(palierCode==='reforme'||palierCode==='revision')doc.text('X',cB.v4+7,y+4.5,{align:'center'});
+      else if(palierCode==='intervention')doc.text('X',cB.v5+7,y+4.5,{align:'center'});
+      else doc.text('X',cB.v1+7,y+4.5,{align:'center'}); // Vérification simple par défaut
+      doc.setTextColor(0);doc.setFont('helvetica','normal');
     }
     y+=rowH;
   }
   doc.setDrawColor(200);doc.line(14,y,196,y);
   y+=1;doc.setFont('helvetica','bold');doc.setFontSize(8);
-  doc.text('TOTAL',colXB.loc+30,y+3,{align:'right'});doc.text(String(verifs.length),colXB.verif+9,y+3,{align:'center'});
-  y+=7;
+  doc.text('TOTAL',cB.loc+22,y+3.5,{align:'right'});
+  doc.text(String(verifs.length),cB.v1+7,y+3.5,{align:'center'});
+  y+=8;
 
   // Zone OUI/NON vide (à compléter manuellement si régénéré sans checklist)
   const reglItems=['Registre de sécurité signé','Plan d\'évacuation existant','Consignes de sécurité existantes','Panneaux extincteur existant','Boîtier d\'alarme incendie existant'];

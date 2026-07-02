@@ -2013,7 +2013,7 @@ function genererPdfSession(signatureDataUrl, signataireNom){
     my+=5;
   });
 
-  // ---- INFOS INTERVENTION — adresse sur 2 lignes si nécessaire ----
+  // ---- INFOS INTERVENTION — 2 lignes réservées pour adresse ----
   doc.setFontSize(9);doc.setFont('helvetica','normal');
   let y=31;
   doc.text('Date de l\'intervention :',14,y);doc.setFont('helvetica','bold');doc.text(dateStr,65,y);
@@ -2021,77 +2021,76 @@ function genererPdfSession(signatureDataUrl, signataireNom){
   y+=6;doc.setFont('helvetica','normal');doc.text('Lieu d\'intervention :',14,y);
   const adresse=[c?.adresse,c?.code_postal,c?.ville].filter(Boolean).join(', ');
   const adresseLines=doc.splitTextToSize(adresse||c?.ville||'—',85);
-  doc.setFont('helvetica','normal');doc.text(adresseLines,65,y);
-  y+=adresseLines.length>1?10:6;
+  doc.text(adresseLines,65,y);
+  y+=12; // Toujours 2 lignes réservées
   doc.text('N° bon :',14,y);doc.setFont('helvetica','bold');doc.setTextColor(192,57,43);doc.text(numSession,65,y);doc.setTextColor(0);
   y+=6;doc.setFont('helvetica','normal');doc.text('Technicien :',14,y);doc.text(`${ME.prenom||''} ${ME.nom}`.trim(),65,y);
 
   // ---- TABLEAU ÉQUIPEMENTS ----
-  y=Math.max(y+8, 72);
+  y=Math.max(y+8,74);
   const equipsVerifies=currentEquipements.filter(e=>sessionVerifs[e.id]);
   const equipsNonVerifies=currentEquipements.filter(e=>!sessionVerifs[e.id]);
   const tousEquips=[...equipsVerifies,...equipsNonVerifies];
 
-  // Largeurs colonnes : Désig=55, Type/Cap=22, Emplacem=33, Vérif=20, MES=18, MAA=18, Réforme=18
-  const colX={desig:14,cap:69,loc:91,verif:124,mes:141,maa:158,reforme:175};
+  // Colonnes : Désig | Cap | Loc | [TYPE DE VÉRIFICATION : Vérif | MES | MAA | Réforme | Interv.]
+  const cT={desig:14,cap:66,loc:86,tv:114,v1:114,v2:128,v3:142,v4:156,v5:170,end:196};
 
-  // En-tête tableau
-  doc.setFillColor(240,240,240);doc.rect(14,y,182,10,'F');
+  // En-tête double ligne
+  doc.setFillColor(240,240,240);doc.rect(14,y,182,14,'F');
   doc.setDrawColor(180);doc.setFont('helvetica','bold');doc.setFontSize(7);
-  doc.text('DÉSIGNATION',colX.desig+1,y+4);
-  doc.text('TYPE/CAP.',colX.cap+1,y+4);
-  doc.text('EMPLACEMENT',colX.loc+1,y+4);
-  // Colonnes opérations — sans "QUANTITÉ", juste les libellés
-  doc.setFontSize(6.5);
-  doc.text('Vérifica-',colX.verif+9,y+3.5,{align:'center'});
-  doc.text('tion',colX.verif+9,y+7,{align:'center'});
-  doc.text('MES',colX.mes+8,y+5.5,{align:'center'});
-  doc.text('MAA',colX.maa+8,y+5.5,{align:'center'});
-  doc.text('Réforme',colX.reforme+8,y+5.5,{align:'center'});
-  // Séparateurs verticaux
-  [colX.cap,colX.loc,colX.verif,colX.mes,colX.maa,colX.reforme,196].forEach(x=>{
-    doc.setDrawColor(180);doc.line(x,y,x,y+10);
+  doc.text('DÉSIGNATION',cT.desig+1,y+5);
+  doc.text('TYPE/CAP.',cT.cap+1,y+5);
+  doc.text('EMPLACEMENT',cT.loc+1,y+5);
+  doc.setFillColor(210,210,210);doc.rect(cT.tv,y,cT.end-cT.tv,14,'F');
+  doc.setFontSize(7.5);doc.text('TYPE DE VÉRIFICATION',(cT.tv+cT.end)/2,y+5,{align:'center'});
+  [cT.cap,cT.loc,cT.tv,cT.end].forEach(x=>doc.line(x,y,x,y+14));
+  doc.line(cT.tv,y+8,cT.end,y+8);
+  doc.setFontSize(5.8);
+  [[cT.v1,'Vérif.'],[cT.v2,'MES'],[cT.v3,'MAA'],[cT.v4,'Réforme'],[cT.v5,'Interv.']].forEach(([x,label])=>{
+    doc.text(label,x+7,y+12.5,{align:'center'});
+    doc.line(x,y+8,x,y+14);
   });
-  y+=10;
+  doc.line(cT.end,y+8,cT.end,y+14);
+  y+=14;
 
-  // Lignes équipements (max 12)
-  doc.setFont('helvetica','normal');doc.setFontSize(8);
-  const rowH=6;const lignesMax=12;
+  // Lignes équipements (max 14, hauteur 7)
+  doc.setFont('helvetica','normal');doc.setFontSize(7.5);
+  const rowH=7;const lignesMax=14;
   for(let idx=0;idx<lignesMax;idx++){
     const eq=tousEquips[idx];
     doc.setDrawColor(200);doc.line(14,y,196,y);
-    // Séparateurs verticaux
-    [colX.cap,colX.loc,colX.verif,colX.mes,colX.maa,colX.reforme,196].forEach(x=>{
-      doc.line(x,y,x,y+rowH);
-    });
+    [cT.cap,cT.loc,cT.tv,cT.v2,cT.v3,cT.v4,cT.v5,cT.end].forEach(x=>doc.line(x,y,x,y+rowH));
     if(eq){
       const v=sessionVerifs[eq.id];
       const agentEq=eq.donnees_specifiques?.['ef-agent']||eq.donnees_specifiques?.['e-agent']||'';
       const desig=`${idx+1} - ${eq.types_equipements?.libelle||'—'}${agentEq?' '+agentEq:''}`;
       const cap=eq.capacite_valeur?(eq.capacite_valeur+' '+(eq.capacite_unite||'')):'—';
-      doc.text(desig.slice(0,28),colX.desig+1,y+4);
-      doc.text(cap.slice(0,12),colX.cap+1,y+4);
-      doc.text((eq.localisation||'—').slice(0,20),colX.loc+1,y+4);
+      const locLines=doc.splitTextToSize(eq.localisation||'—',26);
+      doc.text(desig.slice(0,30),cT.desig+1,y+4.5);
+      doc.text(cap.slice(0,12),cT.cap+1,y+4.5);
+      doc.text(locLines,cT.loc+1,y+(locLines.length>1?2.5:4.5));
       if(v){
+        const palierCode=v.points?.palierCode||sessionVerifs[eq.id]?.palierCode||'';
         doc.setFont('helvetica','bold');doc.setTextColor(0,100,0);
-        doc.text('X',colX.verif+9,y+4,{align:'center'});
+        if(palierCode==='mise_en_service')doc.text('X',cT.v2+7,y+4.5,{align:'center'});
+        else if(palierCode==='approfondie'||palierCode==='maa')doc.text('X',cT.v3+7,y+4.5,{align:'center'});
+        else if(palierCode==='reforme'||palierCode==='revision')doc.text('X',cT.v4+7,y+4.5,{align:'center'});
+        else if(palierCode==='intervention')doc.text('X',cT.v5+7,y+4.5,{align:'center'});
+        else doc.text('X',cT.v1+7,y+4.5,{align:'center'});
         doc.setTextColor(0);doc.setFont('helvetica','normal');
       }
     }
     y+=rowH;
   }
   doc.setDrawColor(200);doc.line(14,y,196,y);
-
-  // Ligne TOTAL
   y+=1;doc.setFont('helvetica','bold');doc.setFontSize(8);
-  doc.text('TOTAL',colX.loc+30,y+3,{align:'right'});
-  doc.text(String(equipsVerifies.length),colX.verif+9,y+3,{align:'center'});
-  y+=7;
+  doc.text('TOTAL',cT.loc+22,y+3.5,{align:'right'});
+  doc.text(String(equipsVerifies.length),cT.v1+7,y+3.5,{align:'center'});
+  y+=8;
 
   // ---- TABLEAU OUI/NON ----
   doc.setFontSize(7.5);doc.setFont('helvetica','normal');
   const reglItems=REGL_CHK;
-  // Tableau 2 colonnes : item | OUI | NON
   const colW=80;const startX=100;
   doc.rect(startX,y,96,reglItems.length*5+2);
   doc.setFillColor(230,230,230);doc.rect(startX+75,y,10,4,'F');doc.rect(startX+85,y,10,4,'F');
