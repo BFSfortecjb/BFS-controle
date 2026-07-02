@@ -1013,27 +1013,120 @@ function renderContrats(){
     <td><span class="badge bg">${c.agences?.nom||'—'}</span></td><td>${c.type_contrat}</td>
     <td class="${ecClass(c.date_fin)}">${fmt(c.date_fin)}</td>
     <td>${c.tarif_annuel?c.tarif_annuel.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'—'}</td>
-    <td>${badgeSt(c.statut)}</td>
-    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editContrat('${c.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="exportContratPDF('${c.id}')">📄</button><button class="btn btn-s btn-xs" onclick="deleteContrat('${c.id}')">🗑</button></div></td>
+    <td>${badgeSt(c.statut)}${c.signature_data?` <span class="badge bv" title="Signé le ${fmt(c.signe_le)}">✍</span>`:''}</td>
+    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editContrat('${c.id}')">✏️</button>${!c.signature_data?`<button class="btn btn-s btn-xs" onclick="openSignContrat('${c.id}')" title="Faire signer le client">✍ Signer</button>`:''}<button class="btn btn-s btn-xs" onclick="exportContratPDF('${c.id}')" title="Télécharger le contrat PDF">📄</button><button class="btn btn-s btn-xs" onclick="deleteContrat('${c.id}')">🗑</button></div></td>
   </tr>`).join('')}</tbody></table>`;
 }
 async function openContratModal(prefill=null){
   if(!clients.length)await loadClients();
   $('ct-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
-  $('ct-types-grid').innerHTML=typesEquip.map(t=>`<div style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;line-height:1.3" onclick="this.querySelector('input').click()"><input type="checkbox" name="ct-type" value="${t.code}" style="flex-shrink:0;margin:0;width:16px;height:16px" ${prefill?.types_couverts?.includes(t.code)?'checked':''}><span style="text-transform:none;font-weight:400;color:var(--txt);letter-spacing:normal">${t.icone} ${t.libelle}</span></div>`).join('');
+  $('ct-types-grid').innerHTML=typesEquip.map(t=>`<div style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;line-height:1.3" onclick="if(event.target.tagName!=='INPUT')this.querySelector('input').click()"><input type="checkbox" name="ct-type" value="${t.code}" style="flex-shrink:0;margin:0;width:16px;height:16px" ${prefill?.types_couverts?.includes(t.code)?'checked':''}><span style="text-transform:none;font-weight:400;color:var(--txt);letter-spacing:normal">${t.icone} ${t.libelle}</span></div>`).join('');
   ['ct-id','ct-num','ct-tarif','ct-notes'].forEach(id=>$(id).value='');$('ct-debut').value='';$('ct-fin').value='';$('ct-type').value='annuel';$('ct-period').value='annuelle';$('ct-statut').value='actif';$('mo-ct-t').textContent='Nouveau contrat';
   if(prefill){$('ct-id').value=prefill.id;$('ct-client').value=prefill.client_id;$('ct-num').value=prefill.numero_contrat||'';$('ct-type').value=prefill.type_contrat||'annuel';$('ct-debut').value=prefill.date_debut||'';$('ct-fin').value=prefill.date_fin||'';$('ct-tarif').value=prefill.tarif_annuel||'';$('ct-period').value=prefill.periodicite_visite||'annuelle';$('ct-statut').value=prefill.statut||'actif';$('ct-notes').value=prefill.notes||'';$('mo-ct-t').textContent='Modifier';}
+  _lignesContrat=(prefill&&Array.isArray(prefill.lignes))?[...prefill.lignes]:[];
+  renderLignesContrat();
   OM('mo-contrat');
 }
 function editContrat(id){openContratModal(contrats.find(c=>c.id===id))}
 async function saveContrat(){
-  const id=$('ct-id').value;const types=Array.from(document.querySelectorAll('input[name="ct-type"]:checked')).map(c=>c.value);
-  const p={client_id:$('ct-client').value,numero_contrat:$('ct-num').value.trim(),type_contrat:$('ct-type').value,types_couverts:types,date_debut:$('ct-debut').value||null,date_fin:$('ct-fin').value||null,tarif_annuel:parseFloat($('ct-tarif').value)||null,periodicite_visite:$('ct-period').value,statut:$('ct-statut').value,notes:$('ct-notes').value.trim(),updated_at:new Date().toISOString()};
+  const id=$('ct-id').value;
+  const coches=Array.from(document.querySelectorAll('input[name="ct-type"]:checked')).map(c=>c.value);
+  // Les types présents dans le chiffrage sont automatiquement couverts
+  const types=[...new Set([...coches,..._lignesContrat.map(l=>l.type)])];
+  const p={client_id:$('ct-client').value,numero_contrat:$('ct-num').value.trim(),type_contrat:$('ct-type').value,types_couverts:types,lignes:_lignesContrat,date_debut:$('ct-debut').value||null,date_fin:$('ct-fin').value||null,tarif_annuel:parseFloat($('ct-tarif').value)||null,periodicite_visite:$('ct-period').value,statut:$('ct-statut').value,notes:$('ct-notes').value.trim(),updated_at:new Date().toISOString()};
   const {error}=id?await db.from('contrats').update(p).eq('id',id):await db.from('contrats').insert(p);
   if(error){toast('Erreur: '+error.message,'err');return}
   toast(id?'Contrat modifié':'Contrat créé');CM('mo-contrat');loadContrats();
 }
 async function deleteContrat(id){if(!confirm('Supprimer ?'))return;await db.from('contrats').delete().eq('id',id);toast('Supprimé');loadContrats()}
+
+// ============================================================
+// CONTRAT — LIGNES DE CHIFFRAGE
+// ============================================================
+let _lignesContrat=[];
+function renderLignesContrat(){
+  const el=$('ct-lignes-list');if(!el)return;
+  if(!_lignesContrat.length){el.innerHTML='<div style="font-size:12px;color:var(--txt-l);padding:4px 0">Aucun équipement chiffré — le repérage se saisit ici.</div>';majTotalContrat();return}
+  el.innerHTML='<table style="width:100%;font-size:12px"><thead><tr><th>Équipement</th><th>Marque</th><th>Modèle</th><th style="text-align:center">Qté</th><th style="text-align:right">PU HT</th><th style="text-align:right">Total HT</th><th></th></tr></thead><tbody>'
+    +_lignesContrat.map((l,i)=>{
+      const t=typesEquip.find(t=>t.code===l.type);
+      return `<tr><td>${t?t.icone+' '+t.libelle:l.type}</td><td>${l.marque||'—'}</td><td>${l.modele||'—'}</td><td style="text-align:center">${l.quantite}</td><td style="text-align:right">${(+l.pu||0).toFixed(2)} €</td><td style="text-align:right;font-weight:600">${((+l.quantite||0)*(+l.pu||0)).toFixed(2)} €</td><td><button type="button" onclick="supprimerLigneContrat(${i})" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px">✕</button></td></tr>`;
+    }).join('')+'</tbody></table>';
+  majTotalContrat();
+}
+function majTotalContrat(){
+  const tot=_lignesContrat.reduce((s,l)=>s+(+l.quantite||0)*(+l.pu||0),0);
+  $('ct-total').textContent=_lignesContrat.length?'Total HT : '+tot.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'';
+  if(_lignesContrat.length)$('ct-tarif').value=tot.toFixed(2);
+}
+function supprimerLigneContrat(i){_lignesContrat.splice(i,1);renderLignesContrat()}
+function ajouterLigneContrat(){
+  const modal=document.createElement('div');
+  modal.className='mo open';modal.style.zIndex='300';
+  modal.innerHTML=`<div class="modal" style="max-width:440px">
+    <div class="mh"><h3>Ajouter un équipement au contrat</h3><button class="mclose" onclick="this.closest('.mo').remove()">✕</button></div>
+    <div class="mc">
+      <div class="fg" style="margin-bottom:12px"><label>Type d'équipement *</label>
+        <select id="lc-type">${typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('')}</select></div>
+      <div class="fg" style="margin-bottom:12px"><label>Marque</label><input type="text" id="lc-marque" placeholder="Ex : Eurofeu"></div>
+      <div class="fg" style="margin-bottom:12px"><label>Modèle</label><input type="text" id="lc-modele" placeholder="Ex : PP6 ABC"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="fg"><label>Quantité *</label><input type="number" id="lc-qte" min="1" value="1"></div>
+        <div class="fg"><label>Prix unitaire HT (€) *</label><input type="number" id="lc-pu" step="0.01" min="0"></div>
+      </div>
+      <div class="fa" style="margin-top:12px">
+        <button class="btn btn-s" onclick="this.closest('.mo').remove()">Annuler</button>
+        <button class="btn btn-p" onclick="confirmerLigneContrat(this)">Ajouter</button>
+      </div>
+    </div>
+  </div>`;
+  modal.addEventListener('click',e=>{if(e.target===modal)modal.remove()});
+  document.body.appendChild(modal);
+}
+function confirmerLigneContrat(btn){
+  const qte=parseInt(document.getElementById('lc-qte').value,10);
+  const pu=parseFloat(document.getElementById('lc-pu').value);
+  if(!qte||qte<1){toast('Quantité invalide','err');return}
+  if(isNaN(pu)||pu<0){toast('Prix unitaire invalide','err');return}
+  _lignesContrat.push({type:document.getElementById('lc-type').value,marque:document.getElementById('lc-marque').value.trim(),modele:document.getElementById('lc-modele').value.trim(),quantite:qte,pu:pu});
+  btn.closest('.mo').remove();renderLignesContrat();
+}
+
+// ============================================================
+// CONTRAT — SIGNATURE NUMÉRIQUE SUR PLACE
+// ============================================================
+let _signContratId=null,_sgVide=true;
+function openSignContrat(id){
+  _signContratId=id;_sgVide=true;$('sg-nom').value='';
+  const cv=$('sg-canvas');const ctx=cv.getContext('2d');
+  ctx.clearRect(0,0,cv.width,cv.height);
+  initSgCanvas();OM('mo-sign-ct');
+}
+function initSgCanvas(){
+  const cv=$('sg-canvas');if(cv._init)return;cv._init=true;
+  const ctx=cv.getContext('2d');ctx.lineWidth=2.2;ctx.lineCap='round';ctx.strokeStyle='#1e293b';
+  let dessin=false;
+  const pos=e=>{const r=cv.getBoundingClientRect();return[(e.clientX-r.left)*cv.width/r.width,(e.clientY-r.top)*cv.height/r.height]};
+  cv.addEventListener('pointerdown',e=>{dessin=true;_sgVide=false;const [x,y]=pos(e);ctx.beginPath();ctx.moveTo(x,y);cv.setPointerCapture(e.pointerId)});
+  cv.addEventListener('pointermove',e=>{if(!dessin)return;const [x,y]=pos(e);ctx.lineTo(x,y);ctx.stroke()});
+  cv.addEventListener('pointerup',()=>dessin=false);
+  cv.addEventListener('pointercancel',()=>dessin=false);
+}
+function effacerSignatureCt(){
+  const cv=$('sg-canvas');cv.getContext('2d').clearRect(0,0,cv.width,cv.height);_sgVide=true;
+}
+async function validerSignatureCt(){
+  const nom=$('sg-nom').value.trim();
+  if(!nom){toast('Nom du signataire obligatoire','err');return}
+  if(_sgVide){toast('Le client doit signer dans le cadre','err');return}
+  const dataUrl=$('sg-canvas').toDataURL('image/png');
+  const {error}=await db.from('contrats').update({signature_data:dataUrl,signataire_nom:nom,signe_le:new Date().toISOString()}).eq('id',_signContratId);
+  if(error){toast('Erreur: '+error.message,'err');return}
+  toast('Contrat signé ✓');CM('mo-sign-ct');
+  await loadContrats();
+  exportContratPDF(_signContratId); // télécharge aussitôt le contrat signé
+}
+
 
 // ============================================================
 // UTILISATEURS (admin)

@@ -652,6 +652,11 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Périodicité</label><select id="ct-period"><option value="annuelle">Annuelle</option><option value="semestrielle">Semestrielle</option><option value="trimestrielle">Trimestrielle</option><option value="mensuelle">Mensuelle</option></select></div>
       <div class="fg"><label>Statut</label><select id="ct-statut"><option value="actif">Actif</option><option value="suspendu">Suspendu</option><option value="terminé">Terminé</option></select></div>
       <div class="fg" style="grid-column:1/-1"><label>Équipements couverts</label><div id="ct-types-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-top:6px"></div></div>
+      <div class="fg" style="grid-column:1/-1"><label>Chiffrage — équipements du contrat</label>
+        <div id="ct-lignes-list" style="margin-top:6px"></div>
+        <button type="button" class="btn btn-s btn-sm" onclick="ajouterLigneContrat()" style="margin-top:6px">+ Ajouter un équipement</button>
+        <div id="ct-total" style="text-align:right;font-weight:700;font-size:15px;margin-top:8px;color:var(--rouge)"></div>
+      </div>
       <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="ct-notes"></textarea></div>
     </div>
     <div class="fa"><button class="btn btn-s" onclick="CM('mo-contrat')">Annuler</button><button class="btn btn-p" onclick="saveContrat()">Enregistrer</button></div>
@@ -694,6 +699,24 @@ tr:hover td{background:#fafafa}
 </div>
 
 
+
+<!-- Modal signature contrat -->
+<div class="mo" id="mo-sign-ct">
+  <div class="modal" style="max-width:540px">
+    <div class="mh"><h3>✍ Signature du contrat</h3><button class="mclose" onclick="CM('mo-sign-ct')">✕</button></div>
+    <div class="mc">
+      <div class="fg" style="margin-bottom:10px"><label>Nom du signataire *</label><input type="text" id="sg-nom" placeholder="Nom et prénom du client"></div>
+      <div style="font-size:12px;color:var(--txt-l);margin-bottom:6px">Faites signer le client dans le cadre ci-dessous (doigt ou souris) :</div>
+      <div style="border:1.5px dashed #cbd5e1;border-radius:10px;background:#fff;overflow:hidden">
+        <canvas id="sg-canvas" width="480" height="180" style="width:100%;display:block;touch-action:none;cursor:crosshair"></canvas>
+      </div>
+      <div class="fa" style="margin-top:12px">
+        <button class="btn btn-s" onclick="effacerSignatureCt()">🗑 Effacer</button>
+        <button class="btn btn-p" onclick="validerSignatureCt()">✅ Valider et générer le contrat</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Modal QR Code -->
 <div class="mo" id="mo-qr">

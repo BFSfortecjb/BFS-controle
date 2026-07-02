@@ -58,15 +58,61 @@ async function exportVerifPDF(verifId){
 // PDF — CONTRAT
 // ============================================================
 async function exportContratPDF(id){
-  const {data:c}=await db.from('contrats').select('*,clients(*),agences(nom)').eq('id',id).single();if(!c)return;
+  const {data:c}=await db.from('contrats').select('*,clients(*),agences(nom,code)').eq('id',id).single();if(!c){toast('Contrat introuvable','err');return}
   const {jsPDF}=window.jspdf;const doc=new jsPDF();const cl=c.clients;
-  doc.setFillColor(192,57,43);doc.rect(0,0,210,26,'F');doc.setTextColor(255);doc.setFontSize(12);doc.setFont('helvetica','bold');
-  doc.text('BFS — Contrat de maintenance',14,11);doc.setFontSize(9);doc.setFont('helvetica','normal');
-  doc.text(`N° ${c.numero_contrat||'—'} — Agence ${c.agences?.nom||'—'}`,14,19);doc.text(`Édité le ${new Date().toLocaleDateString('fr-FR')}`,155,19);
-  doc.setTextColor(30);let y=32;
-  doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[['Prestataire','BFS — Bretagne Formation Sécurité'],['Agence',c.agences?.nom||'—'],['Client',cl?.raison_sociale||'—'],['Adresse',`${cl?.adresse||''} ${cl?.code_postal||''} ${cl?.ville||''}`.trim()],['SIRET',cl?.siret||'—'],['Contact',`${cl?.contact_nom||'—'} — ${cl?.contact_telephone||''}`],['Type',c.type_contrat],['Période',`${fmt(c.date_debut)} → ${fmt(c.date_fin)}`],['Périodicité',c.periodicite_visite||'—'],['Tarif HT',c.tarif_annuel?c.tarif_annuel.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'—'],['Équipements couverts',(c.types_couverts||[]).join(', ')||'—']],styles:{fontSize:10},columnStyles:{0:{fontStyle:'bold',cellWidth:52}}});
-  y=doc.lastAutoTable.finalY+8;if(c.notes){doc.setFontSize(10);doc.text('Conditions: '+doc.splitTextToSize(c.notes,182),14,y);}
-  doc.save(`BFS_contrat_${c.numero_contrat||id}.pdf`);toast('PDF généré');
+  const raisonSoc=c.agences?.code==='sevremont'?'Bocage Formation Sécurité':'Bretagne Formation Sécurité';
+  // Filigrane flamme (sous le contenu)
+  try{doc.saveGraphicsState();doc.setGState(new doc.GState({opacity:0.05}));doc.addImage(LOGO_BFS,'PNG',50,93,110,110);doc.restoreGraphicsState();}catch(e){}
+  // En-tête charte BFS
+  try{doc.addImage(LOGO_BFS,'PNG',12,5,16,16)}catch(e){}
+  doc.setFontSize(20);doc.setFont('helvetica','bold');doc.setTextColor(50,50,50);doc.text('BFS',29,15);
+  doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');doc.text(raisonSoc,29,19.5);
+  doc.setFillColor(230,100,40);doc.rect(65,8,130,10,'F');
+  doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
+  doc.text('CONTRAT DE MAINTENANCE INCENDIE',130,15,{align:'center'});
+  doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
+  doc.text(`N° ${c.numero_contrat||'—'} — Agence ${c.agences?.nom||'—'}`,14,26);
+  doc.text(`Édité le ${new Date().toLocaleDateString('fr-FR')}`,162,26);
+  let y=31;
+  doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[['Prestataire','BFS — '+raisonSoc],['Client',cl?.raison_sociale||'—'],['Adresse',`${cl?.adresse||''} ${cl?.code_postal||''} ${cl?.ville||''}`.trim()||'—'],['SIRET',cl?.siret||'—'],['Contact',`${cl?.contact_nom||'—'}${cl?.contact_telephone?' — '+cl.contact_telephone:''}`],['Type de contrat',c.type_contrat],['Période',`${fmt(c.date_debut)} → ${fmt(c.date_fin)}`],['Périodicité des visites',c.periodicite_visite||'—']],styles:{fontSize:9.5},columnStyles:{0:{fontStyle:'bold',cellWidth:52}}});
+  y=doc.lastAutoTable.finalY+7;
+  // Chiffrage détaillé
+  const lignes=Array.isArray(c.lignes)?c.lignes:[];
+  if(lignes.length){
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('DÉTAIL DES ÉQUIPEMENTS SOUS CONTRAT',14,y);y+=3;
+    const lib=code=>{const t=(typeof typesEquip!=='undefined'?typesEquip:[]).find(t=>t.code===code);return t?t.libelle:code};
+    const total=lignes.reduce((s,l)=>s+(+l.quantite||0)*(+l.pu||0),0);
+    const eur=n=>n.toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+    doc.autoTable({startY:y,margin:{left:14,right:14},
+      head:[['Équipement','Marque','Modèle','Qté','PU HT','Total HT']],
+      body:[...lignes.map(l=>[lib(l.type),l.marque||'—',l.modele||'—',String(l.quantite),eur(+l.pu||0),eur((+l.quantite||0)*(+l.pu||0))]),
+        [{content:'TOTAL HT',colSpan:5,styles:{fontStyle:'bold',halign:'right'}},{content:eur(total),styles:{fontStyle:'bold'}}]],
+      styles:{fontSize:9},headStyles:{fillColor:[230,100,40]},
+      columnStyles:{3:{halign:'center',cellWidth:14},4:{halign:'right',cellWidth:26},5:{halign:'right',cellWidth:28}}});
+    y=doc.lastAutoTable.finalY+7;
+  } else if(c.tarif_annuel){
+    doc.setFont('helvetica','bold');doc.setFontSize(10);
+    doc.text('Tarif annuel HT : '+c.tarif_annuel.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}),14,y);y+=7;
+  }
+  if(c.notes){
+    doc.setFont('helvetica','bolditalic');doc.setFontSize(8.5);doc.text('Conditions particulières :',14,y);
+    doc.setFont('helvetica','normal');
+    const nl=doc.splitTextToSize(c.notes,178);doc.text(nl,14,y+4.5);y+=4.5+nl.length*4+4;
+  }
+  // Signatures
+  const sigY=Math.min(Math.max(y+6,235),255);
+  doc.setDrawColor(150);doc.rect(14,sigY,85,32);doc.rect(110,sigY,82,32);
+  doc.setFont('helvetica','normal');doc.setFontSize(8);
+  doc.text('Signature du CLIENT (précédée de « Bon pour accord »)',14+42.5,sigY+4,{align:'center',maxWidth:80});
+  doc.text('Pour '+raisonSoc,110+41,sigY+4,{align:'center'});
+  if(c.signature_data){
+    try{doc.addImage(c.signature_data,'PNG',22,sigY+8,68,18)}catch(e){}
+    doc.setFontSize(8);doc.setFont('helvetica','bold');
+    doc.text((c.signataire_nom||'')+(c.signe_le?' — signé le '+fmt(c.signe_le):''),14+42.5,sigY+30,{align:'center'});
+  }
+  doc.setFontSize(7);doc.setTextColor(150);
+  doc.text('Généré le '+new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),105,290,{align:'center'});
+  doc.save(`BFS_contrat_${c.numero_contrat||id}${c.signature_data?'_signe':''}.pdf`);toast('Contrat PDF généré');
 }
 
 // ============================================================
