@@ -437,7 +437,11 @@ tr:hover td{background:#fafafa}
 
       <!-- COMMANDES À PRÉVOIR -->
       <div class="page" id="page-commandes">
-        <div class="stats-grid" id="commandes-stats"></div>
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+          <button class="ag-tab" onclick="navigate('stock')">🧰 Stock</button>
+          <button class="ag-tab active">📦 Commandes à prévoir</button>
+        </div>
+                <div class="stats-grid" id="commandes-stats"></div>
         <div class="search-bar">
           <select id="f-statut-cmd" onchange="loadCommandes()" style="max-width:200px">
             <option value="">Toutes</option>
@@ -482,6 +486,10 @@ tr:hover td{background:#fafafa}
 
       <!-- STOCK PIÈCES -->
       <div class="page" id="page-stock">
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+          <button class="ag-tab active">🧰 Stock</button>
+          <button class="ag-tab" onclick="navigate('commandes')">📦 Commandes à prévoir</button>
+        </div>
         <div class="search-bar">
           <input type="text" id="q-stock" placeholder="Rechercher code, désignation, marque…" oninput="renderStock()">
           <button class="btn btn-s" onclick="document.getElementById('stock-file').click()">⬆ Import Excel</button>

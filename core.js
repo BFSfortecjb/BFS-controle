@@ -191,9 +191,8 @@ function buildNav(){
   html+=navA('contrats','📋','Contrats');
   html+=navA('planning','📅','Planning');
   if(role==='admin'||role==='secretariat'){
-    html+=navA('commandes','📦','Commandes à prévoir');
     html+=navA('bons','📝','Bons d\'intervention');
-    html+=navA('stock','🧰','Stock pièces');
+    html+=navA('stock','📦','Stock & commandes');
   }
   if(role==='admin'){
     html+=`<div class="nav-sec">Administration</div>`;
@@ -213,7 +212,7 @@ function navigate(page){
   document.querySelectorAll('#sb nav a').forEach(a=>a.classList.remove('active'));
   const pg=$('page-'+page);if(!pg)return;
   pg.classList.add('active');
-  const lnk=document.querySelector(`[data-page="${page}"]`);if(lnk)lnk.classList.add('active');
+  const lnk=document.querySelector(`[data-page="${page==='commandes'?'stock':page}"]`);if(lnk)lnk.classList.add('active');
   const titles={
     'dash-admin':'Vue globale','dash-tech':'Mon tableau de bord','dash-sec':'Secrétariat',
     profil:'Mon profil',clients:'Clients',equipements:'Équipements',verifications:'Vérifications',
