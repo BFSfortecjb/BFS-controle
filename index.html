@@ -2106,7 +2106,8 @@ async function loadBons(){
 
   const el = $('bons-list');
   if(!bons.length){el.innerHTML='<div class="t-empty">Aucun bon d\'intervention</div>';return}
-  el.innerHTML = `<table><thead><tr><th>Date</th><th>Client</th><th>Agence</th><th>Technicien</th><th>Équipements</th><th>Signataire</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${bons.map(b=>`<tr>
+  el.innerHTML = `<table><thead><tr><th>N° Session</th><th>Date</th><th>Client</th><th>Agence</th><th>Technicien</th><th>Équip.</th><th>Signataire</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${bons.map(b=>`<tr>
+    <td style="font-weight:700;color:var(--rouge);white-space:nowrap">${b.numero_session||'—'}</td>
     <td>${fmt(b.date_intervention)}</td>
     <td><strong>${b.raison_sociale}</strong><br><small style="color:var(--txt-l)">${b.ville||''}</small></td>
     <td><span class="badge bg">${b.agence_nom||'—'}</span></td>
@@ -2115,10 +2116,148 @@ async function loadBons(){
     <td>${b.signataire_nom||'—'}</td>
     <td>${b.statut_facturation==='facturé'?'<span class="badge bv">Facturé</span>':'<span class="badge bo">À facturer</span>'}</td>
     <td><div class="ia">
-      <a class="btn btn-s btn-xs" href="${b.pdf_url}" target="_blank">📄 PDF</a>
+      ${b.pdf_url?`<a class="btn btn-s btn-xs" href="${b.pdf_url}" target="_blank">📄 PDF</a>`:'<span style="color:var(--txt-l);font-size:11px">Pas de PDF</span>'}
+      <button class="btn btn-s btn-xs" onclick="regenererBon('${b.id}')" title="Régénérer le PDF au nouveau format BFS">🔄</button>
       ${b.statut_facturation==='à_facturer'?`<button class="btn btn-s btn-xs" onclick="marquerFacture('${b.id}')">✓ Facturé</button>`:''}
     </div></td>
   </tr>`).join('')}</tbody></table>`;
+}
+
+async function regenererBon(bonId){
+  toast('Chargement des données…');
+
+  // Récupérer le bon + infos session
+  const {data:bon}=await db.from('bons_intervention').select('*').eq('id',bonId).single();
+  if(!bon){toast('Bon introuvable','err');return}
+
+  // Récupérer les infos client
+  const {data:client}=await db.from('clients').select('*,agences(nom,code)').eq('id',bon.client_id).single();
+
+  // Récupérer les vérifications de la session
+  const {data:verifs}=await db.from('verifications')
+    .select('*,equipements(numero_identification,localisation,marque,modele,capacite_valeur,capacite_unite,type_equipement_code,types_equipements(libelle,icone))')
+    .eq('session_id',bon.session_id);
+
+  if(!verifs||!verifs.length){toast('Aucune vérification trouvée pour cette session','err');return}
+
+  // Récupérer le numéro de session
+  const {data:sess}=await db.from('sessions_controle').select('numero').eq('id',bon.session_id).single();
+
+  // Générer le PDF côté bureau avec jsPDF
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'mm',format:'a4'});
+  const dateStr=new Date(bon.date_intervention).toLocaleDateString('fr-FR');
+  const numSession=sess?.numero||bon.numero_session||'—';
+  const adresse=[client?.adresse,client?.code_postal,client?.ville].filter(Boolean).join(', ');
+
+  // En-tête
+  doc.setFontSize(22);doc.setFont('helvetica','bold');doc.setTextColor(192,57,43);doc.text('BFS',14,18);
+  doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');doc.text('Bretagne Formation Sécurité',14,22);
+  doc.setFillColor(230,100,40);doc.rect(65,8,130,10,'F');
+  doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
+  doc.text('BULLETIN D\'INTERVENTION INCENDIE',130,15,{align:'center'});
+  doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
+  doc.text('Transmis pour facturation le :',65,26);
+  doc.setDrawColor(0);doc.rect(120,22,55,6);
+  doc.setFont('helvetica','bold');doc.text(dateStr,147,27,{align:'center'});
+
+  // Cases type intervention
+  const drawCB=(x,y,v)=>{doc.setDrawColor(0);doc.rect(x,y,3.5,3.5);if(v){doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(192,57,43);doc.text('X',x+0.5,y+3);doc.setTextColor(0);}};
+  doc.setFont('helvetica','normal');doc.setFontSize(8);
+  drawCB(120,30,true);doc.text('Contrôle',125,33);drawCB(145,30,false);doc.text('Installation',150,33);
+
+  // Matériel coché
+  const mats=['Extincteur / RIA','Plan / Signalétique','BAES','Système de désenfumage','Alarme incendie'];
+  const hasExt=verifs.some(v=>v.equipements?.type_equipement_code==='extincteur'||v.equipements?.type_equipement_code==='ria');
+  let my=37;
+  mats.forEach((m,i)=>{drawCB(120,my,i===0&&hasExt);doc.setFontSize(7.5);doc.text(m,125,my+3);my+=5;});
+
+  // Infos intervention
+  let y=31;
+  doc.setFontSize(9);
+  doc.text('Date de l\'intervention :',14,y);doc.setFont('helvetica','bold');doc.text(dateStr,65,y);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Nom du Client :',14,y);doc.setFont('helvetica','bold');doc.text(client?.raison_sociale||'—',65,y);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Lieu d\'intervention :',14,y);doc.text(adresse||client?.ville||'—',65,y);
+  y+=6;doc.setFont('helvetica','normal');doc.text('N° bon :',14,y);doc.setFont('helvetica','bold');doc.setTextColor(192,57,43);doc.text(numSession,65,y);doc.setTextColor(0);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Technicien :',14,y);doc.text(bon.technicien_nom||`${bon.tech_prenom||''} ${bon.tech_nom||''}`.trim()||'—',65,y);
+
+  // Tableau équipements
+  y=66;
+  doc.setFillColor(240,240,240);doc.rect(14,y,182,5,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(7.5);
+  doc.text('DÉSIGNATION',16,y+3.5);doc.text('TYPE/CAPACITÉ',75,y+3.5);doc.text('EMPLACEMENT',105,y+3.5);
+  doc.setFillColor(200,200,200);doc.rect(148,y-2,48,7,'F');
+  doc.text('QUANTITÉ',172,y+1,{align:'center'});
+  doc.setFontSize(6.5);
+  doc.text('Vérifié',151,y+3.5);doc.text('Mise en',162,y+3.5);doc.text('Quinquénn.',172,y+3.5);doc.text('Réforme',182,y+3.5);
+  doc.text('service',162,y+5.5);doc.text('10 ans',182,y+5.5);
+  y+=7;
+
+  const rowH=6;const lignesMax=12;
+  doc.setFont('helvetica','normal');doc.setFontSize(8);
+  for(let idx=0;idx<lignesMax;idx++){
+    const v=verifs[idx];
+    doc.setDrawColor(200);doc.line(14,y,196,y);
+    if(v){
+      const eq=v.equipements;
+      const desig=`${idx+1} - ${eq?.types_equipements?.libelle||'—'}`;
+      const cap=eq?.capacite_valeur?(eq.capacite_valeur+' '+(eq.capacite_unite||'')):'—';
+      doc.text(desig.slice(0,30),16,y+4);
+      doc.text(cap.slice(0,18),75,y+4);
+      doc.text((eq?.localisation||'—').slice(0,22),105,y+4);
+      doc.setFont('helvetica','bold');doc.setTextColor(0,100,0);doc.text('X',154,y+4,{align:'center'});doc.setTextColor(0);doc.setFont('helvetica','normal');
+    }
+    y+=rowH;
+  }
+  doc.setDrawColor(200);doc.line(14,y,196,y);
+  y+=1;doc.setFont('helvetica','bold');doc.setFontSize(8);
+  doc.text('TOTAL',105,y+3,{align:'right'});doc.text(String(verifs.length),154,y+3,{align:'center'});
+  y+=7;
+
+  // Zone OUI/NON vide (à compléter manuellement si régénéré sans checklist)
+  const reglItems=['Registre de sécurité signé','Plan d\'évacuation existant','Consignes de sécurité existantes','Panneaux extincteur existant','Boîtier d\'alarme incendie existant'];
+  const startX=100;
+  doc.rect(startX,y,96,reglItems.length*5+2);
+  doc.setFillColor(230,230,230);doc.rect(startX+75,y,10,4,'F');doc.rect(startX+85,y,10,4,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.text('OUI',startX+80,y+3,{align:'center'});doc.text('NON',startX+90,y+3,{align:'center'});
+  y+=4;
+  reglItems.forEach(item=>{
+    doc.setFont('helvetica','normal');doc.text(item,startX+1,y+3.5);
+    doc.setDrawColor(200);doc.line(startX,y+5,startX+96,y+5);y+=5;
+  });
+  y+=4;
+
+  // Observations
+  doc.setFont('helvetica','bolditalic');doc.setFontSize(8);doc.text('OBSERVATIONS :',14,y+4);
+  doc.setFont('helvetica','normal');
+  const obsText=verifs.map(v=>v.observations).filter(Boolean).join(' · ')||'—';
+  const obsLines=doc.splitTextToSize(obsText,178);
+  doc.text(obsLines,14,y+9);
+  y+=9+obsLines.length*4+4;
+
+  // Signatures
+  const sigY=Math.max(y+6,250);
+  doc.setDrawColor(150);doc.rect(14,sigY,85,28);doc.rect(110,sigY,82,28);
+  doc.setFont('helvetica','normal');doc.setFontSize(8);
+  doc.text('NOM, signature et cachet du CLIENT',14+42,sigY+4,{align:'center'});
+  doc.text('NOM et signature du technicien',110+41,sigY+4,{align:'center'});
+  if(bon.signataire_nom)doc.text(bon.signataire_nom,14+42,sigY+26,{align:'center'});
+  doc.setFontSize(7);doc.setTextColor(150);doc.text('v'+dateStr,105,290,{align:'center'});
+
+  // Sauvegarder le PDF et uploader
+  const pdfBlob=doc.output('blob');
+  const fileName=`bon_regen_${bonId}_${Date.now()}.pdf`;
+  const {error:upErr}=await db.storage.from('bons-intervention').upload(fileName,pdfBlob,{contentType:'application/pdf'});
+  if(upErr){
+    // Si l'upload échoue, proposer le téléchargement direct
+    doc.save(`BFS_bon_${numSession}_${client?.raison_sociale||''}.pdf`);
+    toast('PDF téléchargé localement (upload Storage échoué)','err');
+    return;
+  }
+  const {data:urlData}=db.storage.from('bons-intervention').getPublicUrl(fileName);
+  await db.from('bons_intervention').update({pdf_url:urlData.publicUrl,pdf_path:fileName}).eq('id',bonId);
+  toast('PDF régénéré au format BFS ✓');
+  loadBons();
 }
 
 async function marquerFacture(id){
