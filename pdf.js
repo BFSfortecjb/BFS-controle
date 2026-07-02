@@ -138,7 +138,7 @@ async function regenererBon(bonId){
   // Tableau équipements
   // Colonnes : Désig=52, Cap=20, Loc=28, puis "TYPE DE VÉRIFICATION" regroupée=72 (5 sous-col de ~14)
   y=Math.max(y+8,74);
-  const cT={desig:14,cap:66,loc:86,tv:113,v1:113,v2:129,v3:145,v4:161,v5:177,end:196};
+  const cB={desig:14,cap:66,loc:86,tv:113,v1:113,v2:129,v3:145,v4:161,v5:177,end:196};
   // Largeurs sous-colonnes : 14 chacune, total=70
 
   // En-tête : ligne 1 — titres principaux
