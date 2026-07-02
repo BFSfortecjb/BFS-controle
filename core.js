@@ -61,9 +61,12 @@ async function doLogin(){
   const pwd=$('login-pwd').value;
   const err=$('login-err');err.style.display='none';
   if(!email||!pwd){err.textContent='Email et mot de passe requis.';err.style.display='block';return}
-  const {data,error}=await db.auth.signInWithPassword({email,password:pwd});
-  if(error){err.textContent='Email ou mot de passe incorrect.';err.style.display='block';return}
-  await onLogin(data.user);
+  window.__loginEnCours=true;
+  try{
+    const {data,error}=await db.auth.signInWithPassword({email,password:pwd});
+    if(error){err.textContent='Email ou mot de passe incorrect.';err.style.display='block';return}
+    await onLogin(data.user);
+  }finally{window.__loginEnCours=false}
 }
 $('login-pwd').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 
@@ -107,18 +110,23 @@ async function doResetPassword(){
 }
 
 // Écouter les events Supabase Auth
-db.auth.onAuthStateChange(async(event,session)=>{
-  if(event==='PASSWORD_RECOVERY'){
-    showScreen('screen-reset');
-    return;
-  }
-  if(event==='SIGNED_IN'&&session){
-    if($('screen-reset').classList.contains('active'))return;
-    if(!ME)await onLogin(session.user);
-  }
-  if(event==='SIGNED_OUT'){
-    ME=null;showScreen('screen-login');
-  }
+// ⚠️ RÈGLE SUPABASE : ne JAMAIS faire d'appel Supabase (db.from, db.auth…)
+// directement dans ce callback → deadlock (la connexion se fige sans erreur).
+// C'est pourquoi tout le corps est différé avec setTimeout.
+db.auth.onAuthStateChange((event,session)=>{
+  setTimeout(async()=>{
+    if(event==='PASSWORD_RECOVERY'){
+      showScreen('screen-reset');
+      return;
+    }
+    if(event==='SIGNED_IN'&&session){
+      if($('screen-reset').classList.contains('active'))return;
+      if(!ME&&!window.__loginEnCours)await onLogin(session.user);
+    }
+    if(event==='SIGNED_OUT'){
+      ME=null;showScreen('screen-login');
+    }
+  },0);
 });
 
 // Vérifier session existante au chargement
