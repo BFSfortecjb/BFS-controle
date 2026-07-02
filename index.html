@@ -490,6 +490,7 @@ tr:hover td{background:#fafafa}
           <button class="ag-tab active">🧰 Stock</button>
           <button class="ag-tab" onclick="navigate('commandes')">📦 Commandes à prévoir</button>
         </div>
+        <div id="stock-ag-tabs" style="display:flex;gap:8px;margin-bottom:14px"></div>
         <div class="search-bar">
           <input type="text" id="q-stock" placeholder="Rechercher code, désignation, marque…" oninput="renderStock()">
           <button class="btn btn-s" onclick="document.getElementById('stock-file').click()">⬆ Import Excel</button>
@@ -504,7 +505,7 @@ tr:hover td{background:#fafafa}
         </div>
         <div class="card" style="margin-top:16px">
           <div class="card-header"><h2>🔀 Derniers mouvements</h2>
-            <select id="f-type-mvt" onchange="loadStock()" style="max-width:180px"><option value="">Tous types</option><option value="entree">Entrées</option><option value="rectification">Rectifications</option><option value="casse">Sorties casse</option><option value="import">Imports Excel</option></select>
+            <select id="f-type-mvt" onchange="loadStock()" style="max-width:180px"><option value="">Tous types</option><option value="entree">Entrées</option><option value="rectification">Rectifications</option><option value="casse">Sorties casse</option><option value="transfert">Transferts d'agence</option><option value="import">Imports Excel</option></select>
           </div>
           <div id="tbl-mouvements"></div>
         </div>
@@ -743,8 +744,28 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Modèle</label><input type="text" id="pc-modele"></div>
       <div class="fg"><label>Quantité</label><input type="number" id="pc-qte" min="0" value="0"></div>
       <div class="fg"><label>Seuil d'alerte</label><input type="number" id="pc-seuil" min="0" value="0"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Agence</label><select id="pc-agence"></select></div>
+      <div class="fg" style="grid-column:1/-1"><label>Autres compatibilités (marques / modèles)</label>
+        <div id="pc-compat-list" style="margin:6px 0"></div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="pc-compat-marque" placeholder="Marque" style="flex:1">
+          <input type="text" id="pc-compat-modele" placeholder="Modèle" style="flex:1">
+          <button type="button" class="btn btn-s btn-sm" onclick="ajouterCompat()">+ Ajouter</button>
+        </div>
+      </div>
     </div>
     <div class="fa"><button class="btn btn-s" onclick="CM('mo-piece')">Annuler</button><button class="btn btn-p" onclick="savePiece()">Enregistrer</button></div>
+  </div></div>
+</div>
+
+<!-- Modal transfert entre agences -->
+<div class="mo" id="mo-transfert">
+  <div class="modal" style="max-width:420px"><div class="mh"><h3>⇄ Transfert entre agences</h3><button class="mclose" onclick="CM('mo-transfert')">✕</button></div>
+  <div class="mc"><input type="hidden" id="tf-piece-id">
+    <div id="tf-info" style="margin-bottom:12px;font-size:13px;color:var(--txt-l)"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Quantité à transférer *</label><input type="number" id="tf-qte" min="1" value="1"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Vers l'agence *</label><select id="tf-dest"></select></div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-transfert')">Annuler</button><button class="btn btn-p" onclick="saveTransfert()">Valider le transfert</button></div>
   </div></div>
 </div>
 

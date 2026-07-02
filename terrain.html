@@ -2380,18 +2380,26 @@ async function ouvrirScannerStock(){
 }
 
 async function traiterScanPiece(codePiece){
-  const {data:p}=await db.from('stock_pieces').select('*').eq('code',codePiece).maybeSingle();
+  // Chercher d'abord dans l'agence du technicien, sinon sans agence
+  let {data:pieces}=await db.from('stock_pieces').select('*,agences(nom)').eq('code',codePiece);
+  pieces=pieces||[];
+  let p=pieces.find(x=>x.agence_id===ME.agence_id)||pieces.find(x=>!x.agence_id);
+  if(!p&&pieces.length){
+    toast('Cette pièce existe dans une autre agence ('+(pieces[0].agences?.nom||'?')+') — transfert à faire depuis le bureau','err');
+    goTo('s-stock');return;
+  }
   if(!p){
-    if(confirm('Pièce inconnue : "'+codePiece+'"\nLa créer dans le stock ?')){
+    if(confirm('Pièce inconnue : "'+codePiece+'"\nLa créer dans le stock de ton agence ?')){
       const des=prompt('Désignation de la pièce :');
       if(!des)return;
-      const {data:np,error}=await db.from('stock_pieces').insert({code:codePiece,designation:des.trim(),quantite:0}).select().single();
+      const {data:np,error}=await db.from('stock_pieces').insert({code:codePiece,designation:des.trim(),quantite:0,agence_id:ME.agence_id||null}).select().single();
       if(error){toast('Erreur : '+error.message,'err');return}
       _pieceEnCours=np;
     }else return;
   }else _pieceEnCours=p;
   $('sp-designation').textContent=_pieceEnCours.designation;
-  $('sp-detail').textContent=_pieceEnCours.code+([_pieceEnCours.marque,_pieceEnCours.modele].filter(Boolean).length?' — '+[_pieceEnCours.marque,_pieceEnCours.modele].filter(Boolean).join(' / '):'');
+  const comp=[[_pieceEnCours.marque,_pieceEnCours.modele].filter(Boolean).join(' '),...(Array.isArray(_pieceEnCours.compatibilites)?_pieceEnCours.compatibilites:[]).map(x=>[x.marque,x.modele].filter(Boolean).join(' '))].filter(Boolean);
+  $('sp-detail').textContent=_pieceEnCours.code+(comp.length?' — compatible : '+comp.join(' · '):'');
   $('sp-theorique').textContent=_pieceEnCours.quantite;
   $('sp-compte').value=_pieceEnCours.quantite;
   majEcartComptage();
@@ -2416,7 +2424,7 @@ async function validerComptage(){
   const avant=+_pieceEnCours.quantite;const ecart=compte-avant;
   const {error}=await db.from('stock_pieces').update({quantite:compte,updated_at:new Date().toISOString()}).eq('id',_pieceEnCours.id);
   if(error){toast('Erreur : '+error.message,'err');return}
-  await db.from('stock_mouvements').insert({piece_id:_pieceEnCours.id,type:ecart>0?'entree':'rectification',quantite_avant:avant,quantite_apres:compte,delta:ecart,motif:'Inventaire',inventaire_id:_inventaire?_inventaire.id:null,par:ME.id});
+  await db.from('stock_mouvements').insert({piece_id:_pieceEnCours.id,type:ecart>0?'entree':'rectification',quantite_avant:avant,quantite_apres:compte,delta:ecart,motif:'Inventaire',inventaire_id:_inventaire?_inventaire.id:null,par:ME.id,agence_id:_pieceEnCours.agence_id||null});
   toast('Comptage enregistré ✓');
   await ouvrirStock();
 }

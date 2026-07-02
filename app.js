@@ -1533,56 +1533,96 @@ function getEquipSpecificData(){
 // ============================================================
 // STOCK PIÈCES — CONSULTATION, IMPORT EXCEL, CASSE, RAPPORTS
 // ============================================================
-let stockPieces=[],_stockInventaires=[],_stockMouvements=[];
+let stockPieces=[],_stockInventaires=[],_stockMouvements=[],_stockAgences=[],_stockAgFiltre='';
 
 async function loadStock(){
   const ftype=$('f-type-mvt')?$('f-type-mvt').value:'';
-  let qm=db.from('stock_mouvements').select('*,stock_pieces(code,designation),profils(nom,prenom)').order('created_at',{ascending:false}).limit(80);
+  let qm=db.from('stock_mouvements').select('*,stock_pieces(code,designation),profils(nom,prenom),agences!stock_mouvements_agence_id_fkey(nom)').order('created_at',{ascending:false}).limit(80);
   if(ftype)qm=qm.eq('type',ftype);
-  const [{data:p,error:e1},{data:inv},{data:mv}]=await Promise.all([
-    db.from('stock_pieces').select('*').order('designation'),
+  const [{data:p,error:e1},{data:inv},{data:mv},{data:ags}]=await Promise.all([
+    db.from('stock_pieces').select('*,agences(nom,code)').order('designation'),
     db.from('stock_inventaires').select('*,profils(nom,prenom)').order('demarre_le',{ascending:false}).limit(20),
-    qm
+    qm,
+    db.from('agences').select('*').order('nom')
   ]);
   if(e1){$('tbl-stock').innerHTML='<div class="t-empty">Erreur : '+e1.message+'<br><small>Les tables de stock ont-elles été créées dans Supabase ?</small></div>';return}
-  stockPieces=p||[];_stockInventaires=inv||[];_stockMouvements=mv||[];
+  stockPieces=p||[];_stockInventaires=inv||[];_stockMouvements=mv||[];_stockAgences=ags||[];
+  // Onglets agences
+  const tabs=$('stock-ag-tabs');
+  if(tabs)tabs.innerHTML=`<button class="ag-tab ${_stockAgFiltre===''?'active':''}" onclick="stockSetAgence(this,'')">🌍 Toutes</button>`+_stockAgences.map(a=>`<button class="ag-tab ${_stockAgFiltre===a.id?'active':''}" onclick="stockSetAgence(this,'${a.id}')">📍 ${a.nom}</button>`).join('');
+  // Select agence du modal pièce + transfert
+  const opts='<option value="">— Sans agence —</option>'+_stockAgences.map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
+  if($('pc-agence'))$('pc-agence').innerHTML=opts;
+  if($('tf-dest'))$('tf-dest').innerHTML=_stockAgences.map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
   renderStock();renderInventaires();renderMouvements();
 }
+window.stockSetAgence=function(btn,id){
+  _stockAgFiltre=id;
+  btn.parentElement.querySelectorAll('.ag-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderStock();
+}
 
+function compatTxt(p){
+  const comp=Array.isArray(p.compatibilites)?p.compatibilites:[];
+  const base=[p.marque,p.modele].filter(Boolean).join(' ');
+  const all=[base,...comp.map(x=>[x.marque,x.modele].filter(Boolean).join(' '))].filter(Boolean);
+  return all.length?all.join(' · '):'—';
+}
 function renderStock(){
   const q=($('q-stock').value||'').toLowerCase();
-  const data=stockPieces.filter(p=>(p.code+' '+p.designation+' '+(p.marque||'')+' '+(p.modele||'')).toLowerCase().includes(q));
+  const data=stockPieces.filter(p=>
+    (!_stockAgFiltre||p.agence_id===_stockAgFiltre)&&
+    (p.code+' '+p.designation+' '+compatTxt(p)).toLowerCase().includes(q));
   const el=$('tbl-stock');
-  if(!data.length){el.innerHTML='<div class="t-empty">Aucune pièce en stock — importe un fichier Excel ou ajoute une pièce.</div>';return}
-  el.innerHTML=`<table><thead><tr><th>Code</th><th>Désignation</th><th>Marque / Modèle</th><th style="text-align:center">Quantité</th><th>Dernière maj</th><th>Actions</th></tr></thead><tbody>${data.map(p=>{
+  if(!data.length){el.innerHTML='<div class="t-empty">Aucune pièce — importe un fichier Excel ou ajoute une pièce.</div>';return}
+  el.innerHTML=`<table><thead><tr><th>Code</th><th>Désignation</th><th>Compatible avec</th><th>Agence</th><th style="text-align:center">Quantité</th><th>Dernière maj</th><th>Actions</th></tr></thead><tbody>${data.map(p=>{
     const alerte=(+p.seuil_alerte||0)>0&&(+p.quantite)<=(+p.seuil_alerte);
     return `<tr>
     <td><strong>${p.code}</strong></td>
     <td>${p.designation}</td>
-    <td style="font-size:12px;color:var(--txt-l)">${[p.marque,p.modele].filter(Boolean).join(' / ')||'—'}</td>
+    <td style="font-size:12px;color:var(--txt-l)">${compatTxt(p)}</td>
+    <td><span class="badge bg">${p.agences?.nom||'—'}</span></td>
     <td style="text-align:center;font-weight:700;${alerte?'color:#dc2626':''}">${p.quantite}${alerte?' ⚠':''}</td>
     <td style="font-size:12px">${fmt(p.updated_at)}</td>
     <td><div class="ia">
       <button class="btn btn-s btn-xs" onclick="editPiece('${p.id}')">✏️</button>
       <button class="btn btn-s btn-xs" onclick="showQR('${p.id}','${p.code}','${(p.designation||'').replace(/'/g,"\\'")}','Pièce détachée')" title="QR code à imprimer et coller sur le bac">QR</button>
+      <button class="btn btn-s btn-xs" onclick="openTransfertModal('${p.id}')" title="Transférer vers une autre agence">⇄</button>
       <button class="btn btn-s btn-xs" onclick="openCasseModal('${p.id}')" title="Sortir du matériel périmé ou inutilisable">🔻 Casse</button>
       <button class="btn btn-s btn-xs" onclick="deletePiece('${p.id}')">🗑</button>
     </div></td></tr>`}).join('')}</tbody></table>`;
 }
 
+let _compatPiece=[];
 function openPieceModal(prefill=null){
   ['pc-id','pc-code','pc-designation','pc-marque','pc-modele'].forEach(id=>$(id).value='');
   $('pc-qte').value='0';$('pc-seuil').value='0';$('mo-pc-t').textContent='Nouvelle pièce';
   $('pc-qte').disabled=false;
-  if(prefill){$('pc-id').value=prefill.id;$('pc-code').value=prefill.code;$('pc-designation').value=prefill.designation;$('pc-marque').value=prefill.marque||'';$('pc-modele').value=prefill.modele||'';$('pc-qte').value=prefill.quantite;$('pc-qte').disabled=true;$('pc-seuil').value=prefill.seuil_alerte||0;$('mo-pc-t').textContent='Modifier la pièce';}
+  $('pc-agence').value=_stockAgFiltre||'';
+  _compatPiece=[];
+  if(prefill){$('pc-id').value=prefill.id;$('pc-code').value=prefill.code;$('pc-designation').value=prefill.designation;$('pc-marque').value=prefill.marque||'';$('pc-modele').value=prefill.modele||'';$('pc-qte').value=prefill.quantite;$('pc-qte').disabled=true;$('pc-seuil').value=prefill.seuil_alerte||0;$('pc-agence').value=prefill.agence_id||'';_compatPiece=Array.isArray(prefill.compatibilites)?[...prefill.compatibilites]:[];$('mo-pc-t').textContent='Modifier la pièce';}
+  renderCompatPiece();
   OM('mo-piece');
+}
+function renderCompatPiece(){
+  const el=$('pc-compat-list');if(!el)return;
+  el.innerHTML=_compatPiece.length?_compatPiece.map((x,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg);border-radius:8px;padding:4px 8px;margin:0 6px 6px 0;font-size:12px">${[x.marque,x.modele].filter(Boolean).join(' ')}<button type="button" onclick="_compatPiece.splice(${i},1);renderCompatPiece()" style="background:none;border:none;color:#dc2626;cursor:pointer;padding:0">✕</button></span>`).join('')
+    :'<span style="font-size:12px;color:var(--txt-l)">Aucune autre compatibilité.</span>';
+}
+function ajouterCompat(){
+  const m=$('pc-compat-marque').value.trim(),mo=$('pc-compat-modele').value.trim();
+  if(!m&&!mo){toast('Saisis au moins une marque ou un modèle','err');return}
+  _compatPiece.push({marque:m,modele:mo});
+  $('pc-compat-marque').value='';$('pc-compat-modele').value='';
+  renderCompatPiece();
 }
 function editPiece(id){openPieceModal(stockPieces.find(p=>p.id===id))}
 async function savePiece(){
   const id=$('pc-id').value;
   const code=$('pc-code').value.trim();const des=$('pc-designation').value.trim();
   if(!code||!des){toast('Code et désignation obligatoires','err');return}
-  const p={code,designation:des,marque:$('pc-marque').value.trim(),modele:$('pc-modele').value.trim(),seuil_alerte:parseFloat($('pc-seuil').value)||0,updated_at:new Date().toISOString()};
+  const p={code,designation:des,marque:$('pc-marque').value.trim(),modele:$('pc-modele').value.trim(),seuil_alerte:parseFloat($('pc-seuil').value)||0,agence_id:$('pc-agence').value||null,compatibilites:_compatPiece,updated_at:new Date().toISOString()};
   if(id){
     const {error}=await db.from('stock_pieces').update(p).eq('id',id);
     if(error){toast('Erreur: '+error.message,'err');return}
@@ -1591,7 +1631,7 @@ async function savePiece(){
     p.quantite=parseFloat($('pc-qte').value)||0;
     const {data:np,error}=await db.from('stock_pieces').insert(p).select().single();
     if(error){toast('Erreur: '+error.message,'err');return}
-    if(p.quantite>0)await db.from('stock_mouvements').insert({piece_id:np.id,type:'entree',quantite_avant:0,quantite_apres:p.quantite,delta:p.quantite,motif:'Création de la pièce',par:ME.id});
+    if(p.quantite>0)await db.from('stock_mouvements').insert({piece_id:np.id,type:'entree',quantite_avant:0,quantite_apres:p.quantite,delta:p.quantite,motif:'Création de la pièce',par:ME.id,agence_id:p.agence_id});
     toast('Pièce créée');
   }
   CM('mo-piece');loadStock();
@@ -1617,8 +1657,46 @@ async function saveCasse(){
   const motif=$('cs-motif').value+($('cs-detail').value.trim()?' — '+$('cs-detail').value.trim():'');
   const {error}=await db.from('stock_pieces').update({quantite:apres,updated_at:new Date().toISOString()}).eq('id',p.id);
   if(error){toast('Erreur: '+error.message,'err');return}
-  await db.from('stock_mouvements').insert({piece_id:p.id,type:'casse',quantite_avant:p.quantite,quantite_apres:apres,delta:-q,motif,par:ME.id});
+  await db.from('stock_mouvements').insert({piece_id:p.id,type:'casse',quantite_avant:p.quantite,quantite_apres:apres,delta:-q,motif,par:ME.id,agence_id:p.agence_id});
   toast('Sortie casse enregistrée');CM('mo-casse');loadStock();
+}
+
+
+// ---- Transfert entre agences ----
+function openTransfertModal(id){
+  const p=stockPieces.find(x=>x.id===id);if(!p)return;
+  if(!p.agence_id){toast("Affecte d'abord cette pièce à une agence (✏️)",'err');return}
+  $('tf-piece-id').value=id;$('tf-qte').value='1';
+  $('tf-info').innerHTML=`<strong>${p.designation}</strong> (${p.code})<br>Depuis <strong>${p.agences?.nom||'—'}</strong> — en stock : <strong>${p.quantite}</strong>`;
+  // Destination : toutes sauf l'agence source
+  $('tf-dest').innerHTML=_stockAgences.filter(a=>a.id!==p.agence_id).map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
+  OM('mo-transfert');
+}
+async function saveTransfert(){
+  const p=stockPieces.find(x=>x.id===$('tf-piece-id').value);if(!p)return;
+  const q=parseFloat($('tf-qte').value);const destId=$('tf-dest').value;
+  if(!q||q<1){toast('Quantité invalide','err');return}
+  if(q>+p.quantite){toast('Stock insuffisant ('+p.quantite+' en stock)','err');return}
+  if(!destId){toast('Choisis une agence de destination','err');return}
+  const destNom=(_stockAgences.find(a=>a.id===destId)||{}).nom||'?';
+  const srcNom=p.agences?.nom||'?';
+  // 1. Sortie côté agence source
+  const apresSrc=(+p.quantite)-q;
+  const {error:e1}=await db.from('stock_pieces').update({quantite:apresSrc,updated_at:new Date().toISOString()}).eq('id',p.id);
+  if(e1){toast('Erreur: '+e1.message,'err');return}
+  await db.from('stock_mouvements').insert({piece_id:p.id,type:'transfert',quantite_avant:p.quantite,quantite_apres:apresSrc,delta:-q,motif:'Transfert vers '+destNom,par:ME.id,agence_id:p.agence_id,agence_dest_id:destId});
+  // 2. Entrée côté agence destination (créer la pièce si absente)
+  let dest=stockPieces.find(x=>x.code===p.code&&x.agence_id===destId);
+  if(!dest){
+    const {data:nd,error:e2}=await db.from('stock_pieces').insert({code:p.code,designation:p.designation,marque:p.marque,modele:p.modele,compatibilites:p.compatibilites||[],seuil_alerte:p.seuil_alerte||0,quantite:0,agence_id:destId}).select().single();
+    if(e2){toast('Erreur création côté destination: '+e2.message,'err');return}
+    dest=nd;
+  }
+  const apresDest=(+dest.quantite)+q;
+  await db.from('stock_pieces').update({quantite:apresDest,updated_at:new Date().toISOString()}).eq('id',dest.id);
+  await db.from('stock_mouvements').insert({piece_id:dest.id,type:'transfert',quantite_avant:dest.quantite,quantite_apres:apresDest,delta:q,motif:'Transfert depuis '+srcNom,par:ME.id,agence_id:destId});
+  toast(`Transfert de ${q} × ${p.code} : ${srcNom} → ${destNom} ✓`);
+  CM('mo-transfert');loadStock();
 }
 
 // ---- Import / export Excel ----
@@ -1634,16 +1712,20 @@ async function importStockExcel(input){
       const code=String(col(r,'code')).trim();
       const qte=parseFloat(col(r,'quantité','quantite','qté','qte'))||0;
       if(!code){err++;continue}
-      const exist=stockPieces.find(p=>p.code.toLowerCase()===code.toLowerCase());
+      const agNom=String(col(r,'agence')).trim().toLowerCase();
+      const agId=agNom?((_stockAgences.find(a=>a.nom.toLowerCase()===agNom||a.code===agNom)||{}).id||null):(_stockAgFiltre||null);
+      const exist=stockPieces.find(p=>p.code.toLowerCase()===code.toLowerCase()&&(p.agence_id||null)===(agId||null));
       if(exist){
         const apres=(+exist.quantite)+qte;
         await db.from('stock_pieces').update({quantite:apres,updated_at:new Date().toISOString()}).eq('id',exist.id);
-        await db.from('stock_mouvements').insert({piece_id:exist.id,type:'import',quantite_avant:exist.quantite,quantite_apres:apres,delta:qte,motif:'Import '+file.name,par:ME.id});
+        await db.from('stock_mouvements').insert({piece_id:exist.id,type:'import',quantite_avant:exist.quantite,quantite_apres:apres,delta:qte,motif:'Import '+file.name,par:ME.id,agence_id:exist.agence_id});
         inc++;
       }else{
-        const {data:np,error}=await db.from('stock_pieces').insert({code,designation:String(col(r,'désignation','designation'))||code,marque:String(col(r,'marque')),modele:String(col(r,'modèle','modele')),quantite:qte,seuil_alerte:parseFloat(col(r,'seuil','seuil d\'alerte'))||0}).select().single();
+        const compRaw=String(col(r,'compatibilités','compatibilites','compatible'));
+        const comp=compRaw?compRaw.split(';').map(s=>{const t=s.trim().split(/\s+/);return{marque:t[0]||'',modele:t.slice(1).join(' ')}}).filter(x=>x.marque):[];
+        const {data:np,error}=await db.from('stock_pieces').insert({code,designation:String(col(r,'désignation','designation'))||code,marque:String(col(r,'marque')),modele:String(col(r,'modèle','modele')),quantite:qte,seuil_alerte:parseFloat(col(r,'seuil','seuil d\'alerte'))||0,agence_id:agId,compatibilites:comp}).select().single();
         if(error){err++;continue}
-        await db.from('stock_mouvements').insert({piece_id:np.id,type:'import',quantite_avant:0,quantite_apres:qte,delta:qte,motif:'Import '+file.name,par:ME.id});
+        await db.from('stock_mouvements').insert({piece_id:np.id,type:'import',quantite_avant:0,quantite_apres:qte,delta:qte,motif:'Import '+file.name,par:ME.id,agence_id:agId});
         crees++;
       }
     }
@@ -1652,13 +1734,13 @@ async function importStockExcel(input){
   loadStock();
 }
 function exportStockXLS(){
-  const ws=XLSX.utils.json_to_sheet(stockPieces.map(p=>({Code:p.code,'Désignation':p.designation,Marque:p.marque||'','Modèle':p.modele||'','Quantité':+p.quantite,'Seuil':+p.seuil_alerte||0,'Dernière maj':fmt(p.updated_at)})));
+  const ws=XLSX.utils.json_to_sheet(stockPieces.map(p=>({Code:p.code,'Désignation':p.designation,Marque:p.marque||'','Modèle':p.modele||'','Compatibilités':(Array.isArray(p.compatibilites)?p.compatibilites:[]).map(x=>[x.marque,x.modele].filter(Boolean).join(' ')).join('; '),Agence:p.agences?.nom||'','Quantité':+p.quantite,'Seuil':+p.seuil_alerte||0,'Dernière maj':fmt(p.updated_at)})));
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Stock');
   XLSX.writeFile(wb,'BFS_stock_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
 // ---- Inventaires & mouvements ----
-const badgeMvt=t=>({entree:'<span class="badge bv">➕ Entrée</span>',rectification:'<span class="badge bo">✎ Rectification</span>',casse:'<span class="badge br">🔻 Casse</span>',import:'<span class="badge bb">⬆ Import</span>'}[t]||t);
+const badgeMvt=t=>({entree:'<span class="badge bv">➕ Entrée</span>',rectification:'<span class="badge bo">✎ Rectification</span>',casse:'<span class="badge br">🔻 Casse</span>',import:'<span class="badge bb">⬆ Import</span>',transfert:'<span class="badge bb">⇄ Transfert</span>'}[t]||t);
 
 function renderInventaires(){
   const el=$('tbl-inventaires');
@@ -1675,9 +1757,10 @@ function renderInventaires(){
 function renderMouvements(){
   const el=$('tbl-mouvements');
   if(!_stockMouvements.length){el.innerHTML='<div class="t-empty">Aucun mouvement</div>';return}
-  el.innerHTML=`<table><thead><tr><th>Date</th><th>Pièce</th><th>Type</th><th style="text-align:center">Avant → Après</th><th style="text-align:center">Écart</th><th>Motif</th><th>Par</th></tr></thead><tbody>${_stockMouvements.map(m=>`<tr>
+  el.innerHTML=`<table><thead><tr><th>Date</th><th>Pièce</th><th>Agence</th><th>Type</th><th style="text-align:center">Avant → Après</th><th style="text-align:center">Écart</th><th>Motif</th><th>Par</th></tr></thead><tbody>${_stockMouvements.map(m=>`<tr>
     <td style="white-space:nowrap;font-size:12px">${new Date(m.created_at).toLocaleString('fr-FR')}</td>
     <td>${m.stock_pieces?`<strong>${m.stock_pieces.code}</strong><br><small style="color:var(--txt-l)">${m.stock_pieces.designation}</small>`:'—'}</td>
+    <td><span class="badge bg">${m.agences?.nom||'—'}</span></td>
     <td>${badgeMvt(m.type)}</td>
     <td style="text-align:center">${m.quantite_avant} → ${m.quantite_apres}</td>
     <td style="text-align:center;font-weight:700;color:${(+m.delta)>0?'#16a34a':(+m.delta)<0?'#dc2626':'var(--txt-l)'}">${(+m.delta)>0?'+':''}${m.delta}</td>
