@@ -78,7 +78,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .client-info{flex:1;min-width:0}
 .client-name{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .client-meta{font-size:12px;color:var(--txt-l);margin-top:2px}
-.client-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;white-space:nowrap}
+.client-badge{font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;white-space:normal;text-align:center;max-width:70px;line-height:1.3}
 .cb-rouge{background:#fee2e2;color:#dc2626}
 .cb-orange{background:#fef3c7;color:#b45309}
 .cb-vert{background:#dcfce7;color:#15803d}
@@ -802,7 +802,7 @@ async function loadParc(){
     const badge=st==='en retard'?'cb-rouge':st==='urgent'?'cb-orange':st==='proche'?'cb-orange':'cb-vert';
     const label=st==='en retard'?'En retard':st==='urgent'?'Urgent':st==='proche'?'Proche':'À jour';
     const isAffecte=myClientIds.includes(c.id);
-    const myDot=isAffecte?'<span style="position:absolute;top:-2px;right:-2px;width:10px;height:10px;background:var(--rouge);border-radius:50%;border:2px solid #fff"></span>':'';
+    const myDot=isAffecte?'<span style="position:absolute;top:0;right:0;width:12px;height:12px;background:#ef4444;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>':'';
     return`<div class="client-card" onclick="ouvrirClient('${c.id}')">
       <div class="client-icon" style="background:${st==='en retard'?'#fee2e2':st==='urgent'?'#fef3c7':'#dcfce7'};position:relative">🏢${myDot}</div>
       <div class="client-info">
@@ -1958,16 +1958,27 @@ function genererPdfSession(signatureDataUrl, signataireNom){
   const today=new Date();
   const dateStr=today.toLocaleDateString('fr-FR');
 
-  // ---- LOGO BFS (flamme) ----
-  // On utilise une image base64 du logo si disponible, sinon texte
+  // ---- LOGO BFS vectoriel + raison sociale selon agence ----
+  const agenceCode = currentClient?.agences?.code || ME.agences?.code || '';
+  const raisonSociale = agenceCode === 'sevremont' ? 'Bocage Formation Sécurité' : 'Bretagne Formation Sécurité';
+
   const drawLogo = () => {
+    // Flamme BFS dessinée en vecteur jsPDF
     doc.setFillColor(192,57,43);
-    doc.setFont('helvetica','bold');
-    doc.setFontSize(22);
-    doc.setTextColor(192,57,43);
-    doc.text('BFS',14,18);
+    // Arc rouge principal
+    doc.setDrawColor(192,57,43);doc.setLineWidth(2.5);
+    doc.lines([[0,8],[2,12],[0,6],[-2,4]],14,6,null,'F');
+    // Trait gris
+    doc.setDrawColor(80);doc.setLineWidth(1.5);
+    doc.lines([[0,10],[1,8],[0,-4]],13,6,null,null);
+    // Trait doré
+    doc.setDrawColor(210,160,0);doc.setLineWidth(1);
+    doc.lines([[4,3],[-2,0],[-2,-3]],15,14,null,null);
+    // Texte BFS
+    doc.setLineWidth(0.2);doc.setFont('helvetica','bold');doc.setFontSize(20);doc.setTextColor(50,50,50);
+    doc.text('BFS',22,20);
     doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');
-    doc.text('Bretagne Formation Sécurité',14,22);
+    doc.text(raisonSociale,14,24);
   };
   drawLogo();
 

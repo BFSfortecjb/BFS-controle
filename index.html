@@ -2156,8 +2156,9 @@ async function regenererBon(bonId){
   const adresse=[client?.adresse,client?.code_postal,client?.ville].filter(Boolean).join(', ');
 
   // En-tête
-  doc.setFontSize(22);doc.setFont('helvetica','bold');doc.setTextColor(192,57,43);doc.text('BFS',14,18);
-  doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');doc.text('Bretagne Formation Sécurité',14,22);
+  const raisonSocBFS = client?.agences?.code === 'sevremont' ? 'Bocage Formation Sécurité' : 'Bretagne Formation Sécurité';
+  doc.setFontSize(20);doc.setFont('helvetica','bold');doc.setTextColor(50,50,50);doc.text('BFS',14,18);
+  doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');doc.text(raisonSocBFS,14,22);
   doc.setFillColor(230,100,40);doc.rect(65,8,130,10,'F');
   doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
   doc.text('BULLETIN D\'INTERVENTION INCENDIE',130,15,{align:'center'});
