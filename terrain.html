@@ -511,7 +511,19 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
   <div class="content" id="recap-content"></div>
   <div class="footer" style="display:flex;flex-direction:column;gap:8px">
-    <button class="btn btn-vert" onclick="document.getElementById('sig-nom').value='';goTo('s-signature');setTimeout(initSignatureCanvas,100)">✍️ Faire signer et clôturer</button>
+    <button class="btn btn-vert" onclick="ouvrirChecklist()">📋 Checklist sécurité → Signature</button>
+  </div>
+</div>
+
+<!-- ===== CHECKLIST SÉCURITÉ ===== -->
+<div class="screen" id="s-checklist">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-recap')">←</button>
+    <h1>Checklist sécurité</h1>
+  </div>
+  <div class="content" id="checklist-content"></div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="validerChecklistEtSigner()">✍️ Faire signer →</button>
   </div>
 </div>
 
@@ -1843,84 +1855,262 @@ function allerRecap(){
 }
 
 // ============================================================
-// EXPORT PDF SESSION (avec signature optionnelle)
+// CHECKLIST SÉCURITÉ (entre récap et signature)
+// ============================================================
+const MATERIELS_CHK = ['Extincteur / RIA','Plan / Signalétique','BAES','Système de désenfumage','Alarme incendie'];
+const REGL_CHK = ['Registre de sécurité signé','Plan d\'évacuation existant','Consignes de sécurité existantes','Panneaux extincteur existant','Boîtier d\'alarme incendie existant'];
+
+let _chkTypeInt = {controle:true, installation:false};
+let _chkMateriel = [true,false,false,false,false]; // Extincteur coché par défaut
+let _chkRegl = {}; // {0:'oui', 1:'non', ...}
+
+function ouvrirChecklist(){
+  // Reset état
+  _chkTypeInt = {controle:true, installation:false};
+  _chkMateriel = [true,false,false,false,false];
+  _chkRegl = {};
+
+  // Afficher l'écran D'ABORD, puis injecter le HTML
+  goTo('s-checklist');
+
+  const el = $('checklist-content');
+  el.innerHTML = `
+    <div style="font-size:13px;color:var(--txt-l);margin-bottom:14px">À renseigner avec le client avant signature.</div>
+
+    <div class="sec">Type d'intervention</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+      <div id="chk-type-controle" onclick="toggleTypeInt('controle')" style="padding:10px;border:2px solid var(--rouge);border-radius:10px;text-align:center;cursor:pointer;background:var(--rouge);color:#fff;font-size:13px;font-weight:600">✓ Contrôle</div>
+      <div id="chk-type-installation" onclick="toggleTypeInt('installation')" style="padding:10px;border:2px solid #e5e7eb;border-radius:10px;text-align:center;cursor:pointer;font-size:13px;font-weight:600;color:var(--txt-l)">☐ Installation</div>
+    </div>
+
+    <div class="sec">Matériel concerné</div>
+    <div style="margin-bottom:16px">${MATERIELS_CHK.map((item,i)=>`
+      <div onclick="toggleChkMat(${i})" id="chkm-${i}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid ${i===0?'var(--rouge)':'#e5e7eb'};border-radius:10px;margin-bottom:6px;cursor:pointer;background:${i===0?'#fff5f4':'#fff'}">
+        <div id="chkm-box-${i}" style="width:22px;height:22px;border:2px solid ${i===0?'var(--rouge)':'#d1d5db'};border-radius:6px;flex-shrink:0;background:${i===0?'var(--rouge)':'#fff'};display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px">${i===0?'✓':''}</div>
+        <span style="font-size:13px;font-weight:${i===0?'600':'400'}">${item}</span>
+      </div>`).join('')}
+    </div>
+
+    <div class="sec">Vérifications réglementaires</div>
+    <div style="margin-bottom:16px">${REGL_CHK.map((item,i)=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;margin-bottom:6px">
+        <span style="font-size:12px;flex:1;padding-right:8px">${item}</span>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button type="button" id="chkr-oui-${i}" onclick="setChkRegl(${i},'oui')" style="padding:5px 12px;border-radius:8px;border:1.5px solid #e5e7eb;font-size:12px;font-weight:600;cursor:pointer;background:#fff">OUI</button>
+          <button type="button" id="chkr-non-${i}" onclick="setChkRegl(${i},'non')" style="padding:5px 12px;border-radius:8px;border:1.5px solid #e5e7eb;font-size:12px;font-weight:600;cursor:pointer;background:#fff">NON</button>
+        </div>
+      </div>`).join('')}
+    </div>
+
+    <div class="sec">Observations</div>
+    <textarea id="chk-observations" rows="3" placeholder="Observations, demandes de devis, remarques…" style="width:100%;padding:10px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+  `;
+}
+
+function toggleTypeInt(type){
+  _chkTypeInt[type] = !_chkTypeInt[type];
+  const el=document.getElementById('chk-type-'+type);
+  if(el){
+    const actif=_chkTypeInt[type];
+    el.style.background=actif?'var(--rouge)':'#fff';
+    el.style.color=actif?'#fff':'var(--txt-l)';
+    el.style.borderColor=actif?'var(--rouge)':'#e5e7eb';
+    el.textContent=(actif?'✓ ':'')+type.charAt(0).toUpperCase()+type.slice(1);
+  }
+}
+
+function toggleChkMat(i){
+  _chkMateriel[i]=!_chkMateriel[i];
+  const el=document.getElementById('chkm-'+i);
+  const box=document.getElementById('chkm-box-'+i);
+  const actif=_chkMateriel[i];
+  if(el){el.style.borderColor=actif?'var(--rouge)':'#e5e7eb';el.style.background=actif?'#fff5f4':'#fff';}
+  if(box){box.style.background=actif?'var(--rouge)':'#fff';box.style.borderColor=actif?'var(--rouge)':'#d1d5db';box.textContent=actif?'✓':'';}
+  const span=el?.querySelector('span');
+  if(span)span.style.fontWeight=actif?'600':'400';
+}
+
+function setChkRegl(i, val){
+  _chkRegl[i]=val;
+  const btnOui=document.getElementById('chkr-oui-'+i);
+  const btnNon=document.getElementById('chkr-non-'+i);
+  if(btnOui){btnOui.style.background=val==='oui'?'#dcfce7':'#fff';btnOui.style.borderColor=val==='oui'?'#16a34a':'#e5e7eb';btnOui.style.color=val==='oui'?'#16a34a':'var(--txt)';}
+  if(btnNon){btnNon.style.background=val==='non'?'#fee2e2':'#fff';btnNon.style.borderColor=val==='non'?'#dc2626':'#e5e7eb';btnNon.style.color=val==='non'?'#dc2626':'var(--txt)';}
+}
+
+function validerChecklistEtSigner(){
+  // Récupérer les observations
+  window._chkObservations = document.getElementById('chk-observations')?.value?.trim()||'';
+  // Aller à la signature
+  document.getElementById('sig-nom').value='';
+  goTo('s-signature');
+  setTimeout(initSignatureCanvas,100);
+}
+
+// ============================================================
+// PDF BULLETIN D'INTERVENTION BFS — format fidèle au document
 // ============================================================
 function genererPdfSession(signatureDataUrl, signataireNom){
-  const {jsPDF}=window.jspdf;const doc=new jsPDF();
-  const total=currentEquipements.length;
-  const verifs=Object.values(sessionVerifs);
-  const conformes=verifs.filter(v=>v.resultat==='conforme').length;
-  const nc=verifs.filter(v=>v.resultat==='non conforme').length;
-  const hs=verifs.filter(v=>v.resultat==='hors service').length;
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'mm',format:'a4'});
   const c=currentClient;
-  const numSession = currentSession?.numero || '—';
+  const numSession=currentSession?.numero||'—';
+  const today=new Date();
+  const dateStr=today.toLocaleDateString('fr-FR');
 
-  doc.setFillColor(192,57,43);doc.rect(0,0,210,26,'F');
-  doc.setTextColor(255);doc.setFontSize(13);doc.setFont('helvetica','bold');
-  doc.text(signatureDataUrl?'BFS — Bon d\'intervention':'BFS — Rapport de session de contrôle',14,11);
+  // ---- LOGO BFS (flamme) ----
+  // On utilise une image base64 du logo si disponible, sinon texte
+  const drawLogo = () => {
+    doc.setFillColor(192,57,43);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(22);
+    doc.setTextColor(192,57,43);
+    doc.text('BFS',14,18);
+    doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');
+    doc.text('Bretagne Formation Sécurité',14,22);
+  };
+  drawLogo();
+
+  // ---- TITRE ----
+  doc.setFillColor(230,100,40);doc.rect(65,8,130,10,'F');
+  doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
+  doc.text('BULLETIN D\'INTERVENTION INCENDIE',130,15,{align:'center'});
+
+  // ---- TRANSMIS POUR FACTURATION ----
+  doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
+  doc.text('Transmis pour facturation le :',65,26);
+  doc.setDrawColor(0);doc.rect(120,22,55,6);
+  doc.setFont('helvetica','bold');doc.text(dateStr,147,27,{align:'center'});
+
+  // ---- CASES TYPE INTERVENTION ----
+  const drawCheckbox=(x,y,checked)=>{
+    doc.setDrawColor(0);doc.rect(x,y,3.5,3.5);
+    if(checked){doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(192,57,43);doc.text('X',x+0.5,y+3);doc.setTextColor(0);}
+  };
+  doc.setFont('helvetica','normal');doc.setFontSize(8);
+  drawCheckbox(120,30,_chkTypeInt?.controle!==false);doc.text('Contrôle',125,33);
+  drawCheckbox(145,30,_chkTypeInt?.installation===true);doc.text('Installation',150,33);
+
+  // ---- MATERIELS COCHÉS ----
+  const matsStr=MATERIELS_CHK.filter((_,i)=>_chkMateriel[i]).join(', ');
+  const matsCoches=MATERIELS_CHK.map((m,i)=>({label:m,coche:!!_chkMateriel[i]}));
+  let mx=120;let my=37;
+  matsCoches.forEach(m=>{
+    drawCheckbox(mx,my,m.coche);
+    doc.setFont('helvetica','normal');doc.setFontSize(7.5);
+    doc.text(m.label,mx+4.5,my+3);
+    my+=5;
+  });
+
+  // ---- INFOS INTERVENTION ----
   doc.setFontSize(9);doc.setFont('helvetica','normal');
-  doc.text(`${c?.raison_sociale||''} · ${c?.ville||''}`,14,19);
-  doc.text(`N° ${numSession} · ${new Date().toLocaleDateString('fr-FR')} · ${ME.prenom||''} ${ME.nom}`,110,19);
-  doc.setTextColor(30);let y=32;
+  let y=31;
+  doc.text('Date de l\'intervention :',14,y);doc.setFont('helvetica','bold');doc.text(dateStr,65,y);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Nom du Client :',14,y);doc.setFont('helvetica','bold');doc.text(c?.raison_sociale||'—',65,y);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Lieu d\'intervention :',14,y);doc.setFont('helvetica','normal');
+  const adresse=[c?.adresse,c?.code_postal,c?.ville].filter(Boolean).join(', ');
+  doc.text(adresse||c?.ville||'—',65,y);
+  y+=6;doc.setFont('helvetica','normal');doc.text('N° bon :',14,y);doc.setFont('helvetica','bold');doc.setTextColor(192,57,43);doc.text(numSession,65,y);doc.setTextColor(0);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Technicien :',14,y);doc.text(`${ME.prenom||''} ${ME.nom}`.trim(),65,y);
 
-  // Encart numéro de bon bien visible
-  doc.setFillColor(248,249,250);doc.rect(14,y,182,10,'F');
-  doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(192,57,43);
-  doc.text(`Bon d'intervention N° ${numSession}`,16,y+7);
-  doc.setTextColor(100);doc.setFont('helvetica','normal');doc.setFontSize(9);
-  doc.text(`Client : ${c?.raison_sociale||'—'} · Date : ${new Date().toLocaleDateString('fr-FR')}`,100,y+7);
-  doc.setTextColor(30);y+=16;
+  // ---- TABLEAU ÉQUIPEMENTS ----
+  y=66;
+  const verifsArr=Object.values(sessionVerifs);
+  const equipsVerifies=currentEquipements.filter(e=>sessionVerifs[e.id]);
+  const equipsNonVerifies=currentEquipements.filter(e=>!sessionVerifs[e.id]);
+  const tousEquips=[...equipsVerifies,...equipsNonVerifies];
 
-  doc.autoTable({startY:y,margin:{left:14,right:14},head:[['Conformes','À surveiller','Non conformes','Hors service','Non vérifiés']],
-    body:[[conformes,verifs.filter(v=>v.resultat==='à surveiller').length,nc,hs,total-verifs.length]],
-    styles:{fontSize:11,halign:'center'},headStyles:{fillColor:[192,57,43]}});
-  y=doc.lastAutoTable.finalY+10;
+  // En-tête du tableau
+  doc.setFillColor(240,240,240);doc.rect(14,y,182,5,'F');
+  doc.setDrawColor(180);doc.setFont('helvetica','bold');doc.setFontSize(7.5);
+  doc.text('DÉSIGNATION',16,y+3.5);
+  doc.text('TYPE/CAPACITÉ',75,y+3.5);
+  doc.text('EMPLACEMENT',105,y+3.5);
+  // Colonnes QUANTITÉ
+  doc.setFillColor(200,200,200);doc.rect(148,y-2,48,7,'F');
+  doc.text('QUANTITÉ',172,y+1,{align:'center'});
+  doc.setFontSize(6.5);
+  doc.text('Vérifié',151,y+3.5);doc.text('Mise en',162,y+3.5);doc.text('Quinquénn.',172,y+3.5);doc.text('Réforme',182,y+3.5);
+  doc.text('',162,y+5.5);doc.text('service',162,y+5.5);doc.text('',172,y+5.5);doc.text('10 ans',182,y+5.5);
+  y+=7;
 
-  doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('Détail des vérifications',14,y);y+=2;
-  doc.autoTable({startY:y,margin:{left:14,right:14},
-    head:[['Équipement','Localisation','Statut','Prochaine échéance','Obs.']],
-    body:currentEquipements.map(e=>{const v=sessionVerifs[e.id];return[`${e.numero_identification||'?'} (${e.types_equipements?.libelle||'—'})`,e.localisation||'—',v?.resultat||'Non vérifié',v?.echeance?new Date(v.echeance).toLocaleDateString('fr-FR'):'—',v?.obs?.slice(0,40)||'—']}),
-    styles:{fontSize:9},headStyles:{fillColor:[192,57,43]},
-    didParseCell:(d)=>{if(d.column.index===2){const v=d.cell.text[0];if(v==='conforme')d.cell.styles.textColor=[22,163,74];else if(v==='hors service'||v==='non conforme')d.cell.styles.textColor=[220,38,38];}}
-  });
-  y=doc.lastAutoTable.finalY+8;
-
-  const aRem=[];
-  Object.entries(sessionVerifs).forEach(([eid,v])=>{
-    const eq=currentEquipements.find(e=>e.id===eid);
-    (v.pieces||[]).filter(p=>p.type_action==='à_remplacer').forEach(p=>aRem.push([`${eq?.numero_identification||'?'}`,p.libelle,p.quantite+' '+p.unite,p.delai_remplacement||'—']));
-  });
-  if(aRem.length){
-    if(y>230){doc.addPage();y=20}
-    doc.setFont('helvetica','bold');doc.text('Pièces à remplacer',14,y);y+=2;
-    doc.autoTable({startY:y,margin:{left:14,right:14},head:[['Équipement','Pièce','Quantité','Délai']],body:aRem,styles:{fontSize:9},headStyles:{fillColor:[192,57,43]}});
-    y=doc.lastAutoTable.finalY+10;
+  // Lignes équipements (max 12 lignes)
+  doc.setFont('helvetica','normal');doc.setFontSize(8);
+  const rowH=6;
+  const lignesMax=12;
+  for(let idx=0;idx<lignesMax;idx++){
+    const eq=tousEquips[idx];
+    doc.setDrawColor(200);doc.line(14,y,196,y);
+    if(eq){
+      const v=sessionVerifs[eq.id];
+      const desig=`${idx+1} - ${eq.types_equipements?.libelle||eq.type_equipement_code||'—'}`;
+      const cap=eq.capacite_valeur?(eq.capacite_valeur+' '+(eq.capacite_unite||'')):'—';
+      const loc=eq.localisation||eq.etage_zone||'—';
+      doc.text(desig.slice(0,30),16,y+4);
+      doc.text(cap.slice(0,18),75,y+4);
+      doc.text(loc.slice(0,22),105,y+4);
+      if(v){
+        doc.setFont('helvetica','bold');doc.setTextColor(0,100,0);doc.text('X',154,y+4,{align:'center'});doc.setTextColor(0);doc.setFont('helvetica','normal');
+      }
+    }
+    y+=rowH;
   }
+  doc.setDrawColor(200);doc.line(14,y,196,y);
 
-  // Zone signature
-  if(y>225){doc.addPage();y=20}
-  y=Math.max(y+10,235);
-  doc.setDrawColor(200);
-  doc.text('Technicien',14,y);
-  doc.text('Client / Signataire',122,y);
-  doc.line(14,y+3,82,y+3);doc.line(122,y+3,196,y+3);
-  doc.setFontSize(9);
-  doc.text(`${ME.prenom||''} ${ME.nom}`,14,y+8);
+  // Ligne TOTAL
+  y+=1;doc.setFont('helvetica','bold');doc.setFontSize(8);
+  doc.text('TOTAL',105,y+3,{align:'right'});
+  doc.text(String(equipsVerifies.length),154,y+3,{align:'center'});
+  y+=7;
+
+  // ---- TABLEAU OUI/NON ----
+  doc.setFontSize(7.5);doc.setFont('helvetica','normal');
+  const reglItems=REGL_CHK;
+  // Tableau 2 colonnes : item | OUI | NON
+  const colW=80;const startX=100;
+  doc.rect(startX,y,96,reglItems.length*5+2);
+  doc.setFillColor(230,230,230);doc.rect(startX+75,y,10,4,'F');doc.rect(startX+85,y,10,4,'F');
+  doc.setFont('helvetica','bold');doc.text('OUI',startX+80,y+3,{align:'center'});doc.text('NON',startX+90,y+3,{align:'center'});
+  y+=4;
+  reglItems.forEach((item,i)=>{
+    doc.setFont('helvetica','normal');doc.text(item,startX+1,y+3.5);
+    const rep=_chkRegl[i];
+    if(rep==='oui'){doc.setTextColor(0,120,0);doc.setFont('helvetica','bold');doc.text('X',startX+80,y+3.5,{align:'center'});doc.setTextColor(0);doc.setFont('helvetica','normal');}
+    if(rep==='non'){doc.setTextColor(180,0,0);doc.setFont('helvetica','bold');doc.text('X',startX+90,y+3.5,{align:'center'});doc.setTextColor(0);doc.setFont('helvetica','normal');}
+    doc.setDrawColor(200);doc.line(startX,y+5,startX+96,y+5);
+    y+=5;
+  });
+  y+=4;
+
+  // ---- OBSERVATIONS ----
+  const obs=window._chkObservations||Object.values(sessionVerifs).map(v=>v.obs).filter(Boolean).join(' · ')||'';
+  doc.setFont('helvetica','bolditalic');doc.setFontSize(8);doc.text('OBSERVATIONS :',14,y+4);
+  doc.setFont('helvetica','normal');
+  const obsLines=doc.splitTextToSize(obs||'—',178);
+  doc.text(obsLines,14,y+9);
+  y+=9+obsLines.length*4+4;
+
+  // ---- ZONE SIGNATURES ----
+  const sigY=Math.max(y+6,250);
+  doc.setDrawColor(150);
+  doc.rect(14,sigY,85,28);doc.rect(110,sigY,82,28);
+  doc.setFont('helvetica','normal');doc.setFontSize(8);
+  doc.text('NOM, signature et cachet du CLIENT',14+42,sigY+4,{align:'center'});
+  doc.text('NOM et signature du technicien',110+41,sigY+4,{align:'center'});
+
   if(signatureDataUrl){
-    doc.addImage(signatureDataUrl,'PNG',122,y-22,70,24);
-    doc.text(signataireNom||'',122,y+8);
-  } else {
-    doc.text('(non signé)',122,y+8);
+    doc.addImage(signatureDataUrl,'PNG',112,sigY+4,78,22);
+    if(signataireNom)doc.text(signataireNom,14+42,sigY+26,{align:'center'});
   }
+  doc.text(`${ME.prenom||''} ${ME.nom}`.trim(),110+41,sigY+26,{align:'center'});
+
+  // ---- PIED DE PAGE ----
+  doc.setFontSize(7);doc.setTextColor(150);
+  doc.text('v'+dateStr,105,290,{align:'center'});
 
   return doc;
 }
 
-async function exportSessionPDF(){
-  const doc = genererPdfSession(null,null);
-  doc.save(`BFS_session_${currentClient?.raison_sociale||''}_${new Date().toISOString().slice(0,10)}.pdf`);
-  toast('PDF généré');
-}
 
 // ============================================================
 // SIGNATURE CANVAS (tactile)
