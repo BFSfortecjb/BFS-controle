@@ -2133,10 +2133,15 @@ async function regenererBon(bonId){
   // Récupérer les infos client
   const {data:client}=await db.from('clients').select('*,agences(nom,code)').eq('id',bon.client_id).single();
 
-  // Récupérer les vérifications de la session
+  // Récupérer le technicien
+  const {data:tech}=await db.from('profils').select('nom,prenom').eq('id',bon.technicien_id).single();
+  const techNom=tech?`${tech.prenom||''} ${tech.nom}`.trim():'—';
+
+  // Récupérer les vérifications de la session avec TOUS les champs équipement
   const {data:verifs}=await db.from('verifications')
-    .select('*,equipements(numero_identification,localisation,marque,modele,capacite_valeur,capacite_unite,type_equipement_code,types_equipements(libelle,icone))')
-    .eq('session_id',bon.session_id);
+    .select('*,equipements(numero_identification,localisation,marque,modele,capacite_valeur,capacite_unite,type_equipement_code,donnees_specifiques,types_equipements(libelle,icone))')
+    .eq('session_id',bon.session_id)
+    .order('created_at');
 
   if(!verifs||!verifs.length){toast('Aucune vérification trouvée pour cette session','err');return}
 
@@ -2179,7 +2184,7 @@ async function regenererBon(bonId){
   y+=6;doc.setFont('helvetica','normal');doc.text('Nom du Client :',14,y);doc.setFont('helvetica','bold');doc.text(client?.raison_sociale||'—',65,y);
   y+=6;doc.setFont('helvetica','normal');doc.text('Lieu d\'intervention :',14,y);doc.text(adresse||client?.ville||'—',65,y);
   y+=6;doc.setFont('helvetica','normal');doc.text('N° bon :',14,y);doc.setFont('helvetica','bold');doc.setTextColor(192,57,43);doc.text(numSession,65,y);doc.setTextColor(0);
-  y+=6;doc.setFont('helvetica','normal');doc.text('Technicien :',14,y);doc.text(bon.technicien_nom||`${bon.tech_prenom||''} ${bon.tech_nom||''}`.trim()||'—',65,y);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Technicien :',14,y);doc.text(techNom,65,y);
 
   // Tableau équipements
   y=66;
@@ -2200,9 +2205,12 @@ async function regenererBon(bonId){
     doc.setDrawColor(200);doc.line(14,y,196,y);
     if(v){
       const eq=v.equipements;
-      const desig=`${idx+1} - ${eq?.types_equipements?.libelle||'—'}`;
+      // Construire la désignation avec agent : "Extincteur ABC", "Extincteur CO2", etc.
+      const agent=eq?.donnees_specifiques?.['ef-agent']||eq?.donnees_specifiques?.['e-agent']||'';
+      const typeLib=eq?.types_equipements?.libelle||'—';
+      const desig=`${idx+1} - ${typeLib}${agent?' '+agent:''}`;
       const cap=eq?.capacite_valeur?(eq.capacite_valeur+' '+(eq.capacite_unite||'')):'—';
-      doc.text(desig.slice(0,30),16,y+4);
+      doc.text(desig.slice(0,32),16,y+4);
       doc.text(cap.slice(0,18),75,y+4);
       doc.text((eq?.localisation||'—').slice(0,22),105,y+4);
       doc.setFont('helvetica','bold');doc.setTextColor(0,100,0);doc.text('X',154,y+4,{align:'center'});doc.setTextColor(0);doc.setFont('helvetica','normal');

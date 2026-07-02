@@ -2043,10 +2043,11 @@ function genererPdfSession(signatureDataUrl, signataireNom){
     doc.setDrawColor(200);doc.line(14,y,196,y);
     if(eq){
       const v=sessionVerifs[eq.id];
-      const desig=`${idx+1} - ${eq.types_equipements?.libelle||eq.type_equipement_code||'—'}`;
+      const agentEq=eq.donnees_specifiques?.['ef-agent']||eq.donnees_specifiques?.['e-agent']||'';
+      const desig=`${idx+1} - ${eq.types_equipements?.libelle||eq.type_equipement_code||'—'}${agentEq?' '+agentEq:''}`;
       const cap=eq.capacite_valeur?(eq.capacite_valeur+' '+(eq.capacite_unite||'')):'—';
       const loc=eq.localisation||eq.etage_zone||'—';
-      doc.text(desig.slice(0,30),16,y+4);
+      doc.text(desig.slice(0,32),16,y+4);
       doc.text(cap.slice(0,18),75,y+4);
       doc.text(loc.slice(0,22),105,y+4);
       if(v){
