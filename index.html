@@ -2301,23 +2301,14 @@ async function regenererBon(bonId){
   doc.text('Généré le '+genTS,105,290,{align:'center'});
 
   // Sauvegarder le PDF et uploader
-  const pdfBlob=doc.output('blob');
-  const fileName=`bon_regen_${bonId}_${Date.now()}.pdf`;
   const nomFichier=`BFS_bon_${numSession}_${(client?.raison_sociale||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`;
+  const fileName=`bon_regen_${bonId}_${Date.now()}.pdf`;
 
-  // Télécharger directement — attaché au DOM pour compatibilité tous navigateurs
-  const blobUrl=URL.createObjectURL(pdfBlob);
-  const a=document.createElement('a');
-  a.href=blobUrl;
-  a.download=nomFichier;
-  a.style.display='none';
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(blobUrl);},2000);
+  // Téléchargement direct via jsPDF (méthode la plus fiable)
+  doc.save(nomFichier);
 
-  toast('PDF généré — téléchargement en cours…');
-
-  // Supprimer l'ancien fichier Storage si existant, puis uploader le nouveau
+  // Supprimer l'ancien et uploader le nouveau en arrière-plan
+  const pdfBlob=doc.output('blob');
   if(bon.pdf_path){
     await db.storage.from('bons-intervention').remove([bon.pdf_path]);
   }
@@ -2325,9 +2316,9 @@ async function regenererBon(bonId){
   if(!upErr){
     const {data:urlData}=db.storage.from('bons-intervention').getPublicUrl(fileName);
     await db.from('bons_intervention').update({pdf_url:urlData.publicUrl,pdf_path:fileName}).eq('id',bonId);
-    toast('PDF régénéré et sauvegardé ✓');
+    toast('PDF sauvegardé ✓');
   } else {
-    toast('PDF téléchargé (erreur upload Storage: '+upErr.message+')','err');
+    toast('PDF téléchargé localement (erreur Storage)','err');
   }
   loadBons();
 }
