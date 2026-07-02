@@ -449,4 +449,56 @@ async function actualiserBon(bonId){
   await rapportComplet(bonId);
 }
 
+// ============================================================
+// PDF — RAPPORT D'INVENTAIRE DE STOCK
+// ============================================================
+async function rapportInventairePDF(invId){
+  const {data:inv}=await db.from('stock_inventaires').select('*,profils(nom,prenom)').eq('id',invId).single();
+  if(!inv){toast('Inventaire introuvable','err');return}
+  const {data:mvts}=await db.from('stock_mouvements').select('*,stock_pieces(code,designation,marque,modele)').eq('inventaire_id',invId).order('created_at');
+  const {jsPDF}=window.jspdf;const doc=new jsPDF();
+  const raisonSoc='Bretagne Formation Sécurité';
+  try{doc.saveGraphicsState();doc.setGState(new doc.GState({opacity:0.05}));doc.addImage(LOGO_BFS,'PNG',50,93,110,110);doc.restoreGraphicsState();}catch(e){}
+  try{doc.addImage(LOGO_BFS,'PNG',12,5,16,16)}catch(e){}
+  doc.setFontSize(20);doc.setFont('helvetica','bold');doc.setTextColor(50,50,50);doc.text('BFS',29,15);
+  doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');doc.text(raisonSoc,29,19.5);
+  doc.setFillColor(230,100,40);doc.rect(65,8,130,10,'F');
+  doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
+  doc.text('RAPPORT D\'INVENTAIRE DE STOCK',130,15,{align:'center'});
+  doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
+  const par=inv.profils?`${inv.profils.prenom||''} ${inv.profils.nom}`.trim():'—';
+  doc.text(`Démarré le ${new Date(inv.demarre_le).toLocaleString('fr-FR')} par ${par}`,14,26);
+  doc.text(inv.termine_le?`Terminé le ${new Date(inv.termine_le).toLocaleString('fr-FR')}`:'⏳ En cours',150,26);
+  let y=33;
+  const lst=mvts||[];
+  if(!lst.length){doc.setFontSize(11);doc.text('Aucune pièce comptée dans cet inventaire.',14,y+6);}
+  else{
+    const entrees=lst.filter(m=>(+m.delta)>0),rectifs=lst.filter(m=>(+m.delta)<0),conformes=lst.filter(m=>(+m.delta)===0);
+    // Synthèse
+    doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[
+      ['Pièces comptées',String(lst.length)],
+      ['➕ Entrées (stock réel > théorique)',entrees.length+' pièce(s), +'+entrees.reduce((s,m)=>s+(+m.delta),0)],
+      ['✎ Rectifications (stock réel < théorique)',rectifs.length+' pièce(s), '+rectifs.reduce((s,m)=>s+(+m.delta),0)],
+      ['✓ Conformes (aucun écart)',String(conformes.length)],
+    ],styles:{fontSize:10},columnStyles:{0:{fontStyle:'bold',cellWidth:95}}});
+    y=doc.lastAutoTable.finalY+8;
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('DÉTAIL DES COMPTAGES',14,y);y+=3;
+    doc.autoTable({startY:y,margin:{left:14,right:14},
+      head:[['Code','Désignation','Théorique','Compté','Écart','Constat']],
+      body:lst.map(m=>[m.stock_pieces?.code||'—',m.stock_pieces?.designation||'—',String(m.quantite_avant),String(m.quantite_apres),((+m.delta)>0?'+':'')+m.delta,(+m.delta)>0?'Entrée':(+m.delta)<0?'Rectification':'Conforme']),
+      styles:{fontSize:8.5,cellPadding:1.5},headStyles:{fillColor:[230,100,40]},
+      columnStyles:{2:{halign:'center'},3:{halign:'center'},4:{halign:'center',fontStyle:'bold'},5:{halign:'center'}},
+      didParseCell:(d)=>{if(d.section==='body'&&(d.column.index===4||d.column.index===5)){
+        const delta=parseFloat(d.row.raw[4]);
+        if(delta>0)d.cell.styles.textColor=[22,163,74];
+        else if(delta<0)d.cell.styles.textColor=[220,38,38];
+        else d.cell.styles.textColor=[120,120,120];
+      }}});
+  }
+  const nb=doc.getNumberOfPages();
+  for(let p=1;p<=nb;p++){doc.setPage(p);doc.setFontSize(7);doc.setTextColor(150);
+    doc.text(`${raisonSoc} — Inventaire du ${new Date(inv.demarre_le).toLocaleDateString('fr-FR')} — Page ${p}/${nb}`,105,292,{align:'center'});doc.setTextColor(30);}
+  doc.save(`BFS_inventaire_${new Date(inv.demarre_le).toISOString().slice(0,10)}.pdf`);toast('Rapport généré');
+}
+
 console.log('✓ pdf.js chargé');

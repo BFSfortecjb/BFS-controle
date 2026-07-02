@@ -1529,6 +1529,163 @@ function getEquipSpecificData(){
 }
 
 
+
+// ============================================================
+// STOCK PIÈCES — CONSULTATION, IMPORT EXCEL, CASSE, RAPPORTS
+// ============================================================
+let stockPieces=[],_stockInventaires=[],_stockMouvements=[];
+
+async function loadStock(){
+  const ftype=$('f-type-mvt')?$('f-type-mvt').value:'';
+  let qm=db.from('stock_mouvements').select('*,stock_pieces(code,designation),profils(nom,prenom)').order('created_at',{ascending:false}).limit(80);
+  if(ftype)qm=qm.eq('type',ftype);
+  const [{data:p,error:e1},{data:inv},{data:mv}]=await Promise.all([
+    db.from('stock_pieces').select('*').order('designation'),
+    db.from('stock_inventaires').select('*,profils(nom,prenom)').order('demarre_le',{ascending:false}).limit(20),
+    qm
+  ]);
+  if(e1){$('tbl-stock').innerHTML='<div class="t-empty">Erreur : '+e1.message+'<br><small>Les tables de stock ont-elles été créées dans Supabase ?</small></div>';return}
+  stockPieces=p||[];_stockInventaires=inv||[];_stockMouvements=mv||[];
+  renderStock();renderInventaires();renderMouvements();
+}
+
+function renderStock(){
+  const q=($('q-stock').value||'').toLowerCase();
+  const data=stockPieces.filter(p=>(p.code+' '+p.designation+' '+(p.marque||'')+' '+(p.modele||'')).toLowerCase().includes(q));
+  const el=$('tbl-stock');
+  if(!data.length){el.innerHTML='<div class="t-empty">Aucune pièce en stock — importe un fichier Excel ou ajoute une pièce.</div>';return}
+  el.innerHTML=`<table><thead><tr><th>Code</th><th>Désignation</th><th>Marque / Modèle</th><th style="text-align:center">Quantité</th><th>Dernière maj</th><th>Actions</th></tr></thead><tbody>${data.map(p=>{
+    const alerte=(+p.seuil_alerte||0)>0&&(+p.quantite)<=(+p.seuil_alerte);
+    return `<tr>
+    <td><strong>${p.code}</strong></td>
+    <td>${p.designation}</td>
+    <td style="font-size:12px;color:var(--txt-l)">${[p.marque,p.modele].filter(Boolean).join(' / ')||'—'}</td>
+    <td style="text-align:center;font-weight:700;${alerte?'color:#dc2626':''}">${p.quantite}${alerte?' ⚠':''}</td>
+    <td style="font-size:12px">${fmt(p.updated_at)}</td>
+    <td><div class="ia">
+      <button class="btn btn-s btn-xs" onclick="editPiece('${p.id}')">✏️</button>
+      <button class="btn btn-s btn-xs" onclick="showQR('${p.id}','${p.code}','${(p.designation||'').replace(/'/g,"\\'")}','Pièce détachée')" title="QR code à imprimer et coller sur le bac">QR</button>
+      <button class="btn btn-s btn-xs" onclick="openCasseModal('${p.id}')" title="Sortir du matériel périmé ou inutilisable">🔻 Casse</button>
+      <button class="btn btn-s btn-xs" onclick="deletePiece('${p.id}')">🗑</button>
+    </div></td></tr>`}).join('')}</tbody></table>`;
+}
+
+function openPieceModal(prefill=null){
+  ['pc-id','pc-code','pc-designation','pc-marque','pc-modele'].forEach(id=>$(id).value='');
+  $('pc-qte').value='0';$('pc-seuil').value='0';$('mo-pc-t').textContent='Nouvelle pièce';
+  $('pc-qte').disabled=false;
+  if(prefill){$('pc-id').value=prefill.id;$('pc-code').value=prefill.code;$('pc-designation').value=prefill.designation;$('pc-marque').value=prefill.marque||'';$('pc-modele').value=prefill.modele||'';$('pc-qte').value=prefill.quantite;$('pc-qte').disabled=true;$('pc-seuil').value=prefill.seuil_alerte||0;$('mo-pc-t').textContent='Modifier la pièce';}
+  OM('mo-piece');
+}
+function editPiece(id){openPieceModal(stockPieces.find(p=>p.id===id))}
+async function savePiece(){
+  const id=$('pc-id').value;
+  const code=$('pc-code').value.trim();const des=$('pc-designation').value.trim();
+  if(!code||!des){toast('Code et désignation obligatoires','err');return}
+  const p={code,designation:des,marque:$('pc-marque').value.trim(),modele:$('pc-modele').value.trim(),seuil_alerte:parseFloat($('pc-seuil').value)||0,updated_at:new Date().toISOString()};
+  if(id){
+    const {error}=await db.from('stock_pieces').update(p).eq('id',id);
+    if(error){toast('Erreur: '+error.message,'err');return}
+    toast('Pièce modifiée');
+  }else{
+    p.quantite=parseFloat($('pc-qte').value)||0;
+    const {data:np,error}=await db.from('stock_pieces').insert(p).select().single();
+    if(error){toast('Erreur: '+error.message,'err');return}
+    if(p.quantite>0)await db.from('stock_mouvements').insert({piece_id:np.id,type:'entree',quantite_avant:0,quantite_apres:p.quantite,delta:p.quantite,motif:'Création de la pièce',par:ME.id});
+    toast('Pièce créée');
+  }
+  CM('mo-piece');loadStock();
+}
+async function deletePiece(id){
+  if(!confirm('Supprimer cette pièce et son historique de mouvements ?'))return;
+  await db.from('stock_pieces').delete().eq('id',id);toast('Supprimé');loadStock();
+}
+
+// ---- Sortie casse ----
+function openCasseModal(id){
+  const p=stockPieces.find(p=>p.id===id);if(!p)return;
+  $('cs-piece-id').value=id;$('cs-qte').value='1';$('cs-detail').value='';
+  $('cs-info').innerHTML=`<strong>${p.designation}</strong> (${p.code}) — en stock : <strong>${p.quantite}</strong>`;
+  OM('mo-casse');
+}
+async function saveCasse(){
+  const p=stockPieces.find(x=>x.id===$('cs-piece-id').value);if(!p)return;
+  const q=parseFloat($('cs-qte').value);
+  if(!q||q<1){toast('Quantité invalide','err');return}
+  if(q>+p.quantite){toast('Stock insuffisant ('+p.quantite+' en stock)','err');return}
+  const apres=(+p.quantite)-q;
+  const motif=$('cs-motif').value+($('cs-detail').value.trim()?' — '+$('cs-detail').value.trim():'');
+  const {error}=await db.from('stock_pieces').update({quantite:apres,updated_at:new Date().toISOString()}).eq('id',p.id);
+  if(error){toast('Erreur: '+error.message,'err');return}
+  await db.from('stock_mouvements').insert({piece_id:p.id,type:'casse',quantite_avant:p.quantite,quantite_apres:apres,delta:-q,motif,par:ME.id});
+  toast('Sortie casse enregistrée');CM('mo-casse');loadStock();
+}
+
+// ---- Import / export Excel ----
+async function importStockExcel(input){
+  const file=input.files[0];if(!file)return;input.value='';
+  toast('Import en cours…');
+  try{
+    const wb=XLSX.read(await file.arrayBuffer());
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+    const col=(r,...noms)=>{for(const n of noms){for(const k of Object.keys(r)){if(k.toLowerCase().trim()===n)return r[k]}}return ''};
+    let crees=0,inc=0,err=0;
+    for(const r of rows){
+      const code=String(col(r,'code')).trim();
+      const qte=parseFloat(col(r,'quantité','quantite','qté','qte'))||0;
+      if(!code){err++;continue}
+      const exist=stockPieces.find(p=>p.code.toLowerCase()===code.toLowerCase());
+      if(exist){
+        const apres=(+exist.quantite)+qte;
+        await db.from('stock_pieces').update({quantite:apres,updated_at:new Date().toISOString()}).eq('id',exist.id);
+        await db.from('stock_mouvements').insert({piece_id:exist.id,type:'import',quantite_avant:exist.quantite,quantite_apres:apres,delta:qte,motif:'Import '+file.name,par:ME.id});
+        inc++;
+      }else{
+        const {data:np,error}=await db.from('stock_pieces').insert({code,designation:String(col(r,'désignation','designation'))||code,marque:String(col(r,'marque')),modele:String(col(r,'modèle','modele')),quantite:qte,seuil_alerte:parseFloat(col(r,'seuil','seuil d\'alerte'))||0}).select().single();
+        if(error){err++;continue}
+        await db.from('stock_mouvements').insert({piece_id:np.id,type:'import',quantite_avant:0,quantite_apres:qte,delta:qte,motif:'Import '+file.name,par:ME.id});
+        crees++;
+      }
+    }
+    toast(`Import : ${crees} pièce(s) créée(s), ${inc} incrémentée(s)${err?', '+err+' ligne(s) ignorée(s)':''}`);
+  }catch(e){toast('Fichier illisible : '+e.message,'err')}
+  loadStock();
+}
+function exportStockXLS(){
+  const ws=XLSX.utils.json_to_sheet(stockPieces.map(p=>({Code:p.code,'Désignation':p.designation,Marque:p.marque||'','Modèle':p.modele||'','Quantité':+p.quantite,'Seuil':+p.seuil_alerte||0,'Dernière maj':fmt(p.updated_at)})));
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Stock');
+  XLSX.writeFile(wb,'BFS_stock_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+// ---- Inventaires & mouvements ----
+const badgeMvt=t=>({entree:'<span class="badge bv">➕ Entrée</span>',rectification:'<span class="badge bo">✎ Rectification</span>',casse:'<span class="badge br">🔻 Casse</span>',import:'<span class="badge bb">⬆ Import</span>'}[t]||t);
+
+function renderInventaires(){
+  const el=$('tbl-inventaires');
+  if(!_stockInventaires.length){el.innerHTML='<div class="t-empty">Aucun inventaire — se lance depuis le téléphone (onglet Stock).</div>';return}
+  el.innerHTML=`<table><thead><tr><th>Démarré le</th><th>Par</th><th>Statut</th><th>Terminé le</th><th></th></tr></thead><tbody>${_stockInventaires.map(i=>`<tr>
+    <td>${new Date(i.demarre_le).toLocaleString('fr-FR')}</td>
+    <td>${i.profils?`${i.profils.prenom||''} ${i.profils.nom}`:'—'}</td>
+    <td>${i.statut==='terminé'?'<span class="badge bv">✓ Terminé</span>':'<span class="badge bo">⏳ En cours</span>'}</td>
+    <td>${i.termine_le?new Date(i.termine_le).toLocaleString('fr-FR'):'—'}</td>
+    <td><button class="btn btn-s btn-xs" onclick="rapportInventairePDF('${i.id}')" title="Rapport PDF : entrées et rectifications">📄 Rapport</button></td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+function renderMouvements(){
+  const el=$('tbl-mouvements');
+  if(!_stockMouvements.length){el.innerHTML='<div class="t-empty">Aucun mouvement</div>';return}
+  el.innerHTML=`<table><thead><tr><th>Date</th><th>Pièce</th><th>Type</th><th style="text-align:center">Avant → Après</th><th style="text-align:center">Écart</th><th>Motif</th><th>Par</th></tr></thead><tbody>${_stockMouvements.map(m=>`<tr>
+    <td style="white-space:nowrap;font-size:12px">${new Date(m.created_at).toLocaleString('fr-FR')}</td>
+    <td>${m.stock_pieces?`<strong>${m.stock_pieces.code}</strong><br><small style="color:var(--txt-l)">${m.stock_pieces.designation}</small>`:'—'}</td>
+    <td>${badgeMvt(m.type)}</td>
+    <td style="text-align:center">${m.quantite_avant} → ${m.quantite_apres}</td>
+    <td style="text-align:center;font-weight:700;color:${(+m.delta)>0?'#16a34a':(+m.delta)<0?'#dc2626':'var(--txt-l)'}">${(+m.delta)>0?'+':''}${m.delta}</td>
+    <td style="font-size:12px">${m.motif||'—'}</td>
+    <td style="font-size:12px">${m.profils?`${m.profils.prenom||''} ${m.profils.nom}`:'—'}</td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
 // ============================================================
 // QR CODES ÉQUIPEMENTS
 // ============================================================

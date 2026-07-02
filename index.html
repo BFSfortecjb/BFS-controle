@@ -479,6 +479,29 @@ tr:hover td{background:#fafafa}
         <div class="card"><div id="tbl-users"><div class="loading"><span class="spin"></span></div></div></div>
       </div>
 
+
+      <!-- STOCK PIÈCES -->
+      <div class="page" id="page-stock">
+        <div class="search-bar">
+          <input type="text" id="q-stock" placeholder="Rechercher code, désignation, marque…" oninput="renderStock()">
+          <button class="btn btn-s" onclick="document.getElementById('stock-file').click()">⬆ Import Excel</button>
+          <input type="file" id="stock-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importStockExcel(this)">
+          <button class="btn btn-s" onclick="exportStockXLS()">⬇ Excel</button>
+          <button class="btn btn-p" onclick="openPieceModal()">+ Pièce</button>
+        </div>
+        <div class="card"><div id="tbl-stock"><div class="loading"><span class="spin"></span></div></div></div>
+        <div class="card" style="margin-top:16px">
+          <div class="card-header"><h2>📑 Inventaires</h2></div>
+          <div id="tbl-inventaires"></div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <div class="card-header"><h2>🔀 Derniers mouvements</h2>
+            <select id="f-type-mvt" onchange="loadStock()" style="max-width:180px"><option value="">Tous types</option><option value="entree">Entrées</option><option value="rectification">Rectifications</option><option value="casse">Sorties casse</option><option value="import">Imports Excel</option></select>
+          </div>
+          <div id="tbl-mouvements"></div>
+        </div>
+      </div>
+
       <!-- JOURNAL D'AUDIT -->
       <div class="page" id="page-audit">
         <div class="search-bar">
@@ -699,6 +722,35 @@ tr:hover td{background:#fafafa}
 </div>
 
 
+
+
+<!-- Modal pièce de stock -->
+<div class="mo" id="mo-piece">
+  <div class="modal"><div class="mh"><h3 id="mo-pc-t">Nouvelle pièce</h3><button class="mclose" onclick="CM('mo-piece')">✕</button></div>
+  <div class="mc"><input type="hidden" id="pc-id">
+    <div class="form-grid">
+      <div class="fg"><label>Code (imprimé sur le QR) *</label><input type="text" id="pc-code" placeholder="Ex : JOINT-PP6"></div>
+      <div class="fg"><label>Désignation *</label><input type="text" id="pc-designation"></div>
+      <div class="fg"><label>Marque</label><input type="text" id="pc-marque"></div>
+      <div class="fg"><label>Modèle</label><input type="text" id="pc-modele"></div>
+      <div class="fg"><label>Quantité</label><input type="number" id="pc-qte" min="0" value="0"></div>
+      <div class="fg"><label>Seuil d'alerte</label><input type="number" id="pc-seuil" min="0" value="0"></div>
+    </div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-piece')">Annuler</button><button class="btn btn-p" onclick="savePiece()">Enregistrer</button></div>
+  </div></div>
+</div>
+
+<!-- Modal sortie casse -->
+<div class="mo" id="mo-casse">
+  <div class="modal" style="max-width:420px"><div class="mh"><h3>🔻 Sortie casse</h3><button class="mclose" onclick="CM('mo-casse')">✕</button></div>
+  <div class="mc"><input type="hidden" id="cs-piece-id">
+    <div id="cs-info" style="margin-bottom:12px;font-size:13px;color:var(--txt-l)"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Quantité à sortir *</label><input type="number" id="cs-qte" min="1" value="1"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Motif *</label><select id="cs-motif"><option>Périmé</option><option>Inutilisable / défectueux</option><option>Cassé</option><option>Perte</option><option>Autre</option></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Précision</label><input type="text" id="cs-detail" placeholder="Optionnel"></div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-casse')">Annuler</button><button class="btn btn-p" onclick="saveCasse()">Valider la sortie</button></div>
+  </div></div>
+</div>
 
 <!-- Modal signature contrat -->
 <div class="mo" id="mo-sign-ct">
