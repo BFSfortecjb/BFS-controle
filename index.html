@@ -806,14 +806,6 @@ db.auth.onAuthStateChange(async(event,session)=>{
 });
 
 // Vérifier session existante au chargement
-// Précharger le logo BFS en arrière-plan (pour filigrane PDF)
-fetch('https://bfsfortecjb.github.io/BFS-controle/icons/icon-512.png')
-  .then(r=>r.blob()).then(blob=>{
-    const reader=new FileReader();
-    reader.onload=e=>{window._bfsLogoB64=e.target.result;};
-    reader.readAsDataURL(blob);
-  }).catch(()=>{});
-
 db.auth.getSession().then(async({data:{session}})=>{
   if(session&&!window.location.hash.includes('type=recovery')){
     await onLogin(session.user);
@@ -2160,15 +2152,7 @@ async function regenererBon(bonId){
   // Générer le PDF côté bureau avec jsPDF
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'mm',format:'a4'});
-  // Filigrane logo BFS — chargé depuis GitHub en arrière-plan
-  try{
-    if(window._bfsLogoB64){
-      doc.saveGraphicsState();
-      doc.setGState(new doc.GState({opacity:0.08}));
-      doc.addImage(window._bfsLogoB64,'PNG',35,60,140,258);
-      doc.restoreGraphicsState();
-    }
-  }catch(e){}
+  // (filigrane logo désactivé)
   const dateStr=new Date(bon.date_intervention).toLocaleDateString('fr-FR');
   const numSession=sess?.numero||bon.numero_session||'—';
   const adresse=[client?.adresse,client?.code_postal,client?.ville].filter(Boolean).join(', ');
