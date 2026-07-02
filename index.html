@@ -2258,18 +2258,26 @@ async function regenererBon(bonId){
   // Sauvegarder le PDF et uploader
   const pdfBlob=doc.output('blob');
   const fileName=`bon_regen_${bonId}_${Date.now()}.pdf`;
-  const {error:upErr}=await db.storage.from('bons-intervention').upload(fileName,pdfBlob,{contentType:'application/pdf'});
-  if(upErr){
-    // Si l'upload échoue, proposer le téléchargement direct
-    doc.save(`BFS_bon_${numSession}_${client?.raison_sociale||''}.pdf`);
-    toast('PDF téléchargé localement (upload Storage échoué)','err');
-    return;
+
+  // Télécharger directement
+  const blobUrl=URL.createObjectURL(pdfBlob);
+  const a=document.createElement('a');
+  a.href=blobUrl;
+  a.download=`BFS_bon_${numSession}_${client?.raison_sociale||''}.pdf`;
+  a.click();
+  URL.revokeObjectURL(blobUrl);
+
+  // Supprimer l'ancien fichier Storage si existant, puis uploader le nouveau
+  if(bon.pdf_path){
+    await db.storage.from('bons-intervention').remove([bon.pdf_path]);
   }
-  const {data:urlData}=db.storage.from('bons-intervention').getPublicUrl(fileName);
-  await db.from('bons_intervention').update({pdf_url:urlData.publicUrl,pdf_path:fileName}).eq('id',bonId);
-  toast('PDF régénéré au format BFS ✓');
-  // Ouvrir directement le nouveau PDF pour éviter le cache navigateur
-  window.open(urlData.publicUrl+'?t='+Date.now(), '_blank');
+  const {error:upErr}=await db.storage.from('bons-intervention').upload(fileName,pdfBlob,{contentType:'application/pdf'});
+  if(!upErr){
+    const {data:urlData}=db.storage.from('bons-intervention').getPublicUrl(fileName);
+    await db.from('bons_intervention').update({pdf_url:urlData.publicUrl,pdf_path:fileName}).eq('id',bonId);
+  }
+
+  toast('PDF régénéré et téléchargé ✓');
   loadBons();
 }
 
