@@ -2235,6 +2235,7 @@ async function validerSignatureEtCloturer(){
       date_intervention:new Date().toISOString().slice(0,10),
       nb_equipements_verifies:nbVerifies,
       signataire_nom:nom,
+      signature_data:signatureDataUrl,
       pdf_url:pdfUrl,
       pdf_path:pdfUrl?fileName:null,
       statut_facturation:'à_facturer'

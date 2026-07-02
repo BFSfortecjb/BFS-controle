@@ -239,30 +239,24 @@ async function regenererBon(bonId,sansConfirm){
   doc.setFont('helvetica','normal');doc.setFontSize(8);
   doc.text('NOM, signature et cachet du CLIENT',14+42,sigY+4,{align:'center'});
   doc.text('NOM et signature du technicien',110+41,sigY+4,{align:'center'});
+  if(bon.signature_data){try{doc.addImage(bon.signature_data,'PNG',112,sigY+4,78,22)}catch(e){}}
   if(bon.signataire_nom)doc.text(bon.signataire_nom,14+42,sigY+26,{align:'center'});
   doc.setFontSize(7);doc.setTextColor(150);const genTS=new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
   doc.text('Généré le '+genTS,105,290,{align:'center'});
 
-  // Sauvegarder le PDF et uploader
+  // Sauvegarder le PDF et archiver
+  // ⚠️ RÈGLE : le PDF signé d'origine (généré sur le terrain) n'est JAMAIS
+  // supprimé ni remplacé. Les bulletins régénérés sont archivés à part
+  // sous le nom bulletin_<bonId>_<timestamp>.pdf.
   const nomFichier=`BFS_bon_${numSession}_${(client?.raison_sociale||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`;
-  const fileName=`bon_regen_${bonId}_${Date.now()}.pdf`;
-
-  // Téléchargement direct via jsPDF (méthode la plus fiable)
   doc.save(nomFichier);
-
-  // Supprimer l'ancien et uploader le nouveau en arrière-plan
   const pdfBlob=doc.output('blob');
-  if(bon.pdf_path){
-    await db.storage.from('bons-intervention').remove([bon.pdf_path]);
-  }
+  const {data:anciens}=await db.storage.from('bons-intervention').list('',{search:'bulletin_'+bonId});
+  if(anciens&&anciens.length)await db.storage.from('bons-intervention').remove(anciens.map(f=>f.name));
+  const fileName=`bulletin_${bonId}_${Date.now()}.pdf`;
   const {error:upErr}=await db.storage.from('bons-intervention').upload(fileName,pdfBlob,{contentType:'application/pdf'});
-  if(!upErr){
-    const {data:urlData}=db.storage.from('bons-intervention').getPublicUrl(fileName);
-    await db.from('bons_intervention').update({pdf_url:urlData.publicUrl,pdf_path:fileName}).eq('id',bonId);
-    toast('PDF sauvegardé ✓');
-  } else {
-    toast('PDF téléchargé localement (erreur Storage)','err');
-  }
+  if(!upErr){toast('Bulletin archivé ✓')}
+  else{toast('Bulletin téléchargé localement (erreur Storage)','err')}
   loadBons();
 }
 

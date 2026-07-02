@@ -1134,9 +1134,17 @@ async function loadBons(){
     <div class="stat-card bleu"><div class="val">${(allBons||[]).length}</div><div class="lab">Total</div></div>
   `;
 
-  // Rapports complets archivés dans Storage : rapport_<bonId>_<timestamp>.pdf
-  const {data:rapFiles}=await db.storage.from('bons-intervention').list('',{limit:1000,search:'rapport_'});
-  const rapports={};(rapFiles||[]).forEach(f=>{const id=f.name.slice(8,44);rapports[id]=f.name});
+  // Fichiers archivés dans Storage :
+  //  - bulletin_<bonId>_<ts>.pdf : bulletin simple régénéré
+  //  - rapport_<bonId>_<ts>.pdf  : bulletin détaillé
+  //  (le PDF signé d'origine reste pointé par pdf_url et n'est jamais touché)
+  const {data:archFiles}=await db.storage.from('bons-intervention').list('',{limit:1000});
+  const rapports={},bulletins={};
+  (archFiles||[]).forEach(f=>{
+    if(f.name.startsWith('rapport_'))rapports[f.name.slice(8,44)]=f.name;
+    if(f.name.startsWith('bulletin_'))bulletins[f.name.slice(9,45)]=f.name;
+  });
+  const urlArch=n=>db.storage.from('bons-intervention').getPublicUrl(n).data.publicUrl;
 
   const el = $('bons-list');
   if(!bons.length){el.innerHTML='<div class="t-empty">Aucun bon d\'intervention</div>';return}
@@ -1150,9 +1158,10 @@ async function loadBons(){
     <td>${b.signataire_nom||'—'}</td>
     <td>${b.statut_facturation==='facturé'?'<span class="badge bv">Facturé</span>':'<span class="badge bo">À facturer</span>'}</td>
     <td><div class="ia">
-      ${b.pdf_url?`<a class="btn btn-s btn-xs" href="${b.pdf_url}" target="_blank">📄 Bulletin</a>`:''}
-      ${rapports[b.id]?`<a class="btn btn-s btn-xs" href="${db.storage.from('bons-intervention').getPublicUrl(rapports[b.id]).data.publicUrl}" target="_blank">📋 Détaillé</a>`:''}
-      <button class="btn btn-s btn-xs" onclick="actualiserBon('${b.id}')" title="(Re)générer le bulletin simple ET le bulletin détaillé">🔄</button>
+      ${b.pdf_url&&!(b.pdf_url.includes('bon_regen_')||b.pdf_url.includes('bulletin_'))?`<a class="btn btn-s btn-xs" href="${b.pdf_url}" target="_blank" title="PDF d'origine signé sur le terrain — jamais modifié">✍ Signé</a>`:''}
+      ${bulletins[b.id]?`<a class="btn btn-s btn-xs" href="${urlArch(bulletins[b.id])}" target="_blank">📄 Bulletin</a>`:(b.pdf_url&&b.pdf_url.includes('bon_regen_')?`<a class="btn btn-s btn-xs" href="${b.pdf_url}" target="_blank">📄 Bulletin</a>`:'')}
+      ${rapports[b.id]?`<a class="btn btn-s btn-xs" href="${urlArch(rapports[b.id])}" target="_blank">📋 Détaillé</a>`:''}
+      <button class="btn btn-s btn-xs" onclick="actualiserBon('${b.id}')" title="(Re)générer le bulletin simple ET le bulletin détaillé — ne touche pas au PDF signé">🔄</button>
       ${b.statut_facturation==='à_facturer'?`<button class="btn btn-s btn-xs" onclick="marquerFacture('${b.id}')">✓ Facturé</button>`:''}
     </div></td>
   </tr>`).join('')}</tbody></table>`;
