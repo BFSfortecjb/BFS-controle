@@ -107,9 +107,6 @@ async function regenererBon(bonId){
   doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
   doc.text('BULLETIN D\'INTERVENTION INCENDIE',130,15,{align:'center'});
   doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
-  doc.text('Transmis pour facturation le :',65,26);
-  doc.setDrawColor(0);doc.rect(120,22,55,6);
-  doc.setFont('helvetica','bold');doc.text(dateStr,147,27,{align:'center'});
 
   // Cases type intervention — alignées à droite
   const drawCB=(x,y,v)=>{doc.setDrawColor(0);doc.rect(x,y,3.5,3.5);if(v){doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(192,57,43);doc.text('X',x+0.5,y+3);doc.setTextColor(0);}};
@@ -136,10 +133,9 @@ async function regenererBon(bonId){
   y+=6;doc.setFont('helvetica','normal');doc.text('Technicien :',14,y);doc.text(techNom,65,y);
 
   // Tableau équipements
-  // Colonnes : Désig=52, Cap=20, Loc=28, puis "TYPE DE VÉRIFICATION" regroupée=72 (5 sous-col de ~14)
+  // Colonnes : Désig=56, Cap=22, Loc=44, puis "TYPE DE VÉRIFICATION" = 5 sous-colonnes UNIFORMES de 12 mm
   y=Math.max(y+8,74);
-  const cB={desig:14,cap:66,loc:86,tv:113,v1:113,v2:129,v3:145,v4:161,v5:177,end:196};
-  // Largeurs sous-colonnes : 14 chacune, total=70
+  const cB={desig:14,cap:70,loc:92,tv:136,v1:136,v2:148,v3:160,v4:172,v5:184,end:196};
 
   // En-tête : ligne 1 — titres principaux
   doc.setFillColor(240,240,240);doc.rect(14,y,182,14,'F');
@@ -159,7 +155,7 @@ async function regenererBon(bonId){
   [
     [cB.v1,'Vérif.'],[cB.v2,'MES'],[cB.v3,'MAA'],[cB.v4,'Réforme'],[cB.v5,'Interv.']
   ].forEach(([x,label])=>{
-    doc.text(label,x+7,y+12.5,{align:'center'});
+    doc.text(label,x+6,y+12.5,{align:'center'});
     doc.line(x,y+8,x,y+14);
   });
   doc.line(cB.end,y+8,cB.end,y+14);
@@ -178,18 +174,18 @@ async function regenererBon(bonId){
       const desig=`${idx+1} - ${eq?.types_equipements?.libelle||'—'}${agent?' '+agent:''}`;
       const cap=eq?.capacite_valeur?(eq.capacite_valeur+' '+(eq.capacite_unite||'')):'—';
       // Adresse emplacement sur 2 lignes si besoin
-      const locLines=doc.splitTextToSize(eq?.localisation||'—',26);
-      doc.text(desig.slice(0,30),cB.desig+1,y+4.5);
+      const locLines=doc.splitTextToSize(eq?.localisation||'—',42);
+      doc.text(desig.slice(0,38),cB.desig+1,y+4.5);
       doc.text(cap.slice(0,12),cB.cap+1,y+4.5);
       doc.text(locLines,cB.loc+1,y+(locLines.length>1?2.5:4.5));
       // Cocher la bonne colonne selon le palier
       const palierCode=v.palier_code||'';
       doc.setFont('helvetica','bold');doc.setTextColor(0,100,0);
-      if(palierCode==='mise_en_service')doc.text('X',cB.v2+7,y+4.5,{align:'center'});
-      else if(palierCode==='approfondie'||palierCode==='maa')doc.text('X',cB.v3+7,y+4.5,{align:'center'});
-      else if(palierCode==='reforme'||palierCode==='revision')doc.text('X',cB.v4+7,y+4.5,{align:'center'});
-      else if(palierCode==='intervention')doc.text('X',cB.v5+7,y+4.5,{align:'center'});
-      else doc.text('X',cB.v1+7,y+4.5,{align:'center'}); // Vérification simple par défaut
+      if(palierCode==='mise_en_service')doc.text('X',cB.v2+6,y+4.5,{align:'center'});
+      else if(palierCode==='approfondie'||palierCode==='maa')doc.text('X',cB.v3+6,y+4.5,{align:'center'});
+      else if(palierCode==='reforme'||palierCode==='revision')doc.text('X',cB.v4+6,y+4.5,{align:'center'});
+      else if(palierCode==='intervention')doc.text('X',cB.v5+6,y+4.5,{align:'center'});
+      else doc.text('X',cB.v1+6,y+4.5,{align:'center'}); // Vérification simple par défaut
       doc.setTextColor(0);doc.setFont('helvetica','normal');
     }
     y+=rowH;
@@ -197,19 +193,20 @@ async function regenererBon(bonId){
   doc.setDrawColor(200);doc.line(14,y,196,y);
   y+=1;doc.setFont('helvetica','bold');doc.setFontSize(8);
   doc.text('TOTAL',cB.loc+22,y+3.5,{align:'right'});
-  doc.text(String(verifs.length),cB.v1+7,y+3.5,{align:'center'});
+  doc.text(String(verifs.length),cB.v1+6,y+3.5,{align:'center'});
   y+=8;
 
   // Zone OUI/NON vide (à compléter manuellement si régénéré sans checklist)
   const reglItems=['Registre de sécurité signé','Plan d\'évacuation existant','Consignes de sécurité existantes','Panneaux extincteur existant','Boîtier d\'alarme incendie existant'];
   const startX=100;
-  doc.rect(startX,y,96,reglItems.length*5+2);
+  doc.rect(startX,y,96,reglItems.length*5+4);
   doc.setFillColor(230,230,230);doc.rect(startX+75,y,10,4,'F');doc.rect(startX+85,y,10,4,'F');
   doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.text('OUI',startX+80,y+3,{align:'center'});doc.text('NON',startX+90,y+3,{align:'center'});
   y+=4;
-  reglItems.forEach(item=>{
+  reglItems.forEach((item,i)=>{
     doc.setFont('helvetica','normal');doc.text(item,startX+1,y+3.5);
-    doc.setDrawColor(200);doc.line(startX,y+5,startX+96,y+5);y+=5;
+    if(i<reglItems.length-1){doc.setDrawColor(200);doc.line(startX,y+5,startX+96,y+5);}
+    y+=5;
   });
   y+=4;
 

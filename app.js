@@ -1171,27 +1171,31 @@ async function loadAudit(){
   if(error){el.innerHTML=`<div class="t-empty">Erreur: ${error.message}</div>`;return}
   const logs=data||[];
   if(!logs.length){el.innerHTML='<div class="t-empty">Aucune action enregistrée</div>';return}
+  window.__auditLogs=logs;
 
   const badgeAction=a=>a==='DELETE'?'<span class="badge br">🗑 Suppression</span>':a==='INSERT'?'<span class="badge bv">✚ Création</span>':'<span class="badge bo">✎ Modification</span>';
 
-  el.innerHTML=`<table><thead><tr><th>Date</th><th>Action</th><th>Table</th><th>Utilisateur</th><th>Résumé</th><th>Détail</th></tr></thead><tbody>${logs.map(l=>`<tr>
+  el.innerHTML=`<table><thead><tr><th>Date</th><th>Action</th><th>Table</th><th>Utilisateur</th><th>Résumé</th><th>Détail</th></tr></thead><tbody>${logs.map((l,i)=>`<tr>
     <td style="white-space:nowrap;font-size:12px">${new Date(l.created_at).toLocaleString('fr-FR')}</td>
     <td>${badgeAction(l.action)}</td>
     <td style="font-size:12px;color:var(--txt-l)">${l.table_name}</td>
     <td>${l.utilisateur||'—'}<br><small style="color:var(--txt-l)">${l.user_role||''}</small></td>
     <td style="font-size:12px">${l.resume||'—'}</td>
-    <td><button class="btn btn-s btn-xs" onclick='showAuditDetail(${JSON.stringify(JSON.stringify(l))})'>👁</button></td>
+    <td><button class="btn btn-s btn-xs" onclick="showAuditDetail(${i})">👁</button></td>
   </tr>`).join('')}</tbody></table>`;
 }
 
-function showAuditDetail(jsonStr){
-  const l=JSON.parse(jsonStr);
+function showAuditDetail(idx){
+  const l=window.__auditLogs[idx];if(!l)return;
+  // old_data / new_data : Supabase renvoie du jsonb déjà parsé (objet),
+  // mais certaines lignes peuvent contenir une chaîne → on gère les deux.
+  const asObj=d=>{if(!d)return null;if(typeof d==='string'){try{return JSON.parse(d)}catch(e){return {valeur:d}}}return d};
   const modal=document.createElement('div');
   modal.className='mo open';
   modal.innerHTML=`<div class="modal" style="max-width:600px"><div class="mh"><h3>Détail de l'action</h3><button class="mclose" onclick="this.closest('.mo').remove()">✕</button></div><div class="mc">
     <div style="margin-bottom:8px"><strong>Table :</strong> ${l.table_name} · <strong>Action :</strong> ${l.action} · <strong>Par :</strong> ${l.utilisateur||'?'} (${l.user_role||'?'})</div>
-    ${l.old_data?`<div class="sec">Avant</div><pre style="background:var(--bg);padding:10px;border-radius:8px;font-size:11px;overflow:auto;max-height:200px">${JSON.stringify(JSON.parse(l.old_data||'{}'),null,2)}</pre>`:''}
-    ${l.new_data?`<div class="sec">Après</div><pre style="background:var(--bg);padding:10px;border-radius:8px;font-size:11px;overflow:auto;max-height:200px">${JSON.stringify(JSON.parse(l.new_data||'{}'),null,2)}</pre>`:''}
+    ${l.old_data?`<div class="sec">Avant</div><pre style="background:var(--bg);padding:10px;border-radius:8px;font-size:11px;overflow:auto;max-height:200px">${JSON.stringify(asObj(l.old_data),null,2)}</pre>`:''}
+    ${l.new_data?`<div class="sec">Après</div><pre style="background:var(--bg);padding:10px;border-radius:8px;font-size:11px;overflow:auto;max-height:200px">${JSON.stringify(asObj(l.new_data),null,2)}</pre>`:''}
   </div></div>`;
   modal.addEventListener('click',e=>{if(e.target===modal)modal.remove()});
   document.body.appendChild(modal);
