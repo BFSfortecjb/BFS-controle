@@ -241,6 +241,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button class="tab-item active" onclick="goTo('s-parc')"><span class="tab-ico">🏢</span>Mon parc</button>
     <button class="tab-item" onclick="ouvrirPlanning()"><span class="tab-ico">📅</span>Planning</button>
     <button class="tab-item" onclick="ouvrirMesSessions()"><span class="tab-ico">📋</span>Sessions</button>
+    <button class="tab-item" onclick="ouvrirStock()"><span class="tab-ico">🧰</span>Stock</button>
   </div>
 </div>
 
@@ -561,6 +562,45 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
 </div>
 
+
+
+<!-- ===== STOCK / INVENTAIRE ===== -->
+<div class="screen" id="s-stock">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-parc')">←</button>
+    <h1>Inventaire du stock</h1>
+  </div>
+  <div class="content" id="stock-content">
+    <div class="loading"><div class="spin spin-dark"></div></div>
+  </div>
+  <div class="footer" id="stock-footer" style="display:none;flex-direction:column;gap:8px">
+    <button class="btn btn-p" onclick="ouvrirScannerStock()">📷 Scanner une pièce</button>
+    <button class="btn btn-vert" onclick="terminerInventaire()">✅ Terminer l'inventaire</button>
+  </div>
+</div>
+
+<!-- ===== COMPTAGE PIÈCE ===== -->
+<div class="screen" id="s-stock-piece">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-stock')">←</button>
+    <h1>Comptage pièce</h1>
+  </div>
+  <div class="content">
+    <div class="card" style="margin-bottom:14px"><div style="padding:14px 16px">
+      <div id="sp-designation" style="font-weight:700;font-size:16px;margin-bottom:4px"></div>
+      <div id="sp-detail" style="font-size:13px;color:var(--txt-l)"></div>
+      <div style="margin-top:10px;font-size:14px">Stock théorique : <strong id="sp-theorique"></strong></div>
+    </div></div>
+    <div class="fg" style="margin-bottom:14px">
+      <label>Quantité réellement comptée *</label>
+      <input type="number" id="sp-compte" min="0" inputmode="numeric" style="font-size:22px;text-align:center;font-weight:700">
+    </div>
+    <div id="sp-ecart" style="text-align:center;font-weight:700;font-size:15px;margin-bottom:10px"></div>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="validerComptage()">✅ Valider le comptage</button>
+  </div>
+</div>
 
 <!-- ===== FICHE ÉQUIPEMENT ===== -->
 <div class="screen" id="s-fiche-equip">
@@ -1221,7 +1261,9 @@ function confirmQuitSession(){
 // ============================================================
 // SCAN QR
 // ============================================================
+let _scanMode='equip';
 async function ouvrirScanner(){
+  _scanMode='equip';
   goTo('s-scanner');
   try{
     scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
@@ -1243,19 +1285,20 @@ async function ouvrirScanner(){
         if(code.data.startsWith('BFS-EXT:')){
           numeroId=code.data.split('BFS-EXT:')[1].split('|')[0];
         }
-        traiterScanEquip(numeroId);
+        if(_scanMode==='stock')traiterScanPiece(numeroId);
+        else traiterScanEquip(numeroId);
       }
     },200);
   }catch(e){
     toast('Caméra non disponible','err');
-    goTo('s-session');
+    goTo(_scanMode==='stock'?'s-stock':'s-session');
   }
 }
 
 function stopScanner(){
   clearInterval(scanInterval);scanInterval=null;
   if(scanStream){scanStream.getTracks().forEach(t=>t.stop());scanStream=null}
-  if($('s-scanner').classList.contains('active'))goTo('s-session');
+  if($('s-scanner').classList.contains('active'))goTo(_scanMode==='stock'?'s-stock':'s-session');
 }
 
 async function traiterScanEquip(numeroId){
@@ -2264,6 +2307,127 @@ async function validerSignatureEtCloturer(){
   btn.disabled=false;btn.textContent='✅ Valider et clôturer';
   await loadParc();
   goTo('s-parc');
+}
+
+
+// ============================================================
+// STOCK — INVENTAIRE AU SCAN (pièces détachées)
+// ============================================================
+let _inventaire=null,_pieceEnCours=null,_comptages=[];
+
+async function ouvrirStock(){
+  goTo('s-stock');
+  const el=$('stock-content');
+  el.innerHTML='<div class="loading"><div class="spin spin-dark"></div></div>';
+  const {data:inv,error}=await db.from('stock_inventaires').select('*').eq('statut','en_cours').order('demarre_le',{ascending:false}).limit(1);
+  if(error){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--txt-l)">Erreur : '+error.message+'</div>';$('stock-footer').style.display='none';return}
+  _inventaire=(inv&&inv[0])||null;
+  if(_inventaire){
+    const {data:mv}=await db.from('stock_mouvements').select('*,stock_pieces(code,designation)').eq('inventaire_id',_inventaire.id).order('created_at',{ascending:false});
+    _comptages=mv||[];
+    renderStockMobile();
+  }else{
+    _comptages=[];
+    el.innerHTML=`<div style="padding:30px 16px;text-align:center">
+      <div style="font-size:44px;margin-bottom:12px">🧰</div>
+      <div style="font-size:15px;color:var(--txt-l);margin-bottom:20px">Aucun inventaire en cours.<br>Démarre un inventaire puis scanne le QR code de chaque bac de pièces.</div>
+      <button class="btn btn-p" onclick="demarrerInventaire()" style="width:100%">▶ Démarrer un inventaire</button>
+    </div>`;
+    $('stock-footer').style.display='none';
+  }
+}
+
+function renderStockMobile(){
+  const el=$('stock-content');
+  $('stock-footer').style.display='flex';
+  const lignes=_comptages.length?_comptages.map(m=>{
+    const ecart=+m.delta;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:8px">
+      <div><div style="font-weight:600">${m.stock_pieces?.code||'—'}</div><div style="font-size:12px;color:var(--txt-l)">${m.stock_pieces?.designation||''}</div></div>
+      <div style="text-align:right"><div style="font-weight:700">${m.quantite_avant} → ${m.quantite_apres}</div>
+      <div style="font-size:12px;font-weight:700;color:${ecart>0?'#16a34a':ecart<0?'#dc2626':'#9ca3af'}">${ecart>0?'+'+ecart+' entrée':ecart<0?ecart+' rectif.':'conforme'}</div></div>
+    </div>`}).join(''):'<div style="text-align:center;color:var(--txt-l);padding:20px;font-size:13px">Aucune pièce comptée pour l\'instant — scanne un QR code.</div>';
+  el.innerHTML=`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+    ⏳ Inventaire en cours depuis le ${new Date(_inventaire.demarre_le).toLocaleString('fr-FR')}<br>
+    <strong>${_comptages.length}</strong> pièce(s) comptée(s)</div>
+    <div class="sec">Pièces comptées</div>${lignes}`;
+}
+
+async function demarrerInventaire(){
+  const {data,error}=await db.from('stock_inventaires').insert({demarre_par:ME.id}).select().single();
+  if(error){toast('Erreur : '+error.message,'err');return}
+  _inventaire=data;_comptages=[];
+  toast('Inventaire démarré');
+  renderStockMobile();
+}
+
+async function ouvrirScannerStock(){
+  _scanMode='stock';
+  goTo('s-scanner');
+  try{
+    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    const video=$('scan-video');video.srcObject=scanStream;video.play();
+    const canvas=$('scan-canvas');const ctx=canvas.getContext('2d');
+    scanInterval=setInterval(()=>{
+      if(video.readyState!==video.HAVE_ENOUGH_DATA)return;
+      canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+      ctx.drawImage(video,0,0);
+      const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+      const code=jsQR(img.data,img.width,img.height,{inversionAttempts:'dontInvert'});
+      if(code&&code.data){stopScanner();traiterScanPiece(code.data);}
+    },200);
+  }catch(e){toast('Caméra non disponible','err');goTo('s-stock');}
+}
+
+async function traiterScanPiece(codePiece){
+  const {data:p}=await db.from('stock_pieces').select('*').eq('code',codePiece).maybeSingle();
+  if(!p){
+    if(confirm('Pièce inconnue : "'+codePiece+'"\nLa créer dans le stock ?')){
+      const des=prompt('Désignation de la pièce :');
+      if(!des)return;
+      const {data:np,error}=await db.from('stock_pieces').insert({code:codePiece,designation:des.trim(),quantite:0}).select().single();
+      if(error){toast('Erreur : '+error.message,'err');return}
+      _pieceEnCours=np;
+    }else return;
+  }else _pieceEnCours=p;
+  $('sp-designation').textContent=_pieceEnCours.designation;
+  $('sp-detail').textContent=_pieceEnCours.code+([_pieceEnCours.marque,_pieceEnCours.modele].filter(Boolean).length?' — '+[_pieceEnCours.marque,_pieceEnCours.modele].filter(Boolean).join(' / '):'');
+  $('sp-theorique').textContent=_pieceEnCours.quantite;
+  $('sp-compte').value=_pieceEnCours.quantite;
+  majEcartComptage();
+  $('sp-compte').oninput=majEcartComptage;
+  goTo('s-stock-piece');
+  setTimeout(()=>{$('sp-compte').focus();$('sp-compte').select()},200);
+}
+
+function majEcartComptage(){
+  const compte=parseFloat($('sp-compte').value);
+  const el=$('sp-ecart');
+  if(isNaN(compte)){el.textContent='';return}
+  const ecart=compte-(+_pieceEnCours.quantite);
+  if(ecart>0){el.textContent='➕ Entrée de '+ecart;el.style.color='#16a34a'}
+  else if(ecart<0){el.textContent='✎ Rectification de '+ecart;el.style.color='#dc2626'}
+  else{el.textContent='✓ Conforme au stock théorique';el.style.color='#9ca3af'}
+}
+
+async function validerComptage(){
+  const compte=parseFloat($('sp-compte').value);
+  if(isNaN(compte)||compte<0){toast('Quantité invalide','err');return}
+  const avant=+_pieceEnCours.quantite;const ecart=compte-avant;
+  const {error}=await db.from('stock_pieces').update({quantite:compte,updated_at:new Date().toISOString()}).eq('id',_pieceEnCours.id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  await db.from('stock_mouvements').insert({piece_id:_pieceEnCours.id,type:ecart>0?'entree':'rectification',quantite_avant:avant,quantite_apres:compte,delta:ecart,motif:'Inventaire',inventaire_id:_inventaire?_inventaire.id:null,par:ME.id});
+  toast('Comptage enregistré ✓');
+  await ouvrirStock();
+}
+
+async function terminerInventaire(){
+  if(!_inventaire)return;
+  if(!confirm('Terminer l\'inventaire ?\n'+_comptages.length+' pièce(s) comptée(s).\nLe rapport sera disponible sur l\'ordinateur.'))return;
+  await db.from('stock_inventaires').update({statut:'terminé',termine_le:new Date().toISOString()}).eq('id',_inventaire.id);
+  _inventaire=null;
+  toast('Inventaire terminé ✓ — rapport disponible sur le bureau');
+  ouvrirStock();
 }
 
 // ============================================================
