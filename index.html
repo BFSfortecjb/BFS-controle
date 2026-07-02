@@ -2167,60 +2167,62 @@ async function regenererBon(bonId){
   doc.setDrawColor(0);doc.rect(120,22,55,6);
   doc.setFont('helvetica','bold');doc.text(dateStr,147,27,{align:'center'});
 
-  // Cases type intervention
+  // Cases type intervention — alignées à droite
   const drawCB=(x,y,v)=>{doc.setDrawColor(0);doc.rect(x,y,3.5,3.5);if(v){doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(192,57,43);doc.text('X',x+0.5,y+3);doc.setTextColor(0);}};
   doc.setFont('helvetica','normal');doc.setFontSize(8);
-  drawCB(120,30,true);doc.text('Contrôle',125,33);drawCB(145,30,false);doc.text('Installation',150,33);
+  drawCB(155,30,true);doc.text('Contrôle',160,33);drawCB(155,36,false);doc.text('Installation',160,39);
 
   // Matériel coché
   const mats=['Extincteur / RIA','Plan / Signalétique','BAES','Système de désenfumage','Alarme incendie'];
   const hasExt=verifs.some(v=>v.equipements?.type_equipement_code==='extincteur'||v.equipements?.type_equipement_code==='ria');
-  let my=37;
-  mats.forEach((m,i)=>{drawCB(120,my,i===0&&hasExt);doc.setFontSize(7.5);doc.text(m,125,my+3);my+=5;});
+  let my=44;
+  mats.forEach((m,i)=>{drawCB(155,my,i===0&&hasExt);doc.setFontSize(7.5);doc.text(m,160,my+3);my+=5;});
 
-  // Infos intervention
+  // Infos intervention — adresse sur 2 lignes
   let y=31;
   doc.setFontSize(9);
   doc.text('Date de l\'intervention :',14,y);doc.setFont('helvetica','bold');doc.text(dateStr,65,y);
   y+=6;doc.setFont('helvetica','normal');doc.text('Nom du Client :',14,y);doc.setFont('helvetica','bold');doc.text(client?.raison_sociale||'—',65,y);
-  y+=6;doc.setFont('helvetica','normal');doc.text('Lieu d\'intervention :',14,y);doc.text(adresse||client?.ville||'—',65,y);
-  y+=6;doc.setFont('helvetica','normal');doc.text('N° bon :',14,y);doc.setFont('helvetica','bold');doc.setTextColor(192,57,43);doc.text(numSession,65,y);doc.setTextColor(0);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Lieu d\'intervention :',14,y);
+  const adresseLines=doc.splitTextToSize(adresse||client?.ville||'—',85);
+  doc.text(adresseLines,65,y);
+  y+=adresseLines.length>1?10:6;
+  doc.text('N° bon :',14,y);doc.setFont('helvetica','bold');doc.setTextColor(192,57,43);doc.text(numSession,65,y);doc.setTextColor(0);
   y+=6;doc.setFont('helvetica','normal');doc.text('Technicien :',14,y);doc.text(techNom,65,y);
 
-  // Tableau équipements
-  y=66;
-  doc.setFillColor(240,240,240);doc.rect(14,y,182,5,'F');
-  doc.setFont('helvetica','bold');doc.setFontSize(7.5);
-  doc.text('DÉSIGNATION',16,y+3.5);doc.text('TYPE/CAPACITÉ',75,y+3.5);doc.text('EMPLACEMENT',105,y+3.5);
-  doc.setFillColor(200,200,200);doc.rect(148,y-2,48,7,'F');
-  doc.text('QUANTITÉ',172,y+1,{align:'center'});
+  // Tableau équipements avec colonnes Vérification/MES/MAA/Réforme
+  y=Math.max(y+8,72);
+  const colXB={desig:14,cap:69,loc:91,verif:124,mes:141,maa:158,reforme:175};
+  doc.setFillColor(240,240,240);doc.rect(14,y,182,10,'F');
+  doc.setDrawColor(180);doc.setFont('helvetica','bold');doc.setFontSize(7);
+  doc.text('DÉSIGNATION',colXB.desig+1,y+4);doc.text('TYPE/CAP.',colXB.cap+1,y+4);doc.text('EMPLACEMENT',colXB.loc+1,y+4);
   doc.setFontSize(6.5);
-  doc.text('Vérifié',151,y+3.5);doc.text('Mise en',162,y+3.5);doc.text('Quinquénn.',172,y+3.5);doc.text('Réforme',182,y+3.5);
-  doc.text('service',162,y+5.5);doc.text('10 ans',182,y+5.5);
-  y+=7;
+  doc.text('Vérifica-',colXB.verif+9,y+3.5,{align:'center'});doc.text('tion',colXB.verif+9,y+7,{align:'center'});
+  doc.text('MES',colXB.mes+8,y+5.5,{align:'center'});doc.text('MAA',colXB.maa+8,y+5.5,{align:'center'});doc.text('Réforme',colXB.reforme+8,y+5.5,{align:'center'});
+  [colXB.cap,colXB.loc,colXB.verif,colXB.mes,colXB.maa,colXB.reforme,196].forEach(x=>{doc.line(x,y,x,y+10);});
+  y+=10;
 
   const rowH=6;const lignesMax=12;
   doc.setFont('helvetica','normal');doc.setFontSize(8);
   for(let idx=0;idx<lignesMax;idx++){
     const v=verifs[idx];
     doc.setDrawColor(200);doc.line(14,y,196,y);
+    [colXB.cap,colXB.loc,colXB.verif,colXB.mes,colXB.maa,colXB.reforme,196].forEach(x=>{doc.line(x,y,x,y+rowH);});
     if(v){
       const eq=v.equipements;
-      // Construire la désignation avec agent : "Extincteur ABC", "Extincteur CO2", etc.
       const agent=eq?.donnees_specifiques?.['ef-agent']||eq?.donnees_specifiques?.['e-agent']||'';
-      const typeLib=eq?.types_equipements?.libelle||'—';
-      const desig=`${idx+1} - ${typeLib}${agent?' '+agent:''}`;
+      const desig=`${idx+1} - ${eq?.types_equipements?.libelle||'—'}${agent?' '+agent:''}`;
       const cap=eq?.capacite_valeur?(eq.capacite_valeur+' '+(eq.capacite_unite||'')):'—';
-      doc.text(desig.slice(0,32),16,y+4);
-      doc.text(cap.slice(0,18),75,y+4);
-      doc.text((eq?.localisation||'—').slice(0,22),105,y+4);
-      doc.setFont('helvetica','bold');doc.setTextColor(0,100,0);doc.text('X',154,y+4,{align:'center'});doc.setTextColor(0);doc.setFont('helvetica','normal');
+      doc.text(desig.slice(0,28),colXB.desig+1,y+4);
+      doc.text(cap.slice(0,12),colXB.cap+1,y+4);
+      doc.text((eq?.localisation||'—').slice(0,20),colXB.loc+1,y+4);
+      doc.setFont('helvetica','bold');doc.setTextColor(0,100,0);doc.text('X',colXB.verif+9,y+4,{align:'center'});doc.setTextColor(0);doc.setFont('helvetica','normal');
     }
     y+=rowH;
   }
   doc.setDrawColor(200);doc.line(14,y,196,y);
   y+=1;doc.setFont('helvetica','bold');doc.setFontSize(8);
-  doc.text('TOTAL',105,y+3,{align:'right'});doc.text(String(verifs.length),154,y+3,{align:'center'});
+  doc.text('TOTAL',colXB.loc+30,y+3,{align:'right'});doc.text(String(verifs.length),colXB.verif+9,y+3,{align:'center'});
   y+=7;
 
   // Zone OUI/NON vide (à compléter manuellement si régénéré sans checklist)
@@ -2266,6 +2268,8 @@ async function regenererBon(bonId){
   const {data:urlData}=db.storage.from('bons-intervention').getPublicUrl(fileName);
   await db.from('bons_intervention').update({pdf_url:urlData.publicUrl,pdf_path:fileName}).eq('id',bonId);
   toast('PDF régénéré au format BFS ✓');
+  // Ouvrir directement le nouveau PDF pour éviter le cache navigateur
+  window.open(urlData.publicUrl+'?t='+Date.now(), '_blank');
   loadBons();
 }
 
