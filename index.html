@@ -2297,7 +2297,8 @@ async function regenererBon(bonId){
   doc.text('NOM, signature et cachet du CLIENT',14+42,sigY+4,{align:'center'});
   doc.text('NOM et signature du technicien',110+41,sigY+4,{align:'center'});
   if(bon.signataire_nom)doc.text(bon.signataire_nom,14+42,sigY+26,{align:'center'});
-  doc.setFontSize(7);doc.setTextColor(150);doc.text('v'+dateStr,105,290,{align:'center'});
+  doc.setFontSize(7);doc.setTextColor(150);const genTS=new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  doc.text('Généré le '+genTS,105,290,{align:'center'});
 
   // Sauvegarder le PDF et uploader
   const pdfBlob=doc.output('blob');
