@@ -539,14 +539,20 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
         <div style="font-size:13px;color:var(--txt-l)">En signant, le client atteste de la présence du technicien et de la bonne réalisation de l'intervention décrite dans ce bon.</div>
       </div>
     </div>
+    <div class="sec">1. Signature du TECHNICIEN</div>
+    <div style="background:#fff;border:2px dashed #d1d5db;border-radius:12px;position:relative;margin-bottom:8px">
+      <canvas id="sig-canvas-tech" style="width:100%;height:150px;display:block;touch-action:none"></canvas>
+      <div id="sig-placeholder-tech" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;pointer-events:none">Le technicien signe ici</div>
+    </div>
+    <button class="btn btn-s btn-sm" onclick="effacerSignatureTech()" style="margin-bottom:14px">🗑 Effacer</button>
     <div class="fg" style="margin-bottom:14px">
-      <label>Nom du signataire *</label>
+      <label>Nom du signataire (client) *</label>
       <input type="text" id="sig-nom" placeholder="Nom et prénom du client / responsable">
     </div>
-    <div class="sec">Signature</div>
+    <div class="sec">2. Signature du CLIENT</div>
     <div style="background:#fff;border:2px dashed #d1d5db;border-radius:12px;position:relative;margin-bottom:8px">
-      <canvas id="sig-canvas" style="width:100%;height:220px;display:block;touch-action:none"></canvas>
-      <div id="sig-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;pointer-events:none">Signez ici avec votre doigt</div>
+      <canvas id="sig-canvas" style="width:100%;height:180px;display:block;touch-action:none"></canvas>
+      <div id="sig-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;pointer-events:none">Le client signe ici</div>
     </div>
     <button class="btn btn-s btn-sm" onclick="effacerSignature()">🗑 Effacer la signature</button>
   </div>
@@ -1958,7 +1964,7 @@ function validerChecklistEtSigner(){
 // ============================================================
 // PDF BULLETIN D'INTERVENTION BFS — format fidèle au document
 // ============================================================
-function genererPdfSession(signatureDataUrl, signataireNom){
+function genererPdfSession(signatureDataUrl, signataireNom, signatureTechDataUrl){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'mm',format:'a4'});
   // Filigrane logo BFS — chargé en arrière-plan depuis GitHub
@@ -2140,8 +2146,11 @@ function genererPdfSession(signatureDataUrl, signataireNom){
   doc.text('NOM et signature du technicien',110+41,sigY+4,{align:'center'});
 
   if(signatureDataUrl){
-    doc.addImage(signatureDataUrl,'PNG',112,sigY+4,78,22);
+    doc.addImage(signatureDataUrl,'PNG',18,sigY+6,76,18);
     if(signataireNom)doc.text(signataireNom,14+42,sigY+26,{align:'center'});
+  }
+  if(signatureTechDataUrl){
+    doc.addImage(signatureTechDataUrl,'PNG',113,sigY+6,74,18);
   }
   doc.text(`${ME.prenom||''} ${ME.nom}`.trim(),110+41,sigY+26,{align:'center'});
 
@@ -2157,56 +2166,56 @@ function genererPdfSession(signatureDataUrl, signataireNom){
 // ============================================================
 // SIGNATURE CANVAS (tactile)
 // ============================================================
-let sigCtx=null, sigDrawing=false, sigHasContent=false;
-
-function initSignatureCanvas(){
-  const canvas=document.getElementById('sig-canvas');
+// Deux signatures : technicien (sig-canvas-tech) puis client (sig-canvas)
+let _sigs={};
+function setupSigCanvas(cid,pid){
+  const canvas=document.getElementById(cid);
   if(!canvas)return;
   const rect=canvas.getBoundingClientRect();
   const dpr=window.devicePixelRatio||1;
   canvas.width=rect.width*dpr;
   canvas.height=rect.height*dpr;
-  sigCtx=canvas.getContext('2d');
-  sigCtx.scale(dpr,dpr);
-  sigCtx.lineWidth=2.5;
-  sigCtx.lineCap='round';
-  sigCtx.strokeStyle='#1a1a2e';
-  sigHasContent=false;
-  document.getElementById('sig-placeholder').style.display='flex';
-
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr);ctx.lineWidth=2.5;ctx.lineCap='round';ctx.strokeStyle='#1a1a2e';
+  const st={canvas,ctx,has:false,drawing:false,pid};_sigs[cid]=st;
+  document.getElementById(pid).style.display='flex';
   const getPos=(e)=>{
     const r=canvas.getBoundingClientRect();
     const t=e.touches?e.touches[0]:e;
     return {x:t.clientX-r.left, y:t.clientY-r.top};
   };
-  const start=(e)=>{e.preventDefault();sigDrawing=true;sigHasContent=true;document.getElementById('sig-placeholder').style.display='none';const p=getPos(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);};
-  const move=(e)=>{if(!sigDrawing)return;e.preventDefault();const p=getPos(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();};
-  const end=(e)=>{sigDrawing=false;};
-
+  const start=(e)=>{e.preventDefault();st.drawing=true;st.has=true;document.getElementById(pid).style.display='none';const p=getPos(e);ctx.beginPath();ctx.moveTo(p.x,p.y);};
+  const move=(e)=>{if(!st.drawing)return;e.preventDefault();const p=getPos(e);ctx.lineTo(p.x,p.y);ctx.stroke();};
+  const end=()=>{st.drawing=false;};
   canvas.ontouchstart=start;canvas.ontouchmove=move;canvas.ontouchend=end;
   canvas.onmousedown=start;canvas.onmousemove=move;canvas.onmouseup=end;canvas.onmouseleave=end;
 }
-
-function effacerSignature(){
-  const canvas=document.getElementById('sig-canvas');
-  if(sigCtx)sigCtx.clearRect(0,0,canvas.width,canvas.height);
-  sigHasContent=false;
-  document.getElementById('sig-placeholder').style.display='flex';
+function initSignatureCanvas(){
+  setupSigCanvas('sig-canvas-tech','sig-placeholder-tech');
+  setupSigCanvas('sig-canvas','sig-placeholder');
 }
+function effacerSigne(cid){
+  const st=_sigs[cid];if(!st)return;
+  st.ctx.clearRect(0,0,st.canvas.width,st.canvas.height);st.has=false;
+  document.getElementById(st.pid).style.display='flex';
+}
+function effacerSignature(){effacerSigne('sig-canvas')}
+function effacerSignatureTech(){effacerSigne('sig-canvas-tech')}
 
 async function validerSignatureEtCloturer(){
   const nom=document.getElementById('sig-nom').value.trim();
   if(!nom){toast('Nom du signataire obligatoire','err');return}
-  if(!sigHasContent){toast('Signature obligatoire','err');return}
+  if(!_sigs['sig-canvas-tech']?.has){toast('Signature du technicien obligatoire','err');return}
+  if(!_sigs['sig-canvas']?.has){toast('Signature du client obligatoire','err');return}
 
   const btn=document.getElementById('btn-valider-signature');
   btn.disabled=true;btn.textContent='⏳ Clôture en cours…';
 
-  const canvas=document.getElementById('sig-canvas');
-  const signatureDataUrl=canvas.toDataURL('image/png');
+  const signatureDataUrl=_sigs['sig-canvas'].canvas.toDataURL('image/png');
+  const signatureTechDataUrl=_sigs['sig-canvas-tech'].canvas.toDataURL('image/png');
 
-  // Générer le PDF avec signature
-  const doc=genererPdfSession(signatureDataUrl,nom);
+  // Générer le PDF avec les deux signatures
+  const doc=genererPdfSession(signatureDataUrl,nom,signatureTechDataUrl);
   const pdfBlob=doc.output('blob');
   const fileName=`bon_${currentClient.id}_${Date.now()}.pdf`;
 
@@ -2236,6 +2245,7 @@ async function validerSignatureEtCloturer(){
       nb_equipements_verifies:nbVerifies,
       signataire_nom:nom,
       signature_data:signatureDataUrl,
+      signature_tech_data:signatureTechDataUrl,
       pdf_url:pdfUrl,
       pdf_path:pdfUrl?fileName:null,
       statut_facturation:'à_facturer'

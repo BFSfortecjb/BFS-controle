@@ -285,8 +285,10 @@ async function regenererBon(bonId,sansConfirm){
   doc.setFont('helvetica','normal');doc.setFontSize(8);
   doc.text('NOM, signature et cachet du CLIENT',14+42,sigY+4,{align:'center'});
   doc.text('NOM et signature du technicien',110+41,sigY+4,{align:'center'});
-  if(bon.signature_data){try{doc.addImage(bon.signature_data,'PNG',112,sigY+4,78,22)}catch(e){}}
+  if(bon.signature_data){try{doc.addImage(bon.signature_data,'PNG',18,sigY+6,76,18)}catch(e){}}
   if(bon.signataire_nom)doc.text(bon.signataire_nom,14+42,sigY+26,{align:'center'});
+  if(bon.signature_tech_data){try{doc.addImage(bon.signature_tech_data,'PNG',113,sigY+6,74,18)}catch(e){}}
+  doc.text(techNom,110+41,sigY+26,{align:'center'});
   doc.setFontSize(7);doc.setTextColor(150);const genTS=new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
   doc.text('Généré le '+genTS,105,290,{align:'center'});
 
