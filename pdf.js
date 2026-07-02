@@ -24,12 +24,16 @@ async function exportVerifPDF(verifId){
   if(!v){toast('Données introuvables','err');return}
   const {jsPDF}=window.jspdf;const doc=new jsPDF();
   const eq=v.equipements;const cl=eq?.clients;
-  doc.setFillColor(192,57,43);doc.rect(0,0,210,26,'F');
-  doc.setTextColor(255);doc.setFontSize(13);doc.setFont('helvetica','bold');
-  doc.text('BFS — Rapport de vérification',14,11);
-  doc.setFontSize(9);doc.setFont('helvetica','normal');
-  doc.text(`${v.types_equipements?.libelle||''} — ${eq?.numero_identification||'—'} — Agence ${v.agences?.nom||'—'}`,14,19);
-  doc.text(`Édité le ${new Date().toLocaleDateString('fr-FR')}`,150,19);
+  const raisonSocV='Bretagne Formation Sécurité';
+  try{doc.addImage(LOGO_BFS,'PNG',12,5,16,16)}catch(e){}
+  doc.setFontSize(20);doc.setFont('helvetica','bold');doc.setTextColor(50,50,50);doc.text('BFS',29,15);
+  doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');doc.text(raisonSocV,29,19.5);
+  doc.setFillColor(230,100,40);doc.rect(65,8,130,10,'F');
+  doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
+  doc.text('RAPPORT DE VÉRIFICATION',130,15,{align:'center'});
+  doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
+  doc.text(`${v.types_equipements?.libelle||''} — ${eq?.numero_identification||'—'} — Agence ${v.agences?.nom||'—'}`,14,26);
+  doc.text(`Édité le ${new Date().toLocaleDateString('fr-FR')}`,160,26);
   doc.setTextColor(30);let y=32;
   doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[
     ['Client',cl?.raison_sociale||'—'],['Adresse',`${cl?.adresse||''} ${cl?.code_postal||''} ${cl?.ville||''}`.trim()],
@@ -37,12 +41,12 @@ async function exportVerifPDF(verifId){
     ['Localisation',`${eq?.localisation||'—'}${eq?.etage_zone?' / '+eq.etage_zone:''}`],
     ['Date vérification',fmt(v.date_verification)],['Prochaine échéance',fmt(v.date_prochaine_echeance)],
     ['Technicien',v.technicien||'—'],['Résultat global',v.resultat?.toUpperCase()||'—'],
-  ],styles:{fontSize:10},columnStyles:{0:{fontStyle:'bold',cellWidth:50}},headStyles:{fillColor:[192,57,43]}});
+  ],styles:{fontSize:10},columnStyles:{0:{fontStyle:'bold',cellWidth:50}},headStyles:{fillColor:[230,100,40]}});
   y=doc.lastAutoTable.finalY+8;
   if(res?.length){
     doc.autoTable({startY:y,margin:{left:14,right:14},head:[['Point de contrôle','Résultat']],
       body:res.map(r=>{let val='—';if(r.type_reponse==='oui_non')val=r.valeur_oui_non===true?'✓ OK':r.valeur_oui_non===false?'✗ NON':'—';else if(r.type_reponse==='numerique')val=r.valeur_numerique!=null?String(r.valeur_numerique):'—';else if(r.type_reponse==='texte')val=r.valeur_texte||'—';else if(r.type_reponse==='date')val=fmt(r.valeur_date);return[r.libelle_snapshot,val]}),
-      styles:{fontSize:9},headStyles:{fillColor:[192,57,43]},
+      styles:{fontSize:9},headStyles:{fillColor:[230,100,40]},
       didParseCell:(d)=>{if(d.column.index===1){if(d.cell.text[0]==='✓ OK')d.cell.styles.textColor=[22,163,74];if(d.cell.text[0]==='✗ NON')d.cell.styles.textColor=[220,38,38]}}
     });y=doc.lastAutoTable.finalY+8;
   }
@@ -68,8 +72,8 @@ async function exportContratPDF(id){
 // ============================================================
 // PDF — BON D'INTERVENTION (régénération)
 // ============================================================
-async function regenererBon(bonId){
-  if(!confirm("Êtes-vous sûr de vouloir régénérer ce bon d'intervention ?\nL'ancien PDF sera supprimé et remplacé.")) return;
+async function regenererBon(bonId,sansConfirm){
+  if(!sansConfirm&&!confirm("Êtes-vous sûr de vouloir régénérer ce bon d'intervention ?\nL'ancien PDF sera supprimé et remplacé.")) return;
   toast('Chargement des données…');
 
   // Récupérer le bon + infos session
@@ -290,21 +294,24 @@ async function rapportComplet(bonId){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF();
 
-  // ---- Page de garde / en-tête
-  doc.setFillColor(192,57,43);doc.rect(0,0,210,30,'F');
-  doc.setTextColor(255);doc.setFontSize(15);doc.setFont('helvetica','bold');
-  doc.text('RAPPORT COMPLET DE VÉRIFICATION',105,13,{align:'center'});
-  doc.setFontSize(9);doc.setFont('helvetica','normal');
-  doc.text(`${raisonSocBFS} — Bon n° ${numSession}`,105,21,{align:'center'});
-  doc.setTextColor(30);let y=38;
-  doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[
-    ['Client',client?.raison_sociale||'—'],
-    ['Adresse',[client?.adresse,client?.code_postal,client?.ville].filter(Boolean).join(', ')||'—'],
-    ['Date de l\'intervention',dateStr],
-    ['Technicien',techNom],
-    ['Équipements vérifiés',String(verifs.length)],
-  ],styles:{fontSize:10},columnStyles:{0:{fontStyle:'bold',cellWidth:55}}});
-  y=doc.lastAutoTable.finalY+10;
+  // ---- En-tête : même charte graphique que le bulletin simple
+  try{doc.addImage(LOGO_BFS,'PNG',12,5,16,16)}catch(e){}
+  doc.setFontSize(20);doc.setFont('helvetica','bold');doc.setTextColor(50,50,50);doc.text('BFS',29,15);
+  doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');doc.text(raisonSocBFS,29,19.5);
+  doc.setFillColor(230,100,40);doc.rect(65,8,130,10,'F');
+  doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
+  doc.text('BULLETIN D\'INTERVENTION DÉTAILLÉ',130,15,{align:'center'});
+  doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
+  let y=31;
+  doc.text('Date de l\'intervention :',14,y);doc.setFont('helvetica','bold');doc.text(dateStr,65,y);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Nom du Client :',14,y);doc.setFont('helvetica','bold');doc.text(client?.raison_sociale||'—',65,y);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Lieu d\'intervention :',14,y);
+  doc.text(doc.splitTextToSize([client?.adresse,client?.code_postal,client?.ville].filter(Boolean).join(', ')||'—',85),65,y);
+  y+=12;
+  doc.text('N° bon :',14,y);doc.setFont('helvetica','bold');doc.setTextColor(192,57,43);doc.text(numSession,65,y);doc.setTextColor(0);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Technicien :',14,y);doc.text(techNom,65,y);
+  y+=6;doc.text('Équipements vérifiés :',14,y);doc.setFont('helvetica','bold');doc.text(String(verifs.length),65,y);doc.setFont('helvetica','normal');
+  y+=10;
 
   // ---- Détail par équipement
   const valRes=r=>{
@@ -342,7 +349,7 @@ async function rapportComplet(bonId){
       doc.autoTable({startY:y,margin:{left:14,right:14},
         head:[['Point de contrôle','Résultat']],
         body:res.map(r=>[r.libelle_snapshot,valRes(r)]),
-        styles:{fontSize:8.5,cellPadding:1.5},headStyles:{fillColor:[192,57,43],fontSize:8.5},
+        styles:{fontSize:8.5,cellPadding:1.5},headStyles:{fillColor:[230,100,40],fontSize:8.5},
         columnStyles:{1:{cellWidth:30,halign:'center'}},
         didParseCell:(d)=>{if(d.column.index===1){
           if(d.cell.text[0]==='✓ OK')d.cell.styles.textColor=[22,163,74];
@@ -373,12 +380,12 @@ async function rapportComplet(bonId){
       doc.restoreGraphicsState();
     }catch(e){}
     doc.setFontSize(7);doc.setTextColor(150);
-    doc.text(`${raisonSocBFS} — Rapport complet ${numSession} — Page ${p}/${nb}`,105,292,{align:'center'});
+    doc.text(`${raisonSocBFS} — Bulletin détaillé ${numSession} — Page ${p}/${nb}`,105,292,{align:'center'});
     doc.setTextColor(30);
   }
 
   // ---- Téléchargement + archivage Storage
-  const nomFichier=`BFS_rapport_${numSession}_${(client?.raison_sociale||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`;
+  const nomFichier=`BFS_bulletin_detaille_${numSession}_${(client?.raison_sociale||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`;
   doc.save(nomFichier);
   const pdfBlob=doc.output('blob');
   // Supprimer les anciens rapports de ce bon, puis uploader le nouveau
@@ -389,6 +396,15 @@ async function rapportComplet(bonId){
   if(!upErr){toast('Rapport complet archivé ✓')}
   else{toast('Rapport téléchargé localement (erreur Storage)','err')}
   loadBons();
+}
+
+// ============================================================
+// ACTUALISER — régénère les DEUX bulletins d'un bon en un clic
+// ============================================================
+async function actualiserBon(bonId){
+  if(!confirm("Régénérer le bulletin simple ET le bulletin détaillé ?\nLes anciens PDF seront remplacés."))return;
+  await regenererBon(bonId,true);
+  await rapportComplet(bonId);
 }
 
 console.log('✓ pdf.js chargé');

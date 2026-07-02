@@ -694,7 +694,7 @@ async function loadVerifs(){
           <td class="${ecClass(v.date_prochaine_echeance)}">${fmt(v.date_prochaine_echeance)}</td>
           <td style="font-size:12px">${v.technicien||'—'}</td>
           <td>${v.realisee_par_bfs===false?`<span class="badge bg" style="font-size:10px">⚠ Ext.</span>`:''}</td>
-          <td><div class="ia"><button class="btn btn-s btn-xs" onclick="deleteVerifAvecMotif('${v.id}')">🗑</button></div></td>
+          <td><div class="ia"><button class="btn btn-s btn-xs" onclick="exportVerifPDF('${v.id}')" title="Télécharger le rapport PDF de cette vérification">📄</button><button class="btn btn-s btn-xs" onclick="deleteVerifAvecMotif('${v.id}')">🗑</button></div></td>
         </tr>`).join('')}</tbody></table>`:'<div class="t-empty" style="padding:12px">Aucun équipement vérifié dans cette session</div>'}
       </div>
     </div>`;
@@ -718,7 +718,7 @@ async function loadVerifs(){
           <td>${fmt(v.date_verification)}</td>
           <td>${badgeR(v.resultat)}</td>
           <td>${v.technicien||'—'}${v.realisee_par_bfs===false?'<br><small class="badge bg" style="font-size:10px">⚠ Ext.</small>':''}</td>
-          <td><div class="ia"><button class="btn btn-s btn-xs" onclick="deleteVerifAvecMotif('${v.id}')">🗑</button></div></td>
+          <td><div class="ia"><button class="btn btn-s btn-xs" onclick="exportVerifPDF('${v.id}')" title="Télécharger le rapport PDF de cette vérification">📄</button><button class="btn btn-s btn-xs" onclick="deleteVerifAvecMotif('${v.id}')">🗑</button></div></td>
         </tr>`).join('')}
         </tbody></table>
       </div>
@@ -1151,9 +1151,8 @@ async function loadBons(){
     <td>${b.statut_facturation==='facturé'?'<span class="badge bv">Facturé</span>':'<span class="badge bo">À facturer</span>'}</td>
     <td><div class="ia">
       ${b.pdf_url?`<a class="btn btn-s btn-xs" href="${b.pdf_url}" target="_blank">📄 Bulletin</a>`:''}
-      <button class="btn btn-s btn-xs" onclick="regenererBon('${b.id}')" title="Générer / régénérer le bulletin (résumé)">📄🔄</button>
-      ${rapports[b.id]?`<a class="btn btn-s btn-xs" href="${db.storage.from('bons-intervention').getPublicUrl(rapports[b.id]).data.publicUrl}" target="_blank">📋 Rapport</a>`:''}
-      <button class="btn btn-s btn-xs" onclick="rapportComplet('${b.id}')" title="Générer / régénérer le rapport complet (détail par équipement)">📋🔄</button>
+      ${rapports[b.id]?`<a class="btn btn-s btn-xs" href="${db.storage.from('bons-intervention').getPublicUrl(rapports[b.id]).data.publicUrl}" target="_blank">📋 Détaillé</a>`:''}
+      <button class="btn btn-s btn-xs" onclick="actualiserBon('${b.id}')" title="(Re)générer le bulletin simple ET le bulletin détaillé">🔄</button>
       ${b.statut_facturation==='à_facturer'?`<button class="btn btn-s btn-xs" onclick="marquerFacture('${b.id}')">✓ Facturé</button>`:''}
     </div></td>
   </tr>`).join('')}</tbody></table>`;
