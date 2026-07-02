@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Connexion BFS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+body{font-family:sans-serif;max-width:400px;margin:40px auto;padding:20px}
+input{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:6px;box-sizing:border-box}
+button{width:100%;padding:12px;background:#c0392b;color:#fff;border:none;border-radius:6px;font-size:16px;cursor:pointer}
+#msg{margin-top:12px;padding:10px;border-radius:6px;display:none}
+.ok{background:#dcfce7;color:#15803d}
+.err{background:#fee2e2;color:#dc2626}
+</style>
+</head>
+<body>
+<h2>🔒 Test Connexion BFS</h2>
+<input type="email" id="email" placeholder="Email" value="">
+<input type="password" id="pwd" placeholder="Mot de passe">
+<button onclick="tester()">Tester la connexion</button>
+<div id="msg"></div>
+<div id="log" style="margin-top:20px;font-size:12px;color:#666"></div>
+
+<script>
+const SURL='https://dqraobwozowtnrieitkp.supabase.co';
+const SKEY='sb_publishable_UhkImOyooXPnAqTCNMJ4wA_VVqscCmK';
+const db=supabase.createClient(SURL,SKEY);
+
+function log(msg){
+  document.getElementById('log').innerHTML+=msg+'<br>';
+}
+
+log('Supabase initialisé');
+log('URL: '+SURL);
+
+db.auth.getSession().then(({data:{session},error})=>{
+  if(error) log('Session error: '+error.message);
+  else if(session) log('Session existante: '+session.user.email);
+  else log('Pas de session active');
+}).catch(e=>log('Erreur getSession: '+e.message));
+
+async function tester(){
+  const email=document.getElementById('email').value;
+  const pwd=document.getElementById('pwd').value;
+  const msg=document.getElementById('msg');
+  msg.style.display='block';
+  msg.className='';
+  msg.textContent='Connexion en cours...';
+  log('Tentative: '+email);
+  try{
+    const {data,error}=await db.auth.signInWithPassword({email,password:pwd});
+    if(error){
+      msg.className='err';
+      msg.textContent='Erreur: '+error.message;
+      log('ERREUR: '+error.message);
+    } else {
+      msg.className='ok';
+      msg.textContent='Connecté: '+data.user.email;
+      log('OK: '+data.user.email);
+    }
+  }catch(e){
+    msg.className='err';
+    msg.textContent='Exception: '+e.message;
+    log('EXCEPTION: '+e.message);
+  }
+}
+</script>
+</body>
+</html>
