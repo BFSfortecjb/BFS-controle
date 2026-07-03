@@ -594,7 +594,40 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
   <div class="footer" id="stock-footer" style="display:none;flex-direction:column;gap:8px">
     <button class="btn btn-p" onclick="ouvrirScannerStock()">📷 Scanner une pièce</button>
+    <button class="btn btn-s" onclick="ouvrirNouvellePiece()">➕ Créer une pièce</button>
     <button class="btn btn-vert" onclick="terminerInventaire()">✅ Terminer l'inventaire</button>
+  </div>
+</div>
+
+
+<!-- ===== NOUVELLE PIÈCE DE STOCK ===== -->
+<div class="screen" id="s-new-piece">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-stock')">←</button>
+    <h1>Nouvelle pièce</h1>
+  </div>
+  <div class="content">
+    <div class="fg" style="margin-bottom:12px"><label>Code (= contenu du QR) *</label><input type="text" id="np-code" placeholder="Ex : JOINT-TETE-ANDR" style="text-transform:uppercase"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Désignation *</label><input type="text" id="np-designation" placeholder="Ex : Joint de tête extincteur Andrieu"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Marque</label><input type="text" id="np-marque" placeholder="Ex : Andrieu"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Modèle</label><input type="text" id="np-modele"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Compatibilités (séparées par ;)</label><input type="text" id="np-compat" placeholder="Ex : Andrieu Vulcain; Andrieu Eco; Andrieu PMZ"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div class="fg"><label>Quantité initiale</label><input type="number" id="np-qte" min="0" value="0" inputmode="numeric"></div>
+      <div class="fg"><label>Seuil d'alerte</label><input type="number" id="np-seuil" min="0" value="0" inputmode="numeric"></div>
+    </div>
+    <label style="display:flex;gap:10px;align-items:center;background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:14px">
+      <input type="checkbox" id="np-peremption" style="width:18px;height:18px;margin:0" onchange="$('np-lots-bloc').style.display=this.checked?'block':'none'">
+      Gestion par date de péremption
+    </label>
+    <div id="np-lots-bloc" style="display:none;margin-bottom:12px">
+      <div class="sec">Lots (péremption + quantité)</div>
+      <div id="np-lots-list"></div>
+      <button type="button" class="btn btn-s btn-sm" onclick="ajouterLotNP()" style="margin-top:6px">+ Lot</button>
+    </div>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="saveNouvellePiece()">✅ Créer la pièce</button>
   </div>
 </div>
 
@@ -2358,7 +2391,8 @@ async function ouvrirStock(){
     el.innerHTML=`<div style="padding:30px 16px;text-align:center">
       <div style="font-size:44px;margin-bottom:12px">🧰</div>
       <div style="font-size:15px;color:var(--txt-l);margin-bottom:20px">Aucun inventaire en cours.<br>Démarre un inventaire puis scanne le QR code de chaque bac de pièces.</div>
-      <button class="btn btn-p" onclick="demarrerInventaire()" style="width:100%">▶ Démarrer un inventaire</button>
+      <button class="btn btn-p" onclick="demarrerInventaire()" style="width:100%;margin-bottom:10px">▶ Démarrer un inventaire</button>
+      <button class="btn btn-s" onclick="ouvrirNouvellePiece()" style="width:100%">➕ Créer une pièce</button>
     </div>`;
     $('stock-footer').style.display='none';
   }
@@ -2440,6 +2474,54 @@ async function traiterScanPiece(codePiece){
     setTimeout(()=>{$('sp-compte').focus();$('sp-compte').select()},200);
   }
   goTo('s-stock-piece');
+}
+
+
+// ---- Création de pièce depuis le téléphone ----
+let _lotsNP=[];
+function ouvrirNouvellePiece(){
+  ['np-code','np-designation','np-marque','np-modele','np-compat'].forEach(id=>$(id).value='');
+  $('np-qte').value='0';$('np-seuil').value='0';
+  $('np-peremption').checked=false;$('np-lots-bloc').style.display='none';
+  _lotsNP=[];renderLotsNP();
+  goTo('s-new-piece');
+}
+function renderLotsNP(){
+  $('np-lots-list').innerHTML=_lotsNP.length?_lotsNP.map((l,i)=>`<div style="display:flex;align-items:center;gap:10px;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:6px">
+    <div style="flex:1;font-weight:600">${_fmtLot(l.peremption)}</div>
+    <div style="font-weight:700">${l.quantite}</div>
+    <button onclick="_lotsNP.splice(${i},1);renderLotsNP()" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:6px 10px">✕</button>
+  </div>`).join(''):'<div style="font-size:13px;color:var(--txt-l);padding:4px 0">Aucun lot.</div>';
+  if($('np-peremption').checked)$('np-qte').value=_lotsNP.reduce((s,l)=>s+(+l.quantite||0),0);
+}
+function ajouterLotNP(){
+  const d=prompt('Date de péremption du lot (AAAA-MM) :');
+  if(!d)return;
+  if(!/^\d{4}-\d{2}$/.test(d.trim())){toast('Format attendu : AAAA-MM (ex : 2027-05)','err');return}
+  const q=parseInt(prompt('Quantité pour ce lot :'),10);
+  if(!q||q<1){toast('Quantité invalide','err');return}
+  const ex=_lotsNP.find(l=>l.peremption===d.trim());
+  if(ex)ex.quantite=(+ex.quantite)+q;else _lotsNP.push({peremption:d.trim(),quantite:q});
+  _lotsNP.sort((a,b)=>a.peremption.localeCompare(b.peremption));
+  renderLotsNP();
+}
+async function saveNouvellePiece(){
+  const code=$('np-code').value.trim().toUpperCase();
+  const des=$('np-designation').value.trim();
+  if(!code||!des){toast('Code et désignation obligatoires','err');return}
+  const gPer=$('np-peremption').checked;
+  const qte=gPer?_lotsNP.reduce((s,l)=>s+(+l.quantite||0),0):(parseFloat($('np-qte').value)||0);
+  // Compatibilités : "Marque Modele; Marque Modele"
+  const compat=$('np-compat').value.split(';').map(s=>{const t=s.trim().split(/\s+/);return{marque:t[0]||'',modele:t.slice(1).join(' ')}}).filter(x=>x.marque);
+  const {data:np,error}=await db.from('stock_pieces').insert({
+    code,designation:des,marque:$('np-marque').value.trim(),modele:$('np-modele').value.trim(),
+    compatibilites:compat,quantite:qte,seuil_alerte:parseFloat($('np-seuil').value)||0,
+    gestion_peremption:gPer,lots:gPer?_lotsNP:[],agence_id:ME.agence_id||null
+  }).select().single();
+  if(error){toast('Erreur : '+error.message,'err');return}
+  if(qte>0)await db.from('stock_mouvements').insert({piece_id:np.id,type:'entree',quantite_avant:0,quantite_apres:qte,delta:qte,motif:'Création de la pièce (mobile)',par:ME.id,agence_id:ME.agence_id||null});
+  toast('Pièce créée ✓ — imprime son QR depuis le bureau');
+  ouvrirStock();
 }
 
 // ---- Comptage par lots (péremption) ----
