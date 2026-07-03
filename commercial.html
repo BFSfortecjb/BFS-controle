@@ -214,6 +214,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <h1 id="com-titre">Commercial</h1>
     </div>
     <div class="hdr-right">
+      <button style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer" onclick="ouvrirCommercial();toast('Actualisé')" title="Actualiser l'affichage">🔄</button>
       <button style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer" onclick="location.href='terrain.html'">🔧 Contrôle</button>
       <button style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer" onclick="doLogout()">⎋</button>
     </div>
@@ -223,7 +224,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <button class="btn btn-p" style="width:100%;padding:14px" onclick="ouvrirNouveauClient()">➕ Nouveau client</button>
       <button class="btn btn-p" style="width:100%;padding:14px" onclick="ouvrirNouveauContrat()">📋 Nouveau contrat</button>
     </div>
-    <div class="sec">Contrats récents</div>
+    <div class="sec">Contrats</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <button id="fct-tous" class="btn btn-p" style="flex:1;font-size:12px;padding:7px" onclick="setFiltreContrats('tous')">Tous</button>
+      <button id="fct-agence" class="btn btn-s" style="flex:1;font-size:12px;padding:7px" onclick="setFiltreContrats('agence')">Mon agence</button>
+    </div>
     <div id="com-contrats"><div class="loading"><div class="spin spin-dark"></div></div></div>
   </div>
 </div>
@@ -283,7 +288,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <!-- ===== LIGNE DE CONTRAT ===== -->
 <div class="screen" id="s-ligne-contrat">
   <div class="hdr">
-    <button class="hdr-back" onclick="goTo('s-new-contrat')">←</button>
+    <button class="hdr-back" onclick="goTo(_ligneCible==='avenant'?'s-avenant':'s-new-contrat');_ligneCible='contrat'">←</button>
     <h1>Équipement du contrat</h1>
   </div>
   <div class="content">
@@ -303,6 +308,28 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
   <div class="footer">
     <button class="btn btn-vert" onclick="validerLigneContrat()">✅ Ajouter au contrat</button>
+  </div>
+</div>
+
+
+<!-- ===== AVENANT AU CONTRAT ===== -->
+<div class="screen" id="s-avenant">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-commercial')">←</button>
+    <h1>Avenant au contrat</h1>
+  </div>
+  <div class="content">
+    <div class="card" style="margin-bottom:14px"><div style="padding:12px 16px;font-size:13px;color:var(--txt-l)" id="av-recap"></div></div>
+    <div class="sec">Modifications</div>
+    <div id="av-lignes"></div>
+    <div class="btn-row" style="gap:8px;margin:8px 0">
+      <button type="button" class="btn btn-s btn-sm" style="flex:1;color:#16a34a" onclick="ouvrirLigneAvenant('ajout')">➕ Ajouter</button>
+      <button type="button" class="btn btn-s btn-sm" style="flex:1;color:#dc2626" onclick="ouvrirLigneAvenant('retrait')">➖ Retirer</button>
+    </div>
+    <div id="av-total" style="text-align:right;font-weight:700;font-size:16px;margin-bottom:12px;color:var(--rouge)"></div>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="signerAvenant()">✍ Faire signer l'avenant</button>
   </div>
 </div>
 
@@ -505,35 +532,51 @@ document.addEventListener('change',e=>{
 });
 
 // ---- ACCUEIL ----
+let _filtreContrats='tous';
+function setFiltreContrats(f){
+  _filtreContrats=f;
+  $('fct-tous').className='btn '+(f==='tous'?'btn-p':'btn-s');
+  $('fct-agence').className='btn '+(f==='agence'?'btn-p':'btn-s');
+  $('fct-tous').style.cssText='flex:1;font-size:12px;padding:7px';
+  $('fct-agence').style.cssText='flex:1;font-size:12px;padding:7px';
+  ouvrirCommercial();
+}
 async function ouvrirCommercial(){
   goTo('s-commercial');
   const el=$('com-contrats');
   el.innerHTML='<div class="loading"><div class="spin spin-dark"></div></div>';
-  const {data,error}=await db.from('contrats').select('*,clients(raison_sociale,ville)').order('created_at',{ascending:false}).limit(10);
+  let q=db.from('contrats').select('*,clients(raison_sociale,ville),agences(nom)').order('created_at',{ascending:false}).limit(30);
+  if(_filtreContrats==='agence'&&ME.agence_id)q=q.eq('agence_id',ME.agence_id);
+  const {data,error}=await q;
   if(error){el.innerHTML='<div style="padding:16px;color:var(--txt-l)">Erreur : '+error.message+'</div>';return}
   const cts=data||[];
   if(!cts.length){el.innerHTML='<div style="padding:16px;text-align:center;color:var(--txt-l);font-size:13px">Aucun contrat pour l\'instant.</div>';return}
-  el.innerHTML=cts.map(ct=>`<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px">
+  el.innerHTML=cts.map(ct=>{
+    const nbAv=Array.isArray(ct.avenants)?ct.avenants.length:0;
+    return `<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div>
-        <div style="font-weight:600">${ct.clients?.raison_sociale||'—'}</div>
-        <div style="font-size:12px;color:var(--txt-l)">${ct.numero_contrat||'sans n°'} · ${fmt(ct.date_debut)} → ${fmt(ct.date_fin)} · ${ct.tarif_annuel?(+ct.tarif_annuel).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})+' HT':'—'}</div>
+        <div style="font-weight:600">${ct.clients?.raison_sociale||'—'} <span style="font-weight:400;font-size:11px;color:var(--txt-l)">· ${ct.agences?.nom||'—'}</span></div>
+        <div style="font-size:12px;color:var(--txt-l)">${ct.numero_contrat||'sans n°'} · ${fmt(ct.date_debut)} → ${fmt(ct.date_fin)} · ${ct.tarif_annuel?(+ct.tarif_annuel).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})+' HT':'—'}${nbAv?' · '+nbAv+' avenant(s)':''}</div>
       </div>
       <div style="font-size:12px;font-weight:700;color:${ct.signature_data?'#16a34a':'#d97706'}">${ct.signature_data?'✍ Signé':'⏳ À signer'}</div>
     </div>
-    ${ct.signature_data?'':`<div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn btn-p btn-sm" style="flex:1" onclick="signerContrat('${ct.id}')">✍ Faire signer</button>
-      <button class="btn btn-s btn-sm" style="background:#fee2e2;color:#dc2626" onclick="supprimerContratCom('${ct.id}')">🗑 Supprimer</button>
-    </div>`}
-  </div>`).join('');
+    <div style="display:flex;gap:8px;margin-top:10px">
+    ${ct.signature_data
+      ?`<button class="btn btn-s btn-sm" style="flex:1" onclick="ouvrirAvenant('${ct.id}')">➕ Avenant</button>`
+      :`<button class="btn btn-p btn-sm" style="flex:1" onclick="signerContrat('${ct.id}')">✍ Faire signer</button>
+      <button class="btn btn-s btn-sm" style="background:#fee2e2;color:#dc2626" onclick="supprimerContratCom('${ct.id}')">🗑 Supprimer</button>`}
+    </div>
+  </div>`}).join('');
 }
 
 
 async function supprimerContratCom(id){
   if(!confirm("Supprimer ce contrat non signé ?\n\nAttention : les équipements déjà créés chez le client ne seront pas supprimés (à faire depuis le bureau si besoin)."))return;
-  const {error}=await db.from('contrats').delete().eq('id',id);
+  const {data,error}=await db.from('contrats').delete().eq('id',id).select();
   if(error){toast('Erreur : '+error.message,'err');return}
-  toast('Contrat supprimé');
+  if(!data||!data.length){toast('Suppression refusée par les droits (RLS) — règle à ajouter dans Supabase','err');return}
+  toast('Contrat supprimé ✓');
   ouvrirCommercial();
 }
 
@@ -604,9 +647,16 @@ function validerLigneContrat(){
   const {marque,modele}=lireMarqueModele('lk-');
   const annee=parseInt($('lk-annee').value,10)||null;
   const resume=[resumeCaract(type,caract),annee?'fab. '+annee:''].filter(Boolean).join(' · ');
-  _lignes.push({type,marque,modele,quantite:qte,pu,caract,resume,
-    annee_fab:annee,d_verif:$('lk-dverif').value||null,d_maa:$('lk-dmaa').value||null,d_rev:$('lk-drev').value||null});
-  renderLignes();goTo('s-new-contrat');
+  const ligne={type,marque,modele,quantite:qte,pu,caract,resume,
+    annee_fab:annee,d_verif:$('lk-dverif').value||null,d_maa:$('lk-dmaa').value||null,d_rev:$('lk-drev').value||null};
+  if(_ligneCible==='avenant'){
+    ligne.sens=_avSens;
+    _avLignes.push(ligne);_ligneCible='contrat';
+    renderAvLignes();goTo('s-avenant');
+  }else{
+    _lignes.push(ligne);
+    renderLignes();goTo('s-new-contrat');
+  }
 }
 async function saveContratCom(signer){
   const clientId=$('nk-client').value;
@@ -626,6 +676,68 @@ async function saveContratCom(signer){
   toast('Contrat créé ✓'+(nb?' — '+nb+' équipement(s) ajouté(s) au client':''));
   if(signer)signerContrat(ct.id,ct);
   else ouvrirCommercial();
+}
+
+
+// ---- AVENANTS (ajout / retrait d'équipements sur contrat signé) ----
+let _avContrat=null,_avLignes=[],_ligneCible='contrat',_avSens='ajout';
+
+async function ouvrirAvenant(id){
+  const {data:ct}=await db.from('contrats').select('*,clients(raison_sociale)').eq('id',id).single();
+  if(!ct){toast('Contrat introuvable','err');return}
+  _avContrat=ct;_avLignes=[];
+  $('av-recap').innerHTML=`<strong>${ct.clients?.raison_sociale||'—'}</strong><br>
+    ${ct.numero_contrat?'N° '+ct.numero_contrat+' · ':''}signé le ${fmt(ct.signe_le)} · tarif actuel <strong>${ct.tarif_annuel?(+ct.tarif_annuel).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})+' HT':'—'}</strong><br>
+    Avenant n°${(Array.isArray(ct.avenants)?ct.avenants.length:0)+1}`;
+  renderAvLignes();
+  goTo('s-avenant');
+}
+function ouvrirLigneAvenant(sens){
+  _ligneCible='avenant';_avSens=sens;
+  ouvrirLigneContrat();
+}
+function renderAvLignes(){
+  const el=$('av-lignes');
+  const lib=code=>{const t=typesEquip.find(t=>t.code===code);return t?t.icone+' '+t.libelle:code};
+  el.innerHTML=_avLignes.length?_avLignes.map((l,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:6px;border-left:4px solid ${l.sens==='retrait'?'#dc2626':'#16a34a'}">
+    <div><div style="font-weight:600;font-size:14px">${l.sens==='retrait'?'➖':'➕'} ${lib(l.type)}</div>
+    <div style="font-size:12px;color:var(--txt-l)">${[l.marque,l.modele].filter(Boolean).join(' ')||'—'}${l.resume?' · '+l.resume:''} · ${l.quantite} × ${(+l.pu).toFixed(2)} €</div></div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="font-weight:700;color:${l.sens==='retrait'?'#dc2626':'#16a34a'}">${l.sens==='retrait'?'−':'+'}${((+l.quantite)*(+l.pu)).toFixed(2)} €</div>
+      <button onclick="_avLignes.splice(${i},1);renderAvLignes()" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:4px 8px;font-size:13px">✕</button>
+    </div>
+  </div>`).join(''):'<div style="padding:10px;text-align:center;color:var(--txt-l);font-size:13px">Ajoute ou retire des équipements.</div>';
+  const delta=_avLignes.reduce((s,l)=>s+(l.sens==='retrait'?-1:1)*(+l.quantite)*(+l.pu),0);
+  $('av-total').textContent=_avLignes.length?('Impact annuel : '+(delta>=0?'+':'')+delta.toLocaleString('fr-FR',{style:'currency',currency:'EUR'})+' HT'):'';
+}
+let _signMode='contrat';
+function signerAvenant(){
+  if(!_avLignes.length){toast('Aucune modification dans cet avenant','err');return}
+  _signMode='avenant';
+  $('sk-nom').value='';
+  const delta=_avLignes.reduce((s,l)=>s+(l.sens==='retrait'?-1:1)*(+l.quantite)*(+l.pu),0);
+  $('sk-recap').innerHTML=`<strong>Avenant n°${(Array.isArray(_avContrat.avenants)?_avContrat.avenants.length:0)+1}</strong> — ${_avContrat.clients?.raison_sociale||''}<br>
+    ${_avLignes.length} modification(s) — impact <strong>${(delta>=0?'+':'')+delta.toLocaleString('fr-FR',{style:'currency',currency:'EUR'})} HT</strong>`;
+  goTo('s-sign-contrat');
+  setTimeout(setupSigCom,150);
+}
+async function validerSignatureAvenant(nom){
+  const avenants=Array.isArray(_avContrat.avenants)?[..._avContrat.avenants]:[];
+  const delta=_avLignes.reduce((s,l)=>s+(l.sens==='retrait'?-1:1)*(+l.quantite)*(+l.pu),0);
+  avenants.push({num:avenants.length+1,date:new Date().toISOString().slice(0,10),lignes:_avLignes,delta,
+    signature_data:_sigCom.canvas.toDataURL('image/png'),signataire_nom:nom,signe_le:new Date().toISOString()});
+  const nouveauTarif=Math.max(0,(+_avContrat.tarif_annuel||0)+delta);
+  const {error}=await db.from('contrats').update({avenants,tarif_annuel:nouveauTarif,updated_at:new Date().toISOString()}).eq('id',_avContrat.id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  // Créer les équipements des lignes AJOUTÉES
+  const ajouts=_avLignes.filter(l=>l.sens!=='retrait');
+  let nb=0;
+  if(ajouts.length)nb=await creerEquipementsDepuisContrat(_avContrat,ajouts,_avContrat.client_id);
+  const retraits=_avLignes.filter(l=>l.sens==='retrait');
+  toast('Avenant signé ✓'+(nb?' — '+nb+' équipement(s) ajouté(s)':''));
+  if(retraits.length)setTimeout(()=>toast('⚠ Pense à réformer les équipements retirés (bureau)','err'),2500);
+  _avContrat=null;_avLignes=[];_signMode='contrat';
+  ouvrirCommercial();
 }
 
 // ---- SIGNATURE ----
@@ -662,6 +774,7 @@ async function validerSignatureCom(){
   const nom=$('sk-nom').value.trim();
   if(!nom){toast('Nom du signataire obligatoire','err');return}
   if(!_sigCom||!_sigCom.has){toast('Le client doit signer','err');return}
+  if(_signMode==='avenant'){await validerSignatureAvenant(nom);return}
   const {error}=await db.from('contrats').update({
     signature_data:_sigCom.canvas.toDataURL('image/png'),
     signataire_nom:nom,signe_le:new Date().toISOString()

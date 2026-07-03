@@ -94,6 +94,26 @@ async function exportContratPDF(id){
     doc.setFont('helvetica','bold');doc.setFontSize(10);
     doc.text('Tarif annuel HT : '+c.tarif_annuel.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}),14,y);y+=7;
   }
+  // Avenants (ajouts / retraits signés)
+  const avenants=Array.isArray(c.avenants)?c.avenants:[];
+  avenants.forEach(av=>{
+    if(y>230){doc.addPage();y=20}
+    doc.setFont('helvetica','bold');doc.setFontSize(10);
+    doc.text(`AVENANT N°${av.num} — ${fmt(av.date)}${av.signataire_nom?' — signé par '+av.signataire_nom:''}`,14,y);y+=3;
+    const lib2=code=>{const t=(typeof typesEquip!=='undefined'?typesEquip:[]).find(t=>t.code===code);return t?t.libelle:code};
+    const eur2=n=>n.toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+    const deltaAv=(av.lignes||[]).reduce((s,l)=>s+(l.sens==='retrait'?-1:1)*(+l.quantite||0)*(+l.pu||0),0);
+    doc.autoTable({startY:y,margin:{left:14,right:14},
+      head:[['','Équipement','Marque / Modèle','Qté','PU HT','Total HT']],
+      body:[...(av.lignes||[]).map(l=>[l.sens==='retrait'?'−':'+',lib2(l.type),[l.marque,l.modele].filter(Boolean).join(' ')+(l.resume?'\n'+l.resume:''),String(l.quantite),eur2(+l.pu||0),(l.sens==='retrait'?'−':'')+eur2((+l.quantite||0)*(+l.pu||0))]),
+        [{content:'IMPACT ANNUEL HT',colSpan:5,styles:{fontStyle:'bold',halign:'right'}},{content:(deltaAv>=0?'+':'')+eur2(deltaAv),styles:{fontStyle:'bold'}}]],
+      styles:{fontSize:8.5},headStyles:{fillColor:[230,100,40]},
+      columnStyles:{0:{cellWidth:8,halign:'center',fontStyle:'bold'},3:{halign:'center',cellWidth:12},4:{halign:'right',cellWidth:24},5:{halign:'right',cellWidth:26}},
+      didParseCell:(d)=>{if(d.section==='body'&&d.column.index===0){d.cell.styles.textColor=d.cell.text[0]==='−'?[220,38,38]:[22,163,74]}}});
+    y=doc.lastAutoTable.finalY+3;
+    if(av.signature_data){try{doc.addImage(av.signature_data,'PNG',150,y,40,12)}catch(e){}y+=14}
+    y+=4;
+  });
   if(c.notes){
     doc.setFont('helvetica','bolditalic');doc.setFontSize(8.5);doc.text('Conditions particulières :',14,y);
     doc.setFont('helvetica','normal');

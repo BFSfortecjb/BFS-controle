@@ -363,7 +363,7 @@ function renderClients(){
   el.innerHTML=`<table><thead><tr><th>Raison sociale</th><th>Agence</th><th>Ville</th><th>Contact</th><th>Téléphone</th><th>Actions</th></tr></thead><tbody>${data.map(c=>`<tr>
     <td><strong>${c.raison_sociale}</strong></td><td><span class="badge bg">${c.agences?.nom||'—'}</span></td>
     <td>${c.ville||'—'}</td><td>${c.contact_nom||'—'}</td><td>${c.contact_telephone||'—'}</td>
-    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editClient('${c.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="deleteClient('${c.id}')">🗑</button></div></td>
+    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editClient('${c.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="voirContratsClient('${c.raison_sociale.replace(/'/g,"\\'")}')" title="Voir les contrats de ce client">📋</button><button class="btn btn-s btn-xs" onclick="deleteClient('${c.id}')">🗑</button></div></td>
   </tr>`).join('')}</tbody></table>`;
 }
 async function openClientModal(prefill=null){
@@ -1005,7 +1005,8 @@ async function loadContrats(){
 }
 function renderContrats(){
   const q=$('q-contrats').value.toLowerCase();
-  const data=contrats.filter(c=>(c.numero_contrat+c.clients?.raison_sociale).toLowerCase().includes(q));
+  const fag=$('f-ag-contrats')?$('f-ag-contrats').value:'';
+  const data=contrats.filter(c=>(c.numero_contrat+c.clients?.raison_sociale).toLowerCase().includes(q)&&(!fag||c.agences?.code===fag));
   const el=$('tbl-contrats');
   if(!data.length){el.innerHTML='<div class="t-empty">Aucun contrat</div>';return}
   el.innerHTML=`<table><thead><tr><th>N° contrat</th><th>Client</th><th>Agence</th><th>Type</th><th>Fin</th><th>Tarif</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${data.map(c=>`<tr>
@@ -1013,7 +1014,7 @@ function renderContrats(){
     <td><span class="badge bg">${c.agences?.nom||'—'}</span></td><td>${c.type_contrat}</td>
     <td class="${ecClass(c.date_fin)}">${fmt(c.date_fin)}</td>
     <td>${c.tarif_annuel?c.tarif_annuel.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'—'}</td>
-    <td>${badgeSt(c.statut)}${c.signature_data?` <span class="badge bv" title="Signé le ${fmt(c.signe_le)}">✍</span>`:''}</td>
+    <td>${badgeSt(c.statut)}${c.signature_data?` <span class="badge bv" title="Signé le ${fmt(c.signe_le)}">✍</span>`:''}${Array.isArray(c.avenants)&&c.avenants.length?` <span class="badge bb" title="${c.avenants.length} avenant(s)">+${c.avenants.length}</span>`:''}</td>
     <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editContrat('${c.id}')">✏️</button>${!c.signature_data?`<button class="btn btn-s btn-xs" onclick="openSignContrat('${c.id}')" title="Faire signer le client">✍ Signer</button>`:''}<button class="btn btn-s btn-xs" onclick="exportContratPDF('${c.id}')" title="Télécharger le contrat PDF">📄</button><button class="btn btn-s btn-xs" onclick="deleteContrat('${c.id}')">🗑</button></div></td>
   </tr>`).join('')}</tbody></table>`;
 }
@@ -1028,6 +1029,12 @@ async function openContratModal(prefill=null){
   OM('mo-contrat');
 }
 function editContrat(id){openContratModal(contrats.find(c=>c.id===id))}
+
+function voirContratsClient(raisonSociale){
+  navigate('contrats');
+  setTimeout(()=>{$('q-contrats').value=raisonSociale;if($('f-ag-contrats'))$('f-ag-contrats').value='';renderContrats()},300);
+}
+
 async function saveContrat(){
   const id=$('ct-id').value;
   const coches=Array.from(document.querySelectorAll('input[name="ct-type"]:checked')).map(c=>c.value);
@@ -1043,7 +1050,13 @@ async function saveContrat(){
   toast(id?'Contrat modifié':'Contrat créé'+(nb?' — '+nb+' équipement(s) ajouté(s) au client':''));
   CM('mo-contrat');loadContrats();
 }
-async function deleteContrat(id){if(!confirm('Supprimer ?'))return;await db.from('contrats').delete().eq('id',id);toast('Supprimé');loadContrats()}
+async function deleteContrat(id){
+  if(!confirm('Supprimer ?'))return;
+  const {data,error}=await db.from('contrats').delete().eq('id',id).select();
+  if(error){toast('Erreur: '+error.message,'err');return}
+  if(!data||!data.length){toast('Suppression refusée par les droits (RLS)','err');return}
+  toast('Supprimé');loadContrats();
+}
 
 
 

@@ -411,6 +411,7 @@ tr:hover td{background:#fafafa}
       <div class="page" id="page-contrats">
         <div class="search-bar">
           <input type="text" id="q-contrats" placeholder="Rechercher…" oninput="renderContrats()">
+          <select id="f-ag-contrats" onchange="renderContrats()" style="max-width:150px"><option value="">Toutes agences</option><option value="briec">Briec</option><option value="sevremont">Sevremont</option></select>
           <button class="btn btn-p" onclick="openContratModal()">+ Contrat</button>
         </div>
         <div class="card"><div id="tbl-contrats"><div class="loading"><span class="spin"></span></div></div></div>
