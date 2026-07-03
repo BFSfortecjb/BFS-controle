@@ -1116,9 +1116,8 @@ function ajouterLigneContrat(){
     <div class="mh"><h3>Ajouter un équipement au contrat</h3><button class="mclose" onclick="this.closest('.mo').remove()">✕</button></div>
     <div class="mc">
       <div class="fg" style="margin-bottom:12px"><label>Type d'équipement *</label>
-        <select id="lc-type" onchange="document.getElementById('lc-champs').innerHTML=champsLigneHTML(this.value,'lc-')">${typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('')}</select></div>
-      <div class="fg" style="margin-bottom:12px"><label>Marque</label><input type="text" id="lc-marque" placeholder="Ex : Eurofeu"></div>
-      <div class="fg" style="margin-bottom:12px"><label>Modèle</label><input type="text" id="lc-modele" placeholder="Ex : PP6 ABC"></div>
+        <select id="lc-type" onchange="document.getElementById('lc-marque-modele').innerHTML=marqueModeleHTML(this.value,'lc-');document.getElementById('lc-champs').innerHTML=champsLigneHTML(this.value,'lc-')">${typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('')}</select></div>
+      <div id="lc-marque-modele">${marqueModeleHTML(typesEquip[0]?.code,'lc-')}</div>
       <div id="lc-champs">${champsLigneHTML(typesEquip[0]?.code,'lc-')}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="fg"><label>Quantité *</label><input type="number" id="lc-qte" min="1" value="1"></div>
@@ -1140,7 +1139,8 @@ function confirmerLigneContrat(btn){
   if(isNaN(pu)||pu<0){toast('Prix unitaire invalide','err');return}
   const typeL=document.getElementById('lc-type').value;
   const caract=collecteChampsLigne(typeL,'lc-');
-  _lignesContrat.push({type:typeL,marque:document.getElementById('lc-marque').value.trim(),modele:document.getElementById('lc-modele').value.trim(),quantite:qte,pu:pu,caract,resume:resumeCaract(typeL,caract)});
+  const {marque,modele}=lireMarqueModele('lc-');
+  _lignesContrat.push({type:typeL,marque,modele,quantite:qte,pu:pu,caract,resume:resumeCaract(typeL,caract)});
   btn.closest('.mo').remove();renderLignesContrat();
 }
 

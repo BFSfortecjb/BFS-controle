@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>BFS Commercial</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="catalogue.js"></script>
 <style>
 :root{
   --rouge:#C0392B;--rouge-s:#96251d;--rouge-l:#fdf2f1;
@@ -287,8 +288,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
   <div class="content">
     <div class="fg" style="margin-bottom:12px"><label>Type d'équipement *</label><select id="lk-type" onchange="renderChampsLigne()"></select></div>
-    <div class="fg" style="margin-bottom:12px"><label>Marque</label><input type="text" id="lk-marque" placeholder="Ex : Eurofeu"></div>
-    <div class="fg" style="margin-bottom:12px"><label>Modèle</label><input type="text" id="lk-modele" placeholder="Ex : PP6 ABC"></div>
+    <div id="lk-marque-modele"></div>
     <div class="sec">Caractéristiques</div>
     <div id="lk-champs"><div style="font-size:12px;color:var(--txt-l);padding:4px 0">Aucune caractéristique pour ce type.</div></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
@@ -471,7 +471,7 @@ async function ouvrirCommercial(){
   if(error){el.innerHTML='<div style="padding:16px;color:var(--txt-l)">Erreur : '+error.message+'</div>';return}
   const cts=data||[];
   if(!cts.length){el.innerHTML='<div style="padding:16px;text-align:center;color:var(--txt-l);font-size:13px">Aucun contrat pour l\'instant.</div>';return}
-  el.innerHTML=cts.map(ct=>`<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px" onclick="${ct.signature_data?'':`signerContrat('${ct.id}')`}">
+  el.innerHTML=cts.map(ct=>`<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div>
         <div style="font-weight:600">${ct.clients?.raison_sociale||'—'}</div>
@@ -479,7 +479,20 @@ async function ouvrirCommercial(){
       </div>
       <div style="font-size:12px;font-weight:700;color:${ct.signature_data?'#16a34a':'#d97706'}">${ct.signature_data?'✍ Signé':'⏳ À signer'}</div>
     </div>
+    ${ct.signature_data?'':`<div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-p btn-sm" style="flex:1" onclick="signerContrat('${ct.id}')">✍ Faire signer</button>
+      <button class="btn btn-s btn-sm" style="background:#fee2e2;color:#dc2626" onclick="supprimerContratCom('${ct.id}')">🗑 Supprimer</button>
+    </div>`}
   </div>`).join('');
+}
+
+
+async function supprimerContratCom(id){
+  if(!confirm("Supprimer ce contrat non signé ?\n\nAttention : les équipements déjà créés chez le client ne seront pas supprimés (à faire depuis le bureau si besoin)."))return;
+  const {error}=await db.from('contrats').delete().eq('id',id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  toast('Contrat supprimé');
+  ouvrirCommercial();
 }
 
 // ---- NOUVEAU CLIENT ----
@@ -529,12 +542,14 @@ function renderLignes(){
 }
 function ouvrirLigneContrat(){
   $('lk-type').innerHTML=typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
-  $('lk-marque').value='';$('lk-modele').value='';$('lk-qte').value='1';$('lk-pu').value='';
+  $('lk-qte').value='1';$('lk-pu').value='';
   renderChampsLigne();
   goTo('s-ligne-contrat');
 }
 function renderChampsLigne(){
-  const html=champsLigneHTML($('lk-type').value,'lk-');
+  const type=$('lk-type').value;
+  $('lk-marque-modele').innerHTML=marqueModeleHTML(type,'lk-');
+  const html=champsLigneHTML(type,'lk-');
   $('lk-champs').innerHTML=html||'<div style="font-size:12px;color:var(--txt-l);padding:4px 0">Aucune caractéristique pour ce type.</div>';
 }
 function validerLigneContrat(){
@@ -543,7 +558,8 @@ function validerLigneContrat(){
   if(isNaN(pu)||pu<0){toast('Prix unitaire invalide','err');return}
   const type=$('lk-type').value;
   const caract=collecteChamps(type,'lk-');
-  _lignes.push({type,marque:$('lk-marque').value.trim(),modele:$('lk-modele').value.trim(),quantite:qte,pu,caract,resume:resumeCaract(type,caract)});
+  const {marque,modele}=lireMarqueModele('lk-');
+  _lignes.push({type,marque,modele,quantite:qte,pu,caract,resume:resumeCaract(type,caract)});
   renderLignes();goTo('s-new-contrat');
 }
 async function saveContratCom(signer){
