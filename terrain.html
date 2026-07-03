@@ -604,7 +604,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <div class="screen" id="s-new-piece">
   <div class="hdr">
     <button class="hdr-back" onclick="goTo('s-stock')">←</button>
-    <h1>Nouvelle pièce</h1>
+    <h1 id="np-titre">Nouvelle pièce</h1>
   </div>
   <div class="content">
     <div class="fg" style="margin-bottom:12px"><label>Code (= contenu du QR) *</label><input type="text" id="np-code" placeholder="Ex : JOINT-TETE-ANDR" style="text-transform:uppercase"></div>
@@ -634,7 +634,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     </div>
   </div>
   <div class="footer">
-    <button class="btn btn-vert" onclick="saveNouvellePiece()">✅ Créer la pièce</button>
+    <button class="btn btn-vert" onclick="saveNouvellePiece()" id="np-save">✅ Créer la pièce</button>
   </div>
 </div>
 
@@ -2422,14 +2422,15 @@ function listePiecesHTML(){
             const perime=f<new Date();
             return '<span style="color:'+(perime?'#dc2626':'inherit')+'">'+(perime?'⛔':'')+_fmtLotS(l.peremption)+' : '+l.quantite+'</span>';
           }).join(' · ')+'</div>':'';
-      return `<div style="display:flex;align-items:center;gap:12px;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:8px">
+      const idx=_piecesAgence.indexOf(p);
+      return `<div style="display:flex;align-items:center;gap:12px;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:8px" onclick="modifierPiece(${idx})">
       ${p.photo_url?`<img src="${p.photo_url}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex-shrink:0">`:'<div style="width:46px;height:46px;border-radius:8px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;flex-shrink:0">🔩</div>'}
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:14px">${p.designation}</div>
         <div style="font-size:12px;color:var(--txt-l)">${p.code}</div>
         ${lots}
       </div>
-      <div style="font-weight:700;font-size:18px;${alerte?'color:#dc2626':''}">${p.quantite}${alerte?' ⚠':''}</div>
+      <div style="text-align:right"><div style="font-weight:700;font-size:18px;${alerte?'color:#dc2626':''}">${p.quantite}${alerte?' ⚠':''}</div><div style="font-size:14px;color:var(--txt-l)">✏️</div></div>
     </div>`}).join('');
 }
 
@@ -2542,12 +2543,34 @@ async function choisirPhotoNP(input){
 
 // ---- Création de pièce depuis le téléphone ----
 let _lotsNP=[];
+let _pieceEdit=null;
 function ouvrirNouvellePiece(){
+  _pieceEdit=null;
   _photoNP=null;$('np-photo-apercu').style.display='none';
   ['np-code','np-designation','np-marque','np-modele','np-compat'].forEach(id=>$(id).value='');
-  $('np-qte').value='0';$('np-seuil').value='0';
+  $('np-qte').value='0';$('np-seuil').value='0';$('np-qte').disabled=false;
   $('np-peremption').checked=false;$('np-lots-bloc').style.display='none';
+  $('np-titre').textContent='Nouvelle pièce';$('np-save').textContent='✅ Créer la pièce';
   _lotsNP=[];renderLotsNP();
+  goTo('s-new-piece');
+}
+function modifierPiece(i){
+  const p=_piecesAgence[i];if(!p)return;
+  _pieceEdit=p;_photoNP=null;
+  $('np-code').value=p.code;
+  $('np-designation').value=p.designation;
+  $('np-marque').value=p.marque||'';
+  $('np-modele').value=p.modele||'';
+  $('np-compat').value=(Array.isArray(p.compatibilites)?p.compatibilites:[]).map(x=>[x.marque,x.modele].filter(Boolean).join(' ')).join('; ');
+  $('np-qte').value=p.quantite;$('np-seuil').value=p.seuil_alerte||0;
+  $('np-peremption').checked=!!p.gestion_peremption;
+  $('np-lots-bloc').style.display=p.gestion_peremption?'block':'none';
+  $('np-qte').disabled=!!p.gestion_peremption;
+  _lotsNP=(Array.isArray(p.lots)?p.lots:[]).map(l=>({...l}));
+  renderLotsNP();
+  const ap=$('np-photo-apercu');
+  if(p.photo_url){ap.src=p.photo_url;ap.style.display='block'}else ap.style.display='none';
+  $('np-titre').textContent='Modifier la pièce';$('np-save').textContent='💾 Enregistrer';
   goTo('s-new-piece');
 }
 function renderLotsNP(){
@@ -2575,23 +2598,39 @@ async function saveNouvellePiece(){
   if(!code||!des){toast('Code et désignation obligatoires','err');return}
   const gPer=$('np-peremption').checked;
   const qte=gPer?_lotsNP.reduce((s,l)=>s+(+l.quantite||0),0):(parseFloat($('np-qte').value)||0);
-  // Compatibilités : "Marque Modele; Marque Modele"
   const compat=$('np-compat').value.split(';').map(s=>{const t=s.trim().split(/\s+/);return{marque:t[0]||'',modele:t.slice(1).join(' ')}}).filter(x=>x.marque);
   const piece={
     code,designation:des,marque:$('np-marque').value.trim(),modele:$('np-modele').value.trim(),
     compatibilites:compat,quantite:qte,seuil_alerte:parseFloat($('np-seuil').value)||0,
-    gestion_peremption:gPer,lots:gPer?_lotsNP:[],agence_id:ME.agence_id||null
+    gestion_peremption:gPer,lots:gPer?_lotsNP:[]
   };
   if(_photoNP){
     const path='piece_'+code.replace(/[^a-zA-Z0-9-]/g,'_')+'_'+Date.now()+'.jpg';
     const {error:ep}=await db.storage.from('stock-photos').upload(path,_photoNP,{contentType:'image/jpeg'});
-    if(!ep){piece.photo_path=path;piece.photo_url=db.storage.from('stock-photos').getPublicUrl(path).data.publicUrl}
-    else toast('Photo non enregistrée : '+ep.message,'err');
+    if(!ep){
+      if(_pieceEdit&&_pieceEdit.photo_path)await db.storage.from('stock-photos').remove([_pieceEdit.photo_path]);
+      piece.photo_path=path;piece.photo_url=db.storage.from('stock-photos').getPublicUrl(path).data.publicUrl;
+    }else toast('Photo non enregistrée : '+ep.message,'err');
   }
-  const {data:np,error}=await db.from('stock_pieces').insert(piece).select().single();
-  if(error){toast('Erreur : '+error.message,'err');return}
-  if(qte>0)await db.from('stock_mouvements').insert({piece_id:np.id,type:'entree',quantite_avant:0,quantite_apres:qte,delta:qte,motif:'Création de la pièce (mobile)',par:ME.id,agence_id:ME.agence_id||null});
-  toast('Pièce créée ✓ — imprime son QR depuis le bureau');
+  if(_pieceEdit){
+    // ---- Modification ----
+    piece.updated_at=new Date().toISOString();
+    const avant=+_pieceEdit.quantite;
+    const {error}=await db.from('stock_pieces').update(piece).eq('id',_pieceEdit.id);
+    if(error){toast('Erreur : '+error.message,'err');return}
+    if(qte!==avant){
+      await db.from('stock_mouvements').insert({piece_id:_pieceEdit.id,type:'rectification',quantite_avant:avant,quantite_apres:qte,delta:qte-avant,motif:'Modification fiche (mobile)',par:ME.id,agence_id:_pieceEdit.agence_id||null});
+    }
+    toast('Pièce modifiée ✓');
+  }else{
+    // ---- Création ----
+    piece.agence_id=ME.agence_id||null;
+    const {data:np,error}=await db.from('stock_pieces').insert(piece).select().single();
+    if(error){toast('Erreur : '+error.message,'err');return}
+    if(qte>0)await db.from('stock_mouvements').insert({piece_id:np.id,type:'entree',quantite_avant:0,quantite_apres:qte,delta:qte,motif:'Création de la pièce (mobile)',par:ME.id,agence_id:ME.agence_id||null});
+    toast('Pièce créée ✓ — imprime son QR depuis le bureau');
+  }
+  _pieceEdit=null;
   ouvrirStock();
 }
 
