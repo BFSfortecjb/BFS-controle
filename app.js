@@ -1691,7 +1691,7 @@ function renderStock(){
     const alerte=(+p.seuil_alerte||0)>0&&(+p.quantite)<=(+p.seuil_alerte);
     return `<tr>
     <td><strong>${p.code}</strong></td>
-    <td>${p.designation}</td>
+    <td style="display:flex;align-items:center;gap:8px">${p.photo_url?`<img src="${p.photo_url}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;cursor:zoom-in" onclick="window.open('${p.photo_url}','_blank')">`:''}${p.designation}</td>
     <td style="font-size:12px;color:var(--txt-l)">${compatTxt(p)}</td>
     <td><span class="badge bg">${p.agences?.nom||'—'}</span></td>
     <td style="text-align:center;font-weight:700;${alerte?'color:#dc2626':''}">${p.quantite}${alerte?' ⚠':''}
@@ -1708,6 +1708,48 @@ function renderStock(){
 }
 
 let _compatPiece=[];
+
+
+// ---- Photo de pièce (compressée puis stockée dans le bucket stock-photos) ----
+let _photoPiece=null,_photoPieceSupprimee=false;
+function compresserPhoto(file,maxDim=800){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const r=Math.min(1,maxDim/Math.max(img.width,img.height));
+      const cv=document.createElement('canvas');
+      cv.width=Math.round(img.width*r);cv.height=Math.round(img.height*r);
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+      cv.toBlob(b=>b?res(b):rej('compression échouée'),'image/jpeg',0.82);
+    };
+    img.onerror=()=>rej('image illisible');
+    img.src=URL.createObjectURL(file);
+  });
+}
+async function choisirPhotoPiece(input){
+  const f=input.files[0];input.value='';
+  if(!f)return;
+  try{
+    _photoPiece=await compresserPhoto(f);
+    _photoPieceSupprimee=false;
+    const ap=$('pc-photo-apercu');
+    ap.src=URL.createObjectURL(_photoPiece);ap.style.display='block';
+    $('pc-photo-suppr').style.display='inline-block';
+  }catch(e){toast('Photo illisible','err')}
+}
+function supprimerPhotoPiece(){
+  _photoPiece=null;_photoPieceSupprimee=true;
+  $('pc-photo-apercu').style.display='none';
+  $('pc-photo-suppr').style.display='none';
+}
+async function uploaderPhotoPiece(code,ancienPath){
+  if(!_photoPiece)return null;
+  const path='piece_'+code.replace(/[^a-zA-Z0-9-]/g,'_')+'_'+Date.now()+'.jpg';
+  if(ancienPath)await db.storage.from('stock-photos').remove([ancienPath]).catch?.(()=>{});
+  const {error}=await db.storage.from('stock-photos').upload(path,_photoPiece,{contentType:'image/jpeg'});
+  if(error){toast('Photo non enregistrée : '+error.message,'err');return null}
+  return {photo_path:path,photo_url:db.storage.from('stock-photos').getPublicUrl(path).data.publicUrl};
+}
 
 // ---- Lots par date de péremption ----
 let _lotsPiece=[];
@@ -1753,12 +1795,15 @@ function openPieceModal(prefill=null){
   $('pc-qte').disabled=false;
   $('pc-agence').value=_stockAgFiltre||'';
   _compatPiece=[];_lotsPiece=[];
+  _photoPiece=null;_photoPieceSupprimee=false;
+  $('pc-photo-apercu').style.display='none';$('pc-photo-suppr').style.display='none';
   $('pc-peremption').checked=false;$('pc-lots-bloc').style.display='none';
   if(prefill){$('pc-id').value=prefill.id;$('pc-code').value=prefill.code;$('pc-designation').value=prefill.designation;$('pc-marque').value=prefill.marque||'';$('pc-modele').value=prefill.modele||'';$('pc-qte').value=prefill.quantite;$('pc-qte').disabled=true;$('pc-seuil').value=prefill.seuil_alerte||0;$('pc-agence').value=prefill.agence_id||'';_compatPiece=Array.isArray(prefill.compatibilites)?[...prefill.compatibilites]:[];
     _lotsPiece=Array.isArray(prefill.lots)?prefill.lots.map(l=>({...l})):[];
     $('pc-peremption').checked=!!prefill.gestion_peremption;
     $('pc-lots-bloc').style.display=prefill.gestion_peremption?'block':'none';
     $('pc-qte').disabled=$('pc-qte').disabled||prefill.gestion_peremption;
+    if(prefill.photo_url){$('pc-photo-apercu').src=prefill.photo_url;$('pc-photo-apercu').style.display='block';$('pc-photo-suppr').style.display='inline-block';}
     $('mo-pc-t').textContent='Modifier la pièce';}
   renderCompatPiece();renderLotsPiece();
   OM('mo-piece');
@@ -1782,6 +1827,9 @@ async function savePiece(){
   if(!code||!des){toast('Code et désignation obligatoires','err');return}
   const gPer=$('pc-peremption').checked;
   const p={code,designation:des,marque:$('pc-marque').value.trim(),modele:$('pc-modele').value.trim(),seuil_alerte:parseFloat($('pc-seuil').value)||0,agence_id:$('pc-agence').value||null,compatibilites:_compatPiece,gestion_peremption:gPer,lots:gPer?_lotsPiece:[],updated_at:new Date().toISOString()};
+  const avantP=id?stockPieces.find(x=>x.id===id):null;
+  if(_photoPiece){const ph=await uploaderPhotoPiece(code,avantP?.photo_path);if(ph)Object.assign(p,ph)}
+  else if(_photoPieceSupprimee&&avantP?.photo_path){await db.storage.from('stock-photos').remove([avantP.photo_path]);p.photo_url=null;p.photo_path=null}
   if(id){
     const avant=stockPieces.find(x=>x.id===id);
     if(gPer)p.quantite=_lotsPiece.reduce((s,l)=>s+(+l.quantite||0),0);

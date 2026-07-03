@@ -612,6 +612,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="fg" style="margin-bottom:12px"><label>Marque</label><input type="text" id="np-marque" placeholder="Ex : Andrieu"></div>
     <div class="fg" style="margin-bottom:12px"><label>Modèle</label><input type="text" id="np-modele"></div>
     <div class="fg" style="margin-bottom:12px"><label>Compatibilités (séparées par ;)</label><input type="text" id="np-compat" placeholder="Ex : Andrieu Vulcain; Andrieu Eco; Andrieu PMZ"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Photo de la pièce</label>
+      <div style="display:flex;gap:12px;align-items:center;margin-top:4px">
+        <img id="np-photo-apercu" style="display:none;width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid #e5e7eb">
+        <button type="button" class="btn btn-s btn-sm" onclick="document.getElementById('np-photo-file').click()">📷 Prendre / choisir</button>
+        <input type="file" id="np-photo-file" accept="image/*" capture="environment" style="display:none" onchange="choisirPhotoNP(this)">
+      </div>
+    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div class="fg"><label>Quantité initiale</label><input type="number" id="np-qte" min="0" value="0" inputmode="numeric"></div>
       <div class="fg"><label>Seuil d'alerte</label><input type="number" id="np-seuil" min="0" value="0" inputmode="numeric"></div>
@@ -639,6 +646,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
   <div class="content">
     <div class="card" style="margin-bottom:14px"><div style="padding:14px 16px">
+      <img id="sp-photo" style="display:none;width:100%;max-height:160px;object-fit:contain;border-radius:10px;margin-bottom:8px;background:#f8f8f8">
       <div id="sp-designation" style="font-weight:700;font-size:16px;margin-bottom:4px"></div>
       <div id="sp-detail" style="font-size:13px;color:var(--txt-l)"></div>
       <div style="margin-top:10px;font-size:14px">Stock théorique : <strong id="sp-theorique"></strong></div>
@@ -2375,12 +2383,19 @@ async function validerSignatureEtCloturer(){
 // ============================================================
 let _inventaire=null,_pieceEnCours=null,_comptages=[];
 
+let _piecesAgence=[];
 async function ouvrirStock(){
   goTo('s-stock');
   const el=$('stock-content');
   el.innerHTML='<div class="loading"><div class="spin spin-dark"></div></div>';
-  const {data:inv,error}=await db.from('stock_inventaires').select('*').eq('statut','en_cours').order('demarre_le',{ascending:false}).limit(1);
-  if(error){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--txt-l)">Erreur : '+error.message+'</div>';$('stock-footer').style.display='none';return}
+  let qp=db.from('stock_pieces').select('*,agences(nom)').order('designation');
+  if(ME.agence_id)qp=qp.eq('agence_id',ME.agence_id);
+  const [{data:inv,error},{data:pieces,error:ep}]=await Promise.all([
+    db.from('stock_inventaires').select('*').eq('statut','en_cours').order('demarre_le',{ascending:false}).limit(1),
+    qp
+  ]);
+  if(error||ep){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--txt-l)">Erreur : '+(error||ep).message+'</div>';$('stock-footer').style.display='none';return}
+  _piecesAgence=pieces||[];
   _inventaire=(inv&&inv[0])||null;
   if(_inventaire){
     const {data:mv}=await db.from('stock_mouvements').select('*,stock_pieces(code,designation)').eq('inventaire_id',_inventaire.id).order('created_at',{ascending:false});
@@ -2388,14 +2403,34 @@ async function ouvrirStock(){
     renderStockMobile();
   }else{
     _comptages=[];
-    el.innerHTML=`<div style="padding:30px 16px;text-align:center">
-      <div style="font-size:44px;margin-bottom:12px">🧰</div>
-      <div style="font-size:15px;color:var(--txt-l);margin-bottom:20px">Aucun inventaire en cours.<br>Démarre un inventaire puis scanne le QR code de chaque bac de pièces.</div>
+    el.innerHTML=`<div style="padding:16px 0;text-align:center">
       <button class="btn btn-p" onclick="demarrerInventaire()" style="width:100%;margin-bottom:10px">▶ Démarrer un inventaire</button>
       <button class="btn btn-s" onclick="ouvrirNouvellePiece()" style="width:100%">➕ Créer une pièce</button>
-    </div>`;
+    </div>`+listePiecesHTML();
     $('stock-footer').style.display='none';
   }
+}
+const _fmtLotS=d=>{if(!d)return'—';const [a,m]=d.split('-');return m+'/'+a};
+function listePiecesHTML(){
+  if(!_piecesAgence.length)return '<div style="padding:20px;text-align:center;color:var(--txt-l);font-size:13px">Aucune pièce dans le stock de ton agence.<br>Crée la première ou importe depuis le bureau.</div>';
+  return '<div class="sec">Stock de mon agence ('+_piecesAgence.length+' pièce'+(_piecesAgence.length>1?'s':'')+')</div>'
+    +_piecesAgence.map(p=>{
+      const alerte=(+p.seuil_alerte||0)>0&&(+p.quantite)<=(+p.seuil_alerte);
+      const lots=p.gestion_peremption&&Array.isArray(p.lots)&&p.lots.length
+        ?'<div style="font-size:11px;color:var(--txt-l);margin-top:2px">'+p.lots.map(l=>{
+            const f=new Date(l.peremption+'-01');f.setMonth(f.getMonth()+1);
+            const perime=f<new Date();
+            return '<span style="color:'+(perime?'#dc2626':'inherit')+'">'+(perime?'⛔':'')+_fmtLotS(l.peremption)+' : '+l.quantite+'</span>';
+          }).join(' · ')+'</div>':'';
+      return `<div style="display:flex;align-items:center;gap:12px;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:8px">
+      ${p.photo_url?`<img src="${p.photo_url}" style="width:46px;height:46px;object-fit:cover;border-radius:8px;flex-shrink:0">`:'<div style="width:46px;height:46px;border-radius:8px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;flex-shrink:0">🔩</div>'}
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14px">${p.designation}</div>
+        <div style="font-size:12px;color:var(--txt-l)">${p.code}</div>
+        ${lots}
+      </div>
+      <div style="font-weight:700;font-size:18px;${alerte?'color:#dc2626':''}">${p.quantite}${alerte?' ⚠':''}</div>
+    </div>`}).join('');
 }
 
 function renderStockMobile(){
@@ -2411,7 +2446,7 @@ function renderStockMobile(){
   el.innerHTML=`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px">
     ⏳ Inventaire en cours depuis le ${new Date(_inventaire.demarre_le).toLocaleString('fr-FR')}<br>
     <strong>${_comptages.length}</strong> pièce(s) comptée(s)</div>
-    <div class="sec">Pièces comptées</div>${lignes}`;
+    <div class="sec">Pièces comptées</div>${lignes}`+listePiecesHTML();
 }
 
 async function demarrerInventaire(){
@@ -2458,6 +2493,8 @@ async function traiterScanPiece(codePiece){
       _pieceEnCours=np;
     }else return;
   }else _pieceEnCours=p;
+  const ph=$('sp-photo');
+  if(_pieceEnCours.photo_url){ph.src=_pieceEnCours.photo_url;ph.style.display='block'}else ph.style.display='none';
   $('sp-designation').textContent=_pieceEnCours.designation;
   const comp=[[_pieceEnCours.marque,_pieceEnCours.modele].filter(Boolean).join(' '),...(Array.isArray(_pieceEnCours.compatibilites)?_pieceEnCours.compatibilites:[]).map(x=>[x.marque,x.modele].filter(Boolean).join(' '))].filter(Boolean);
   $('sp-detail').textContent=_pieceEnCours.code+(comp.length?' — compatible : '+comp.join(' · '):'');
@@ -2477,9 +2514,36 @@ async function traiterScanPiece(codePiece){
 }
 
 
+// ---- Photo de pièce (mobile) ----
+let _photoNP=null;
+function compresserPhotoT(file,maxDim=800){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const r=Math.min(1,maxDim/Math.max(img.width,img.height));
+      const cv=document.createElement('canvas');
+      cv.width=Math.round(img.width*r);cv.height=Math.round(img.height*r);
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+      cv.toBlob(b=>b?res(b):rej('err'),'image/jpeg',0.82);
+    };
+    img.onerror=()=>rej('err');
+    img.src=URL.createObjectURL(file);
+  });
+}
+async function choisirPhotoNP(input){
+  const f=input.files[0];input.value='';
+  if(!f)return;
+  try{
+    _photoNP=await compresserPhotoT(f);
+    const ap=$('np-photo-apercu');
+    ap.src=URL.createObjectURL(_photoNP);ap.style.display='block';
+  }catch(e){toast('Photo illisible','err')}
+}
+
 // ---- Création de pièce depuis le téléphone ----
 let _lotsNP=[];
 function ouvrirNouvellePiece(){
+  _photoNP=null;$('np-photo-apercu').style.display='none';
   ['np-code','np-designation','np-marque','np-modele','np-compat'].forEach(id=>$(id).value='');
   $('np-qte').value='0';$('np-seuil').value='0';
   $('np-peremption').checked=false;$('np-lots-bloc').style.display='none';
@@ -2513,11 +2577,18 @@ async function saveNouvellePiece(){
   const qte=gPer?_lotsNP.reduce((s,l)=>s+(+l.quantite||0),0):(parseFloat($('np-qte').value)||0);
   // Compatibilités : "Marque Modele; Marque Modele"
   const compat=$('np-compat').value.split(';').map(s=>{const t=s.trim().split(/\s+/);return{marque:t[0]||'',modele:t.slice(1).join(' ')}}).filter(x=>x.marque);
-  const {data:np,error}=await db.from('stock_pieces').insert({
+  const piece={
     code,designation:des,marque:$('np-marque').value.trim(),modele:$('np-modele').value.trim(),
     compatibilites:compat,quantite:qte,seuil_alerte:parseFloat($('np-seuil').value)||0,
     gestion_peremption:gPer,lots:gPer?_lotsNP:[],agence_id:ME.agence_id||null
-  }).select().single();
+  };
+  if(_photoNP){
+    const path='piece_'+code.replace(/[^a-zA-Z0-9-]/g,'_')+'_'+Date.now()+'.jpg';
+    const {error:ep}=await db.storage.from('stock-photos').upload(path,_photoNP,{contentType:'image/jpeg'});
+    if(!ep){piece.photo_path=path;piece.photo_url=db.storage.from('stock-photos').getPublicUrl(path).data.publicUrl}
+    else toast('Photo non enregistrée : '+ep.message,'err');
+  }
+  const {data:np,error}=await db.from('stock_pieces').insert(piece).select().single();
   if(error){toast('Erreur : '+error.message,'err');return}
   if(qte>0)await db.from('stock_mouvements').insert({piece_id:np.id,type:'entree',quantite_avant:0,quantite_apres:qte,delta:qte,motif:'Création de la pièce (mobile)',par:ME.id,agence_id:ME.agence_id||null});
   toast('Pièce créée ✓ — imprime son QR depuis le bureau');

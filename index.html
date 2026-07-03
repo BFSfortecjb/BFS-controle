@@ -746,6 +746,14 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Quantité</label><input type="number" id="pc-qte" min="0" value="0"></div>
       <div class="fg"><label>Seuil d'alerte</label><input type="number" id="pc-seuil" min="0" value="0"></div>
       <div class="fg" style="grid-column:1/-1"><label>Agence</label><select id="pc-agence"></select></div>
+      <div class="fg" style="grid-column:1/-1"><label>Photo de la pièce</label>
+        <div style="display:flex;gap:12px;align-items:center;margin-top:6px">
+          <img id="pc-photo-apercu" style="display:none;width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid #e5e7eb">
+          <button type="button" class="btn btn-s btn-sm" onclick="document.getElementById('pc-photo-file').click()">📷 Choisir / remplacer</button>
+          <button type="button" class="btn btn-s btn-sm" id="pc-photo-suppr" style="display:none;color:#dc2626" onclick="supprimerPhotoPiece()">✕ Retirer</button>
+          <input type="file" id="pc-photo-file" accept="image/*" style="display:none" onchange="choisirPhotoPiece(this)">
+        </div>
+      </div>
       <div class="fg" style="grid-column:1/-1"><label style="display:flex;gap:8px;align-items:center;text-transform:none;font-weight:400;cursor:pointer"><input type="checkbox" id="pc-peremption" style="width:16px;height:16px;margin:0" onchange="togglePeremption()"> Gestion par date de péremption (sparklettes, additifs, poudre…)</label></div>
       <div class="fg" style="grid-column:1/-1;display:none" id="pc-lots-bloc"><label>Lots par date de péremption</label>
         <div id="pc-lots-list" style="margin:6px 0"></div>
