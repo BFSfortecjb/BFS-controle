@@ -15,6 +15,7 @@
 <meta name="apple-mobile-web-app-title" content="BFS Terrain">
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="catalogue.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -612,7 +613,29 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="fg" style="margin-bottom:12px"><label>Désignation *</label><input type="text" id="np-designation" placeholder="Ex : Joint de tête extincteur Andrieu"></div>
     <div class="fg" style="margin-bottom:12px"><label>Marque</label><input type="text" id="np-marque" placeholder="Ex : Andrieu"></div>
     <div class="fg" style="margin-bottom:12px"><label>Modèle</label><input type="text" id="np-modele"></div>
-    <div class="fg" style="margin-bottom:12px"><label>Compatibilités (séparées par ;)</label><input type="text" id="np-compat" placeholder="Ex : Andrieu Vulcain; Andrieu Eco; Andrieu PMZ"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Catégorie</label>
+      <select id="np-categorie" onchange="majCategorieNP()">
+        <option value="piece">Pièce détachée (liée aux extincteurs)</option>
+        <option value="accessoire">Accessoire (panneau… ajout manuel, facturé en plus)</option>
+      </select></div>
+    <div id="np-compat-bloc">
+      <label style="display:flex;gap:10px;align-items:center;background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:14px">
+        <input type="checkbox" id="np-tous" style="width:18px;height:18px;margin:0" onchange="$('np-compat-editeur').style.display=this.checked?'none':'block'">
+        Compatible avec TOUS les extincteurs (scellés, goupilles…)
+      </label>
+      <div id="np-compat-editeur">
+        <div class="fg" style="margin-bottom:8px"><label>Compatibilités</label>
+          <div id="np-compat-chips" style="margin-bottom:8px"></div>
+          <select id="np-cp-marque" onchange="majModelesNP()" style="margin-bottom:8px"><option value=""></option></select>
+          <select id="np-cp-modele" style="margin-bottom:8px"><option value=""></option></select>
+          <button type="button" class="btn btn-s btn-sm" onclick="ajouterCompatNP()">+ Ajouter cette compatibilité</button>
+        </div>
+      </div>
+      <label style="display:flex;gap:10px;align-items:center;background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:14px">
+        <input type="checkbox" id="np-conso" style="width:18px;height:18px;margin:0">
+        Consommée à chaque contrôle (scellé, joint…) — sert à la prévision
+      </label>
+    </div>
     <div class="fg" style="margin-bottom:12px"><label>Photo de la pièce</label>
       <div style="display:flex;gap:12px;align-items:center;margin-top:4px">
         <img id="np-photo-apercu" style="display:none;width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid #e5e7eb">
@@ -1543,6 +1566,9 @@ async function ouvrirVerif(equipId){
     <div id="pieces-manuelles"></div>
     ${renderPiecesManuelles()}
 
+    <div class="sec">🧰 Sortie du stock</div>
+    <div id="stock-usage"><div style="font-size:12px;color:var(--txt-l);padding:4px 0">Chargement du stock…</div></div>
+
     <div class="sec">Statut final</div>
     <div class="statut-grid">
       <button class="statut-btn${savedStatut==='conforme'?' sel-conforme':''}" onclick="setStatut('conforme')">
@@ -1578,6 +1604,7 @@ async function ouvrirVerif(equipId){
   // Réinitialiser et afficher les photos déjà prises pour cette session de vérif
   currentPhotosVerif = [];
   renderPhotosVerif();
+  chargerStockUsage(equip);
 
   // Restaurer pièces
   currentPieces.forEach(p=>{
@@ -1666,7 +1693,46 @@ window.togglePiece=function(catId,libelle,action){
     currentPieces.push({piece_catalogue_id:catId,libelle,type_action:action,quantite:1,unite:'unité'});
     document.getElementById(`pi-${catId}`).className=`piece-item ${action==='changée'?'checked':'to-replace'}`;
   }
+  // Liaison automatique avec le stock : ✓ changée = sortie, sinon annulation
+  const etat=currentPieces.find(p=>p.piece_catalogue_id===catId);
+  if(etat&&etat.type_action==='changée')lierStockChangee(catId,libelle,true);
+  else delierStock(catId);
 };
+
+// ---- Liaison liste de pièces ↔ stock d'agence ----
+let _usageParCatalogue={};
+function normMots(s){return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').split(/[^a-z0-9]+/).filter(w=>w.length>2)}
+function candidatsStock(libelle){
+  const mots=normMots(libelle);
+  return _stockDispo.filter(p=>p.categorie!=='accessoire').map(p=>{
+    const pm=normMots(p.designation+' '+p.code);
+    const score=mots.filter(m=>pm.some(x=>x.includes(m)||m.includes(x))).length;
+    return {p,score};
+  }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score);
+}
+function lierStockChangee(catId,libelle,demander){
+  const cands=candidatsStock(libelle);
+  if(!cands.length){toast('Pas de pièce correspondante dans le stock — sortie non tracée','err');return}
+  if(cands.length===1||!demander){appliquerLien(catId,cands[0].p,!demander);return}
+  const modal=document.createElement('div');modal.className='mo open';modal.style.zIndex='400';
+  modal.innerHTML=`<div class="modal" style="max-width:420px"><div class="mh"><h3>Quelle pièce sortir du stock ?</h3><button class="mclose" onclick="this.closest('.mo').remove()">✕</button></div><div class="mc">`
+    +cands.slice(0,6).map(x=>`<button class="btn btn-s" style="width:100%;margin-bottom:8px;text-align:left" onclick="appliquerLien('${catId}',_stockDispo.find(p=>p.id==='${x.p.id}'));this.closest('.mo').remove()">${x.p.designation}<br><small style="color:var(--txt-l)">${x.p.code} · stock : ${x.p.quantite}</small></button>`).join('')
+    +`<button class="btn btn-s" style="width:100%;color:var(--txt-l)" onclick="this.closest('.mo').remove()">Aucune sortie de stock</button></div></div>`;
+  document.body.appendChild(modal);
+}
+window.appliquerLien=function(catId,p,silencieux){
+  if(!p)return;
+  _usageParCatalogue[catId]=p.id;
+  _stockUsage[p.id]=Math.min(+p.quantite,(_stockUsage[p.id]||0)+1);
+  renderStockUsage();
+  if(!silencieux)toast('Sortie stock : '+p.designation+' ✓');
+};
+function delierStock(catId){
+  const pid=_usageParCatalogue[catId];if(!pid)return;
+  delete _usageParCatalogue[catId];
+  if(_stockUsage[pid]){_stockUsage[pid]--;if(_stockUsage[pid]<=0)delete _stockUsage[pid]}
+  renderStockUsage();
+}
 
 function renderPiecesManuelles(){
   const manuelles=currentPieces.filter(p=>!p.piece_catalogue_id);
@@ -1733,6 +1799,107 @@ window.confirmerHS=function(){
 };
 
 // Valider vérification
+
+// ============================================================
+// SORTIE DE STOCK PENDANT LE CONTRÔLE
+// ============================================================
+let _stockDispo=[],_stockUsage={}; // {pieceId:qte}
+
+function pieceCompatible(p,equip){
+  if(p.categorie==='accessoire')return true; // accessoires : toujours proposés (ajout manuel)
+  if(p.compatible_tous)return true;
+  const compat=Array.isArray(p.compatibilites)?p.compatibilites:[];
+  const em=(equip.marque||'').toLowerCase(),emo=(equip.modele||'').toLowerCase();
+  return compat.some(x=>{
+    if((x.marque||'').toLowerCase()!==em||!em)return false;
+    if(!x.modele)return true;
+    const xm=x.modele.toLowerCase();
+    return emo.includes(xm)||xm.includes(emo);
+  });
+}
+
+async function chargerStockUsage(equip){
+  _stockUsage={};_usageParCatalogue={};
+  const agId=currentClient?.agence_id;
+  let q=db.from('stock_pieces').select('*').gt('quantite',0).order('categorie').order('designation');
+  if(agId)q=q.eq('agence_id',agId);
+  const {data:pieces,error}=await q;
+  const el=$('stock-usage');if(!el)return;
+  if(error){el.innerHTML='<div style="font-size:12px;color:#dc2626">Stock indisponible : '+error.message+'</div>';return}
+  _stockDispo=(pieces||[]).filter(p=>pieceCompatible(p,equip));
+  _usageParCatalogue={};
+  // Reprise : re-lier silencieusement les pièces déjà cochées ✓
+  currentPieces.filter(x=>x.piece_catalogue_id&&x.type_action==='changée').forEach(x=>{
+    lierStockChangee(x.piece_catalogue_id,x.libelle||'',false);
+  });
+  renderStockUsage();
+}
+function renderStockUsage(){
+  const el=$('stock-usage');if(!el)return;
+  if(!_stockDispo.length){el.innerHTML='<div style="font-size:12px;color:var(--txt-l);padding:4px 0">Aucune pièce compatible en stock pour cet équipement.</div>';return}
+  const pieces=_stockDispo.filter(p=>p.categorie!=='accessoire'&&_stockUsage[p.id]);
+  const acc=_stockDispo.filter(p=>p.categorie==='accessoire');
+  const ligne=p=>{
+    const q=_stockUsage[p.id]||0;
+    return `<div style="display:flex;align-items:center;gap:10px;background:${q>0?'#f0fdf4':'#fff'};border:1.5px solid ${q>0?'#86efac':'#e5e7eb'};border-radius:10px;padding:9px 12px;margin-bottom:6px">
+      ${p.photo_url?`<img src="${p.photo_url}" style="width:38px;height:38px;object-fit:cover;border-radius:6px;flex-shrink:0">`:''}
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px">${p.designation}${p.categorie==='accessoire'?' <span style="font-size:10px;background:#fef3c7;color:#b45309;border-radius:4px;padding:1px 5px">facturé en +</span>':''}</div>
+        <div style="font-size:11px;color:var(--txt-l)">${p.code} · stock : ${p.quantite}</div>
+      </div>
+      <button onclick="majUsage('${p.id}',-1)" style="width:34px;height:34px;border:none;border-radius:8px;background:#f3f4f6;font-size:18px">−</button>
+      <div style="width:26px;text-align:center;font-weight:700;font-size:16px">${q}</div>
+      <button onclick="majUsage('${p.id}',1)" style="width:34px;height:34px;border:none;border-radius:8px;background:var(--vert-l);color:var(--vert);font-size:18px">+</button>
+    </div>`;
+  };
+  el.innerHTML=(pieces.length
+      ?'<div style="font-size:12px;color:var(--txt-l);margin-bottom:6px">Liées aux ✓ de la liste ci-dessus — quantités ajustables :</div>'+pieces.map(ligne).join('')
+      :'<div style="font-size:12px;color:var(--txt-l);padding:4px 0">Coche ✓ « changée » dans la liste des pièces : la sortie du stock se fait automatiquement.</div>')
+    +(acc.length?'<div style="font-size:12px;color:var(--txt-l);margin:10px 0 6px;font-weight:600">Accessoires (facturés en plus) :</div>'+acc.map(ligne).join(''):'');
+}
+function majUsage(id,delta){
+  const p=_stockDispo.find(x=>x.id===id);if(!p)return;
+  const q=Math.max(0,Math.min(+p.quantite,(_stockUsage[id]||0)+delta));
+  if(q===0)delete _stockUsage[id];else _stockUsage[id]=q;
+  renderStockUsage();
+}
+// Décrémente le stock (FIFO sur les lots si péremption) et trace les mouvements
+async function appliquerSortieStock(verifId,equip){
+  const utilisees=[];
+  for(const [pid,q] of Object.entries(_stockUsage)){
+    const p=_stockDispo.find(x=>x.id===pid);if(!p||!q)continue;
+    const maj={updated_at:new Date().toISOString()};
+    if(p.gestion_peremption&&Array.isArray(p.lots)&&p.lots.length){
+      let reste=q;const lots=p.lots.map(l=>({...l})).sort((a,b)=>a.peremption.localeCompare(b.peremption));
+      for(const l of lots){if(!reste)break;const pris=Math.min(+l.quantite,reste);l.quantite=(+l.quantite)-pris;reste-=pris}
+      maj.lots=lots.filter(l=>(+l.quantite)>0);
+      maj.quantite=maj.lots.reduce((s,l)=>s+(+l.quantite),0);
+    }else{
+      maj.quantite=Math.max(0,(+p.quantite)-q);
+    }
+    const {error}=await db.from('stock_pieces').update(maj).eq('id',p.id);
+    if(error){toast('Stock non décrémenté ('+p.code+') : '+error.message,'err');continue}
+    await db.from('stock_mouvements').insert({piece_id:p.id,type:'utilisation',quantite_avant:p.quantite,quantite_apres:maj.quantite,delta:-q,
+      motif:'Contrôle '+(equip.numero_identification||'')+' — '+(currentClient?.raison_sociale||''),par:ME.id,agence_id:p.agence_id});
+    utilisees.push({piece_id:p.id,code:p.code,designation:p.designation,quantite:q,accessoire:p.categorie==='accessoire'});
+  }
+  if(utilisees.length)await db.from('verifications').update({pieces_utilisees:utilisees}).eq('id',verifId);
+  return utilisees.length;
+}
+// Ré-incrémente le stock d'une vérification re-contrôlée (évite la double sortie)
+async function annulerSortieStock(verifId){
+  const {data:v}=await db.from('verifications').select('pieces_utilisees').eq('id',verifId).single();
+  const anciennes=Array.isArray(v?.pieces_utilisees)?v.pieces_utilisees:[];
+  for(const u of anciennes){
+    const {data:p}=await db.from('stock_pieces').select('*').eq('id',u.piece_id).single();
+    if(!p)continue;
+    const maj={quantite:(+p.quantite)+(+u.quantite),updated_at:new Date().toISOString()};
+    await db.from('stock_pieces').update(maj).eq('id',p.id);
+    await db.from('stock_mouvements').insert({piece_id:p.id,type:'utilisation',quantite_avant:p.quantite,quantite_apres:maj.quantite,delta:+u.quantite,
+      motif:'Annulation sortie (re-contrôle)',par:ME.id,agence_id:p.agence_id});
+  }
+}
+
 async function validerVerif(){
   if(!currentStatut){toast('Sélectionnez le statut final','err');return}
   const equip=currentEquipements.find(e=>e.id===currentEquipId);
@@ -1788,6 +1955,11 @@ async function validerVerif(){
     vData=data; ve=error;
   }
   if(ve){toast('Erreur enregistrement','err');return}
+
+  // Sortie de stock des pièces posées (en annulant l'éventuelle sortie précédente)
+  if(existingVerifId)await annulerSortieStock(existingVerifId);
+  const nbSorties=await appliquerSortieStock(vData.id,equip);
+  if(nbSorties)toast(nbSorties+' pièce(s) sortie(s) du stock ✓');
 
   // Upload des photos d'anomalie
   const photosUploadees = [];
@@ -2557,14 +2729,47 @@ async function choisirPhotoNP(input){
 
 // ---- Création de pièce depuis le téléphone ----
 let _lotsNP=[];
+// Éditeur de compatibilités (menus déroulants du catalogue)
+let _compatNP=[];
+function majCategorieNP(){
+  $('np-compat-bloc').style.display=$('np-categorie').value==='piece'?'block':'none';
+}
+function initCompatSelects(){
+  const marques=marquesPour('extincteur');
+  $('np-cp-marque').innerHTML='<option value="">— Marque —</option>'+marques.map(m=>`<option>${m}</option>`).join('')+'<option value="__autre__">Autre…</option>';
+  $('np-cp-modele').innerHTML='<option value="">— Modèle —</option>';
+}
+function majModelesNP(){
+  let m=$('np-cp-marque').value;
+  if(m==='__autre__'){m=prompt('Marque :')||'';if(!m){$('np-cp-marque').value='';return}
+    const o=document.createElement('option');o.textContent=m;$('np-cp-marque').appendChild(o);$('np-cp-marque').value=m;}
+  const modeles=modelesPour('extincteur',m);
+  $('np-cp-modele').innerHTML='<option value="">Tous les modèles '+(m||'')+'</option>'+modeles.map(x=>`<option>${x}</option>`).join('')+'<option value="__autre__">Autre…</option>';
+}
+function ajouterCompatNP(){
+  let m=$('np-cp-marque').value;let mo=$('np-cp-modele').value;
+  if(!m||m==='__autre__'){toast('Choisis une marque','err');return}
+  if(mo==='__autre__'){mo=prompt('Modèle :')||'';if(!mo)return}
+  if(_compatNP.find(x=>x.marque===m&&(x.modele||'')===(mo||''))){toast('Déjà dans la liste','err');return}
+  _compatNP.push({marque:m,modele:mo||''});
+  renderCompatNP();
+}
+function renderCompatNP(){
+  $('np-compat-chips').innerHTML=_compatNP.length?_compatNP.map((x,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:5px 9px;margin:0 6px 6px 0;font-size:13px">${x.marque}${x.modele?' '+x.modele:' (tous modèles)'}<button type="button" onclick="_compatNP.splice(${i},1);renderCompatNP()" style="background:none;border:none;color:#dc2626;padding:0;font-size:14px">✕</button></span>`).join('')
+    :'<span style="font-size:12px;color:var(--txt-l)">Aucune compatibilité.</span>';
+}
+
 let _pieceEdit=null;
 function ouvrirNouvellePiece(){
   _pieceEdit=null;
   _photoNP=null;$('np-photo-apercu').style.display='none';
-  ['np-code','np-designation','np-marque','np-modele','np-compat'].forEach(id=>$(id).value='');
+  ['np-code','np-designation','np-marque','np-modele'].forEach(id=>$(id).value='');
   $('np-qte').value='0';$('np-seuil').value='0';$('np-qte').disabled=false;
   $('np-peremption').checked=false;$('np-lots-bloc').style.display='none';
   $('np-titre').textContent='Nouvelle pièce';$('np-save').textContent='✅ Créer la pièce';
+  $('np-categorie').value='piece';$('np-tous').checked=false;$('np-conso').checked=false;
+  _compatNP=[];initCompatSelects();renderCompatNP();majCategorieNP();
+  $('np-compat-editeur').style.display='block';
   _lotsNP=[];renderLotsNP();
   goTo('s-new-piece');
 }
@@ -2575,7 +2780,12 @@ function modifierPiece(i){
   $('np-designation').value=p.designation;
   $('np-marque').value=p.marque||'';
   $('np-modele').value=p.modele||'';
-  $('np-compat').value=(Array.isArray(p.compatibilites)?p.compatibilites:[]).map(x=>[x.marque,x.modele].filter(Boolean).join(' ')).join('; ');
+  $('np-categorie').value=p.categorie||'piece';
+  $('np-tous').checked=!!p.compatible_tous;
+  $('np-conso').checked=!!p.conso_par_controle;
+  _compatNP=(Array.isArray(p.compatibilites)?p.compatibilites:[]).map(x=>({...x}));
+  initCompatSelects();renderCompatNP();majCategorieNP();
+  $('np-compat-editeur').style.display=p.compatible_tous?'none':'block';
   $('np-qte').value=p.quantite;$('np-seuil').value=p.seuil_alerte||0;
   $('np-peremption').checked=!!p.gestion_peremption;
   $('np-lots-bloc').style.display=p.gestion_peremption?'block':'none';
@@ -2612,10 +2822,14 @@ async function saveNouvellePiece(){
   if(!code||!des){toast('Code et désignation obligatoires','err');return}
   const gPer=$('np-peremption').checked;
   const qte=gPer?_lotsNP.reduce((s,l)=>s+(+l.quantite||0),0):(parseFloat($('np-qte').value)||0);
-  const compat=$('np-compat').value.split(';').map(s=>{const t=s.trim().split(/\s+/);return{marque:t[0]||'',modele:t.slice(1).join(' ')}}).filter(x=>x.marque);
+  const cat=$('np-categorie').value;
   const piece={
     code,designation:des,marque:$('np-marque').value.trim(),modele:$('np-modele').value.trim(),
-    compatibilites:compat,quantite:qte,seuil_alerte:parseFloat($('np-seuil').value)||0,
+    categorie:cat,
+    compatible_tous:cat==='piece'&&$('np-tous').checked,
+    conso_par_controle:cat==='piece'&&$('np-conso').checked,
+    compatibilites:cat==='piece'&&!$('np-tous').checked?_compatNP:[],
+    quantite:qte,seuil_alerte:parseFloat($('np-seuil').value)||0,
     gestion_peremption:gPer,lots:gPer?_lotsNP:[]
   };
   if(_photoNP){
