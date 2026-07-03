@@ -610,9 +610,14 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <div id="sp-detail" style="font-size:13px;color:var(--txt-l)"></div>
       <div style="margin-top:10px;font-size:14px">Stock théorique : <strong id="sp-theorique"></strong></div>
     </div></div>
-    <div class="fg" style="margin-bottom:14px">
+    <div class="fg" style="margin-bottom:14px" id="sp-simple">
       <label>Quantité réellement comptée *</label>
       <input type="number" id="sp-compte" min="0" inputmode="numeric" style="font-size:22px;text-align:center;font-weight:700">
+    </div>
+    <div id="sp-lots" style="display:none">
+      <div class="sec">Quantités par date de péremption</div>
+      <div id="sp-lots-list"></div>
+      <button type="button" class="btn btn-s btn-sm" onclick="ajouterLotComptage()" style="margin:8px 0">+ Nouveau lot</button>
     </div>
     <div id="sp-ecart" style="text-align:center;font-weight:700;font-size:15px;margin-bottom:10px"></div>
   </div>
@@ -2423,11 +2428,48 @@ async function traiterScanPiece(codePiece){
   const comp=[[_pieceEnCours.marque,_pieceEnCours.modele].filter(Boolean).join(' '),...(Array.isArray(_pieceEnCours.compatibilites)?_pieceEnCours.compatibilites:[]).map(x=>[x.marque,x.modele].filter(Boolean).join(' '))].filter(Boolean);
   $('sp-detail').textContent=_pieceEnCours.code+(comp.length?' — compatible : '+comp.join(' · '):'');
   $('sp-theorique').textContent=_pieceEnCours.quantite;
-  $('sp-compte').value=_pieceEnCours.quantite;
-  majEcartComptage();
-  $('sp-compte').oninput=majEcartComptage;
+  if(_pieceEnCours.gestion_peremption){
+    $('sp-simple').style.display='none';$('sp-lots').style.display='block';
+    _lotsComptage=(Array.isArray(_pieceEnCours.lots)?_pieceEnCours.lots:[]).map(l=>({peremption:l.peremption,quantite:+l.quantite}));
+    renderLotsComptage();
+  }else{
+    $('sp-simple').style.display='block';$('sp-lots').style.display='none';
+    $('sp-compte').value=_pieceEnCours.quantite;
+    majEcartComptage();
+    $('sp-compte').oninput=majEcartComptage;
+    setTimeout(()=>{$('sp-compte').focus();$('sp-compte').select()},200);
+  }
   goTo('s-stock-piece');
-  setTimeout(()=>{$('sp-compte').focus();$('sp-compte').select()},200);
+}
+
+// ---- Comptage par lots (péremption) ----
+let _lotsComptage=[];
+const _fmtLot=d=>{if(!d)return'—';const [a,m]=d.split('-');return m+'/'+a};
+const _lotPerime=d=>{const f=new Date(d+'-01');f.setMonth(f.getMonth()+1);return f<new Date()};
+function renderLotsComptage(){
+  const el=$('sp-lots-list');
+  el.innerHTML=_lotsComptage.map((l,i)=>`<div style="display:flex;align-items:center;gap:10px;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:6px">
+    <div style="flex:1;font-weight:600;color:${_lotPerime(l.peremption)?'#dc2626':'var(--txt)'}">${_lotPerime(l.peremption)?'⛔ ':''}${_fmtLot(l.peremption)}</div>
+    <input type="number" min="0" inputmode="numeric" value="${l.quantite}" onchange="_lotsComptage[${i}].quantite=parseInt(this.value,10)||0;majEcartLots()" style="width:80px;text-align:center;font-weight:700;font-size:16px;padding:8px;border:1.5px solid #e5e7eb;border-radius:8px">
+    <button onclick="_lotsComptage.splice(${i},1);renderLotsComptage()" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:6px 10px">✕</button>
+  </div>`).join('')||'<div style="text-align:center;color:var(--txt-l);font-size:13px;padding:8px">Aucun lot — ajoute le premier.</div>';
+  majEcartLots();
+}
+function majEcartLots(){
+  const tot=_lotsComptage.reduce((s,l)=>s+(+l.quantite||0),0);
+  const ecart=tot-(+_pieceEnCours.quantite);
+  const el=$('sp-ecart');
+  el.textContent='Total compté : '+tot+(ecart>0?' (➕ entrée de '+ecart+')':ecart<0?' (✎ rectification de '+ecart+')':' (✓ conforme)');
+  el.style.color=ecart>0?'#16a34a':ecart<0?'#dc2626':'#9ca3af';
+}
+function ajouterLotComptage(){
+  const d=prompt('Date de péremption du lot (AAAA-MM) :');
+  if(!d)return;
+  if(!/^\d{4}-\d{2}$/.test(d.trim())){toast('Format attendu : AAAA-MM (ex : 2027-05)','err');return}
+  if(_lotsComptage.find(l=>l.peremption===d.trim())){toast('Ce lot existe déjà','err');return}
+  _lotsComptage.push({peremption:d.trim(),quantite:0});
+  _lotsComptage.sort((a,b)=>a.peremption.localeCompare(b.peremption));
+  renderLotsComptage();
 }
 
 function majEcartComptage(){
@@ -2441,12 +2483,22 @@ function majEcartComptage(){
 }
 
 async function validerComptage(){
-  const compte=parseFloat($('sp-compte').value);
-  if(isNaN(compte)||compte<0){toast('Quantité invalide','err');return}
-  const avant=+_pieceEnCours.quantite;const ecart=compte-avant;
-  const {error}=await db.from('stock_pieces').update({quantite:compte,updated_at:new Date().toISOString()}).eq('id',_pieceEnCours.id);
+  const avant=+_pieceEnCours.quantite;
+  let compte,maj={updated_at:new Date().toISOString()},motif='Inventaire';
+  if(_pieceEnCours.gestion_peremption){
+    const lots=_lotsComptage.filter(l=>(+l.quantite)>0);
+    compte=lots.reduce((s,l)=>s+(+l.quantite),0);
+    maj.lots=lots;maj.quantite=compte;
+    motif='Inventaire — lots : '+(lots.map(l=>_fmtLot(l.peremption)+' : '+l.quantite).join(', ')||'aucun');
+  }else{
+    compte=parseFloat($('sp-compte').value);
+    if(isNaN(compte)||compte<0){toast('Quantité invalide','err');return}
+    maj.quantite=compte;
+  }
+  const ecart=compte-avant;
+  const {error}=await db.from('stock_pieces').update(maj).eq('id',_pieceEnCours.id);
   if(error){toast('Erreur : '+error.message,'err');return}
-  await db.from('stock_mouvements').insert({piece_id:_pieceEnCours.id,type:ecart>0?'entree':'rectification',quantite_avant:avant,quantite_apres:compte,delta:ecart,motif:'Inventaire',inventaire_id:_inventaire?_inventaire.id:null,par:ME.id,agence_id:_pieceEnCours.agence_id||null});
+  await db.from('stock_mouvements').insert({piece_id:_pieceEnCours.id,type:ecart>0?'entree':'rectification',quantite_avant:avant,quantite_apres:compte,delta:ecart,motif,inventaire_id:_inventaire?_inventaire.id:null,par:ME.id,agence_id:_pieceEnCours.agence_id||null});
   toast('Comptage enregistré ✓');
   await ouvrirStock();
 }

@@ -1694,7 +1694,9 @@ function renderStock(){
     <td>${p.designation}</td>
     <td style="font-size:12px;color:var(--txt-l)">${compatTxt(p)}</td>
     <td><span class="badge bg">${p.agences?.nom||'—'}</span></td>
-    <td style="text-align:center;font-weight:700;${alerte?'color:#dc2626':''}">${p.quantite}${alerte?' ⚠':''}</td>
+    <td style="text-align:center;font-weight:700;${alerte?'color:#dc2626':''}">${p.quantite}${alerte?' ⚠':''}
+      ${p.gestion_peremption&&Array.isArray(p.lots)&&p.lots.length?'<div style="font-weight:400;font-size:11px;margin-top:2px">'+p.lots.map(l=>{const e=lotEtat(l.peremption);return `<div style="color:${lotCouleur[e]}">${e==='perime'?'⛔':e==='proche'?'⏰':''} ${fmtLot(l.peremption)} : ${l.quantite}</div>`}).join('')+'</div>':''}
+    </td>
     <td style="font-size:12px">${fmt(p.updated_at)}</td>
     <td><div class="ia">
       <button class="btn btn-s btn-xs" onclick="editPiece('${p.id}')">✏️</button>
@@ -1706,14 +1708,59 @@ function renderStock(){
 }
 
 let _compatPiece=[];
+
+// ---- Lots par date de péremption ----
+let _lotsPiece=[];
+const lotEtat=d=>{ // d = 'AAAA-MM'
+  if(!d)return'';
+  const fin=new Date(d+'-01');fin.setMonth(fin.getMonth()+1);
+  const j=(fin-new Date())/86400000;
+  return j<0?'perime':j<90?'proche':'ok';
+};
+const lotCouleur={perime:'#dc2626',proche:'#d97706',ok:'var(--txt)'};
+const fmtLot=d=>{if(!d)return'—';const [a,m]=d.split('-');return m+'/'+a};
+function togglePeremption(){
+  const on=$('pc-peremption').checked;
+  $('pc-lots-bloc').style.display=on?'block':'none';
+  $('pc-qte').disabled=on;
+  if(on)majQteLots();
+}
+function renderLotsPiece(){
+  const el=$('pc-lots-list');
+  el.innerHTML=_lotsPiece.length?_lotsPiece.map((l,i)=>{
+    const e=lotEtat(l.peremption);
+    return `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg);border-radius:8px;padding:4px 8px;margin:0 6px 6px 0;font-size:12px;color:${lotCouleur[e]}">${e==='perime'?'⛔ ':e==='proche'?'⏰ ':''}${fmtLot(l.peremption)} : <strong>${l.quantite}</strong><button type="button" onclick="_lotsPiece.splice(${i},1);renderLotsPiece()" style="background:none;border:none;color:#dc2626;cursor:pointer;padding:0">✕</button></span>`;
+  }).join(''):'<span style="font-size:12px;color:var(--txt-l)">Aucun lot.</span>';
+  majQteLots();
+}
+function majQteLots(){
+  if($('pc-peremption').checked)$('pc-qte').value=_lotsPiece.reduce((s,l)=>s+(+l.quantite||0),0);
+}
+function ajouterLot(){
+  const d=$('pc-lot-date').value;const q=parseInt($('pc-lot-qte').value,10);
+  if(!d){toast('Date de péremption requise','err');return}
+  if(!q||q<1){toast('Quantité invalide','err');return}
+  const ex=_lotsPiece.find(l=>l.peremption===d);
+  if(ex)ex.quantite=(+ex.quantite)+q;else _lotsPiece.push({peremption:d,quantite:q});
+  _lotsPiece.sort((a,b)=>a.peremption.localeCompare(b.peremption));
+  $('pc-lot-date').value='';$('pc-lot-qte').value='';
+  renderLotsPiece();
+}
+
 function openPieceModal(prefill=null){
   ['pc-id','pc-code','pc-designation','pc-marque','pc-modele'].forEach(id=>$(id).value='');
   $('pc-qte').value='0';$('pc-seuil').value='0';$('mo-pc-t').textContent='Nouvelle pièce';
   $('pc-qte').disabled=false;
   $('pc-agence').value=_stockAgFiltre||'';
-  _compatPiece=[];
-  if(prefill){$('pc-id').value=prefill.id;$('pc-code').value=prefill.code;$('pc-designation').value=prefill.designation;$('pc-marque').value=prefill.marque||'';$('pc-modele').value=prefill.modele||'';$('pc-qte').value=prefill.quantite;$('pc-qte').disabled=true;$('pc-seuil').value=prefill.seuil_alerte||0;$('pc-agence').value=prefill.agence_id||'';_compatPiece=Array.isArray(prefill.compatibilites)?[...prefill.compatibilites]:[];$('mo-pc-t').textContent='Modifier la pièce';}
-  renderCompatPiece();
+  _compatPiece=[];_lotsPiece=[];
+  $('pc-peremption').checked=false;$('pc-lots-bloc').style.display='none';
+  if(prefill){$('pc-id').value=prefill.id;$('pc-code').value=prefill.code;$('pc-designation').value=prefill.designation;$('pc-marque').value=prefill.marque||'';$('pc-modele').value=prefill.modele||'';$('pc-qte').value=prefill.quantite;$('pc-qte').disabled=true;$('pc-seuil').value=prefill.seuil_alerte||0;$('pc-agence').value=prefill.agence_id||'';_compatPiece=Array.isArray(prefill.compatibilites)?[...prefill.compatibilites]:[];
+    _lotsPiece=Array.isArray(prefill.lots)?prefill.lots.map(l=>({...l})):[];
+    $('pc-peremption').checked=!!prefill.gestion_peremption;
+    $('pc-lots-bloc').style.display=prefill.gestion_peremption?'block':'none';
+    $('pc-qte').disabled=$('pc-qte').disabled||prefill.gestion_peremption;
+    $('mo-pc-t').textContent='Modifier la pièce';}
+  renderCompatPiece();renderLotsPiece();
   OM('mo-piece');
 }
 function renderCompatPiece(){
@@ -1733,10 +1780,16 @@ async function savePiece(){
   const id=$('pc-id').value;
   const code=$('pc-code').value.trim();const des=$('pc-designation').value.trim();
   if(!code||!des){toast('Code et désignation obligatoires','err');return}
-  const p={code,designation:des,marque:$('pc-marque').value.trim(),modele:$('pc-modele').value.trim(),seuil_alerte:parseFloat($('pc-seuil').value)||0,agence_id:$('pc-agence').value||null,compatibilites:_compatPiece,updated_at:new Date().toISOString()};
+  const gPer=$('pc-peremption').checked;
+  const p={code,designation:des,marque:$('pc-marque').value.trim(),modele:$('pc-modele').value.trim(),seuil_alerte:parseFloat($('pc-seuil').value)||0,agence_id:$('pc-agence').value||null,compatibilites:_compatPiece,gestion_peremption:gPer,lots:gPer?_lotsPiece:[],updated_at:new Date().toISOString()};
   if(id){
+    const avant=stockPieces.find(x=>x.id===id);
+    if(gPer)p.quantite=_lotsPiece.reduce((s,l)=>s+(+l.quantite||0),0);
     const {error}=await db.from('stock_pieces').update(p).eq('id',id);
     if(error){toast('Erreur: '+error.message,'err');return}
+    if(gPer&&avant&&(+avant.quantite)!==p.quantite){
+      await db.from('stock_mouvements').insert({piece_id:id,type:'rectification',quantite_avant:avant.quantite,quantite_apres:p.quantite,delta:p.quantite-(+avant.quantite),motif:'Modification des lots (bureau)',par:ME.id,agence_id:p.agence_id});
+    }
     toast('Pièce modifiée');
   }else{
     p.quantite=parseFloat($('pc-qte').value)||0;
@@ -1757,18 +1810,35 @@ function openCasseModal(id){
   const p=stockPieces.find(p=>p.id===id);if(!p)return;
   $('cs-piece-id').value=id;$('cs-qte').value='1';$('cs-detail').value='';
   $('cs-info').innerHTML=`<strong>${p.designation}</strong> (${p.code}) — en stock : <strong>${p.quantite}</strong>`;
+  const bloc=$('cs-lot-bloc');
+  if(p.gestion_peremption&&Array.isArray(p.lots)&&p.lots.length){
+    bloc.style.display='block';
+    $('cs-lot').innerHTML=p.lots.map((l,i)=>{const e=lotEtat(l.peremption);return `<option value="${i}">${e==='perime'?'⛔ PÉRIMÉ — ':e==='proche'?'⏰ ':''}${fmtLot(l.peremption)} (${l.quantite} en stock)</option>`}).join('');
+  }else bloc.style.display='none';
   OM('mo-casse');
 }
 async function saveCasse(){
   const p=stockPieces.find(x=>x.id===$('cs-piece-id').value);if(!p)return;
   const q=parseFloat($('cs-qte').value);
   if(!q||q<1){toast('Quantité invalide','err');return}
-  if(q>+p.quantite){toast('Stock insuffisant ('+p.quantite+' en stock)','err');return}
-  const apres=(+p.quantite)-q;
-  const motif=$('cs-motif').value+($('cs-detail').value.trim()?' — '+$('cs-detail').value.trim():'');
-  const {error}=await db.from('stock_pieces').update({quantite:apres,updated_at:new Date().toISOString()}).eq('id',p.id);
+  let motif=$('cs-motif').value+($('cs-detail').value.trim()?' — '+$('cs-detail').value.trim():'');
+  const maj={updated_at:new Date().toISOString()};
+  if(p.gestion_peremption&&Array.isArray(p.lots)&&p.lots.length){
+    const li=parseInt($('cs-lot').value,10);const lot=p.lots[li];
+    if(!lot){toast('Choisis un lot','err');return}
+    if(q>+lot.quantite){toast('Ce lot ne contient que '+lot.quantite+' pièce(s)','err');return}
+    const lots=p.lots.map(l=>({...l}));
+    lots[li].quantite=(+lots[li].quantite)-q;
+    maj.lots=lots.filter(l=>(+l.quantite)>0);
+    maj.quantite=maj.lots.reduce((s,l)=>s+(+l.quantite),0);
+    motif+=' — lot '+fmtLot(lot.peremption);
+  }else{
+    if(q>+p.quantite){toast('Stock insuffisant ('+p.quantite+' en stock)','err');return}
+    maj.quantite=(+p.quantite)-q;
+  }
+  const {error}=await db.from('stock_pieces').update(maj).eq('id',p.id);
   if(error){toast('Erreur: '+error.message,'err');return}
-  await db.from('stock_mouvements').insert({piece_id:p.id,type:'casse',quantite_avant:p.quantite,quantite_apres:apres,delta:-q,motif,par:ME.id,agence_id:p.agence_id});
+  await db.from('stock_mouvements').insert({piece_id:p.id,type:'casse',quantite_avant:p.quantite,quantite_apres:maj.quantite,delta:-q,motif,par:ME.id,agence_id:p.agence_id});
   toast('Sortie casse enregistrée');CM('mo-casse');loadStock();
 }
 
