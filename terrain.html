@@ -589,6 +589,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button class="hdr-back" onclick="goTo('s-parc')">←</button>
     <h1>Inventaire du stock</h1>
   </div>
+  <div style="padding:8px 12px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;gap:6px" id="stock-ag-sel"></div>
   <div class="content" id="stock-content">
     <div class="loading"><div class="spin spin-dark"></div></div>
   </div>
@@ -2383,17 +2384,24 @@ async function validerSignatureEtCloturer(){
 // ============================================================
 let _inventaire=null,_pieceEnCours=null,_comptages=[];
 
-let _piecesAgence=[];
+let _piecesAgence=[],_stockAgence=null,_agencesStock=null;
 async function ouvrirStock(){
   goTo('s-stock');
   const el=$('stock-content');
   el.innerHTML='<div class="loading"><div class="spin spin-dark"></div></div>';
+  if(!_agencesStock){
+    const {data:ags}=await db.from('agences').select('id,nom').order('nom');
+    _agencesStock=ags||[];
+    _stockAgence=ME.agence_id||(_agencesStock[0]&&_agencesStock[0].id)||null;
+  }
+  // Boutons de choix d'agence
+  $('stock-ag-sel').innerHTML=_agencesStock.map(a=>
+    `<button class="btn ${_stockAgence===a.id?'btn-p':'btn-s'}" style="flex:1;font-size:12px;padding:7px" onclick="setAgenceStock('${a.id}')">📍 ${a.nom}</button>`).join('');
   let qp=db.from('stock_pieces').select('*,agences(nom)').order('designation');
-  if(ME.agence_id)qp=qp.eq('agence_id',ME.agence_id);
-  const [{data:inv,error},{data:pieces,error:ep}]=await Promise.all([
-    db.from('stock_inventaires').select('*').eq('statut','en_cours').order('demarre_le',{ascending:false}).limit(1),
-    qp
-  ]);
+  if(_stockAgence)qp=qp.eq('agence_id',_stockAgence);
+  let qi=db.from('stock_inventaires').select('*').eq('statut','en_cours').order('demarre_le',{ascending:false}).limit(1);
+  if(_stockAgence)qi=qi.eq('agence_id',_stockAgence);
+  const [{data:inv,error},{data:pieces,error:ep}]=await Promise.all([qi,qp]);
   if(error||ep){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--txt-l)">Erreur : '+(error||ep).message+'</div>';$('stock-footer').style.display='none';return}
   _piecesAgence=pieces||[];
   _inventaire=(inv&&inv[0])||null;
@@ -2410,10 +2418,15 @@ async function ouvrirStock(){
     $('stock-footer').style.display='none';
   }
 }
+function setAgenceStock(id){
+  if(_inventaire){toast('Termine d\'abord l\'inventaire en cours','err');return}
+  _stockAgence=id;ouvrirStock();
+}
+const nomAgenceStock=()=>{const a=(_agencesStock||[]).find(x=>x.id===_stockAgence);return a?a.nom:'—'};
 const _fmtLotS=d=>{if(!d)return'—';const [a,m]=d.split('-');return m+'/'+a};
 function listePiecesHTML(){
-  if(!_piecesAgence.length)return '<div style="padding:20px;text-align:center;color:var(--txt-l);font-size:13px">Aucune pièce dans le stock de ton agence.<br>Crée la première ou importe depuis le bureau.</div>';
-  return '<div class="sec">Stock de mon agence ('+_piecesAgence.length+' pièce'+(_piecesAgence.length>1?'s':'')+')</div>'
+  if(!_piecesAgence.length)return '<div style="padding:20px;text-align:center;color:var(--txt-l);font-size:13px">Aucune pièce dans le stock '+nomAgenceStock()+'.<br>Crée la première ou importe depuis le bureau.</div>';
+  return '<div class="sec">Stock '+nomAgenceStock()+' ('+_piecesAgence.length+' pièce'+(_piecesAgence.length>1?'s':'')+')</div>'
     +_piecesAgence.map(p=>{
       const alerte=(+p.seuil_alerte||0)>0&&(+p.quantite)<=(+p.seuil_alerte);
       const lots=p.gestion_peremption&&Array.isArray(p.lots)&&p.lots.length
@@ -2445,13 +2458,14 @@ function renderStockMobile(){
       <div style="font-size:12px;font-weight:700;color:${ecart>0?'#16a34a':ecart<0?'#dc2626':'#9ca3af'}">${ecart>0?'+'+ecart+' entrée':ecart<0?ecart+' rectif.':'conforme'}</div></div>
     </div>`}).join(''):'<div style="text-align:center;color:var(--txt-l);padding:20px;font-size:13px">Aucune pièce comptée pour l\'instant — scanne un QR code.</div>';
   el.innerHTML=`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px">
-    ⏳ Inventaire en cours depuis le ${new Date(_inventaire.demarre_le).toLocaleString('fr-FR')}<br>
+    ⏳ Inventaire <strong>${nomAgenceStock()}</strong> en cours depuis le ${new Date(_inventaire.demarre_le).toLocaleString('fr-FR')}<br>
     <strong>${_comptages.length}</strong> pièce(s) comptée(s)</div>
     <div class="sec">Pièces comptées</div>${lignes}`+listePiecesHTML();
 }
 
 async function demarrerInventaire(){
-  const {data,error}=await db.from('stock_inventaires').insert({demarre_par:ME.id}).select().single();
+  if(!confirm('Démarrer un inventaire du stock '+nomAgenceStock()+' ?'))return;
+  const {data,error}=await db.from('stock_inventaires').insert({demarre_par:ME.id,agence_id:_stockAgence}).select().single();
   if(error){toast('Erreur : '+error.message,'err');return}
   _inventaire=data;_comptages=[];
   toast('Inventaire démarré');
@@ -2480,16 +2494,16 @@ async function traiterScanPiece(codePiece){
   // Chercher d'abord dans l'agence du technicien, sinon sans agence
   let {data:pieces}=await db.from('stock_pieces').select('*,agences(nom)').eq('code',codePiece);
   pieces=pieces||[];
-  let p=pieces.find(x=>x.agence_id===ME.agence_id)||pieces.find(x=>!x.agence_id);
+  let p=pieces.find(x=>x.agence_id===_stockAgence)||pieces.find(x=>!x.agence_id);
   if(!p&&pieces.length){
     toast('Cette pièce existe dans une autre agence ('+(pieces[0].agences?.nom||'?')+') — transfert à faire depuis le bureau','err');
     goTo('s-stock');return;
   }
   if(!p){
-    if(confirm('Pièce inconnue : "'+codePiece+'"\nLa créer dans le stock de ton agence ?')){
+    if(confirm('Pièce inconnue : "'+codePiece+'"\nLa créer dans le stock '+nomAgenceStock()+' ?')){
       const des=prompt('Désignation de la pièce :');
       if(!des)return;
-      const {data:np,error}=await db.from('stock_pieces').insert({code:codePiece,designation:des.trim(),quantite:0,agence_id:ME.agence_id||null}).select().single();
+      const {data:np,error}=await db.from('stock_pieces').insert({code:codePiece,designation:des.trim(),quantite:0,agence_id:_stockAgence||null}).select().single();
       if(error){toast('Erreur : '+error.message,'err');return}
       _pieceEnCours=np;
     }else return;
@@ -2624,10 +2638,10 @@ async function saveNouvellePiece(){
     toast('Pièce modifiée ✓');
   }else{
     // ---- Création ----
-    piece.agence_id=ME.agence_id||null;
+    piece.agence_id=_stockAgence||ME.agence_id||null;
     const {data:np,error}=await db.from('stock_pieces').insert(piece).select().single();
     if(error){toast('Erreur : '+error.message,'err');return}
-    if(qte>0)await db.from('stock_mouvements').insert({piece_id:np.id,type:'entree',quantite_avant:0,quantite_apres:qte,delta:qte,motif:'Création de la pièce (mobile)',par:ME.id,agence_id:ME.agence_id||null});
+    if(qte>0)await db.from('stock_mouvements').insert({piece_id:np.id,type:'entree',quantite_avant:0,quantite_apres:qte,delta:qte,motif:'Création de la pièce (mobile)',par:ME.id,agence_id:piece.agence_id});
     toast('Pièce créée ✓ — imprime son QR depuis le bureau');
   }
   _pieceEdit=null;

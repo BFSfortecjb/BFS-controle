@@ -473,7 +473,7 @@ async function actualiserBon(bonId){
 // PDF — RAPPORT D'INVENTAIRE DE STOCK
 // ============================================================
 async function rapportInventairePDF(invId){
-  const {data:inv}=await db.from('stock_inventaires').select('*,profils(nom,prenom)').eq('id',invId).single();
+  const {data:inv}=await db.from('stock_inventaires').select('*,profils(nom,prenom),agences(nom)').eq('id',invId).single();
   if(!inv){toast('Inventaire introuvable','err');return}
   const {data:mvts}=await db.from('stock_mouvements').select('*,stock_pieces(code,designation,marque,modele)').eq('inventaire_id',invId).order('created_at');
   const {jsPDF}=window.jspdf;const doc=new jsPDF();
@@ -487,7 +487,7 @@ async function rapportInventairePDF(invId){
   doc.text('RAPPORT D\'INVENTAIRE DE STOCK',130,15,{align:'center'});
   doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
   const par=inv.profils?`${inv.profils.prenom||''} ${inv.profils.nom}`.trim():'—';
-  doc.text(`Démarré le ${new Date(inv.demarre_le).toLocaleString('fr-FR')} par ${par}`,14,26);
+  doc.text(`Agence ${inv.agences?.nom||'—'} — démarré le ${new Date(inv.demarre_le).toLocaleString('fr-FR')} par ${par}`,14,26);
   doc.text(inv.termine_le?`Terminé le ${new Date(inv.termine_le).toLocaleString('fr-FR')}`:'⏳ En cours',150,26);
   let y=33;
   const lst=mvts||[];

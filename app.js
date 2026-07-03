@@ -1652,7 +1652,7 @@ async function loadStock(){
   if(ftype)qm=qm.eq('type',ftype);
   const [{data:p,error:e1},{data:inv},{data:mv},{data:ags}]=await Promise.all([
     db.from('stock_pieces').select('*,agences(nom,code)').order('designation'),
-    db.from('stock_inventaires').select('*,profils(nom,prenom)').order('demarre_le',{ascending:false}).limit(20),
+    db.from('stock_inventaires').select('*,profils(nom,prenom),agences(nom)').order('demarre_le',{ascending:false}).limit(20),
     qm,
     db.from('agences').select('*').order('nom')
   ]);
@@ -1974,8 +1974,9 @@ const badgeMvt=t=>({entree:'<span class="badge bv">➕ Entrée</span>',rectifica
 function renderInventaires(){
   const el=$('tbl-inventaires');
   if(!_stockInventaires.length){el.innerHTML='<div class="t-empty">Aucun inventaire — se lance depuis le téléphone (onglet Stock).</div>';return}
-  el.innerHTML=`<table><thead><tr><th>Démarré le</th><th>Par</th><th>Statut</th><th>Terminé le</th><th></th></tr></thead><tbody>${_stockInventaires.map(i=>`<tr>
+  el.innerHTML=`<table><thead><tr><th>Démarré le</th><th>Agence</th><th>Par</th><th>Statut</th><th>Terminé le</th><th></th></tr></thead><tbody>${_stockInventaires.map(i=>`<tr>
     <td>${new Date(i.demarre_le).toLocaleString('fr-FR')}</td>
+    <td><span class="badge bg">${i.agences?.nom||'—'}</span></td>
     <td>${i.profils?`${i.profils.prenom||''} ${i.profils.nom}`:'—'}</td>
     <td>${i.statut==='terminé'?'<span class="badge bv">✓ Terminé</span>':'<span class="badge bo">⏳ En cours</span>'}</td>
     <td>${i.termine_le?new Date(i.termine_le).toLocaleString('fr-FR'):'—'}</td>
