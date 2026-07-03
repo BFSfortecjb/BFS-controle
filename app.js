@@ -1666,18 +1666,21 @@ async function loadStock(){
   if($('pc-agence'))$('pc-agence').innerHTML=opts;
   if($('tf-dest'))$('tf-dest').innerHTML=_stockAgences.map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
   renderStock();renderInventaires();renderMouvements();
+  chargerPrevision();
 }
 window.stockSetAgence=function(btn,id){
   _stockAgFiltre=id;
   btn.parentElement.querySelectorAll('.ag-tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  renderStock();
+  renderStock();renderPrevision();
 }
 
 function compatTxt(p){
+  if(p.categorie==='accessoire')return '🏷 Accessoire';
+  if(p.compatible_tous)return '✅ Tous extincteurs';
   const comp=Array.isArray(p.compatibilites)?p.compatibilites:[];
   const base=[p.marque,p.modele].filter(Boolean).join(' ');
-  const all=[base,...comp.map(x=>[x.marque,x.modele].filter(Boolean).join(' '))].filter(Boolean);
+  const all=[base,...comp.map(x=>x.marque+(x.modele?' '+x.modele:' (tous)'))].filter(Boolean);
   return all.length?all.join(' · '):'—';
 }
 function renderStock(){
@@ -1725,6 +1728,18 @@ function compresserPhoto(file,maxDim=800){
     img.onerror=()=>rej('image illisible');
     img.src=URL.createObjectURL(file);
   });
+}
+function initCompatSelectsPC(){
+  const marques=marquesPour('extincteur');
+  $('pc-cp-marque').innerHTML='<option value="">— Marque —</option>'+marques.map(m=>`<option>${m}</option>`).join('')+'<option value="__autre__">Autre…</option>';
+  $('pc-cp-modele').innerHTML='<option value="">— Modèle —</option>';
+}
+function majModelesPC(){
+  let m=$('pc-cp-marque').value;
+  if(m==='__autre__'){m=prompt('Marque :')||'';if(!m){$('pc-cp-marque').value='';return}
+    const o=document.createElement('option');o.textContent=m;$('pc-cp-marque').appendChild(o);$('pc-cp-marque').value=m;}
+  const modeles=modelesPour('extincteur',m);
+  $('pc-cp-modele').innerHTML='<option value="">Tous les modèles '+(m||'')+'</option>'+modeles.map(x=>`<option>${x}</option>`).join('')+'<option value="__autre__">Autre…</option>';
 }
 async function choisirPhotoPiece(input){
   const f=input.files[0];input.value='';
@@ -1798,11 +1813,19 @@ function openPieceModal(prefill=null){
   _photoPiece=null;_photoPieceSupprimee=false;
   $('pc-photo-apercu').style.display='none';$('pc-photo-suppr').style.display='none';
   $('pc-peremption').checked=false;$('pc-lots-bloc').style.display='none';
+  $('pc-categorie').value='piece';$('pc-tous').checked=false;$('pc-conso').checked=false;
+  $('pc-compat-bloc').style.display='block';$('pc-compat-editeur').style.display='block';
+  initCompatSelectsPC();
   if(prefill){$('pc-id').value=prefill.id;$('pc-code').value=prefill.code;$('pc-designation').value=prefill.designation;$('pc-marque').value=prefill.marque||'';$('pc-modele').value=prefill.modele||'';$('pc-qte').value=prefill.quantite;$('pc-qte').disabled=true;$('pc-seuil').value=prefill.seuil_alerte||0;$('pc-agence').value=prefill.agence_id||'';_compatPiece=Array.isArray(prefill.compatibilites)?[...prefill.compatibilites]:[];
     _lotsPiece=Array.isArray(prefill.lots)?prefill.lots.map(l=>({...l})):[];
     $('pc-peremption').checked=!!prefill.gestion_peremption;
     $('pc-lots-bloc').style.display=prefill.gestion_peremption?'block':'none';
     $('pc-qte').disabled=$('pc-qte').disabled||prefill.gestion_peremption;
+    $('pc-categorie').value=prefill.categorie||'piece';
+    $('pc-tous').checked=!!prefill.compatible_tous;
+    $('pc-conso').checked=!!prefill.conso_par_controle;
+    $('pc-compat-bloc').style.display=(prefill.categorie||'piece')==='piece'?'block':'none';
+    $('pc-compat-editeur').style.display=prefill.compatible_tous?'none':'block';
     if(prefill.photo_url){$('pc-photo-apercu').src=prefill.photo_url;$('pc-photo-apercu').style.display='block';$('pc-photo-suppr').style.display='inline-block';}
     $('mo-pc-t').textContent='Modifier la pièce';}
   renderCompatPiece();renderLotsPiece();
@@ -1810,14 +1833,15 @@ function openPieceModal(prefill=null){
 }
 function renderCompatPiece(){
   const el=$('pc-compat-list');if(!el)return;
-  el.innerHTML=_compatPiece.length?_compatPiece.map((x,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg);border-radius:8px;padding:4px 8px;margin:0 6px 6px 0;font-size:12px">${[x.marque,x.modele].filter(Boolean).join(' ')}<button type="button" onclick="_compatPiece.splice(${i},1);renderCompatPiece()" style="background:none;border:none;color:#dc2626;cursor:pointer;padding:0">✕</button></span>`).join('')
+  el.innerHTML=_compatPiece.length?_compatPiece.map((x,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg);border-radius:8px;padding:4px 8px;margin:0 6px 6px 0;font-size:12px">${x.marque}${x.modele?' '+x.modele:' (tous modèles)'}<button type="button" onclick="_compatPiece.splice(${i},1);renderCompatPiece()" style="background:none;border:none;color:#dc2626;cursor:pointer;padding:0">✕</button></span>`).join('')
     :'<span style="font-size:12px;color:var(--txt-l)">Aucune autre compatibilité.</span>';
 }
 function ajouterCompat(){
-  const m=$('pc-compat-marque').value.trim(),mo=$('pc-compat-modele').value.trim();
-  if(!m&&!mo){toast('Saisis au moins une marque ou un modèle','err');return}
-  _compatPiece.push({marque:m,modele:mo});
-  $('pc-compat-marque').value='';$('pc-compat-modele').value='';
+  let m=$('pc-cp-marque').value;let mo=$('pc-cp-modele').value;
+  if(!m||m==='__autre__'){toast('Choisis une marque','err');return}
+  if(mo==='__autre__'){mo=prompt('Modèle :')||'';if(!mo)return}
+  if(_compatPiece.find(x=>x.marque===m&&(x.modele||'')===(mo||''))){toast('Déjà dans la liste','err');return}
+  _compatPiece.push({marque:m,modele:mo||''});
   renderCompatPiece();
 }
 function editPiece(id){openPieceModal(stockPieces.find(p=>p.id===id))}
@@ -1826,7 +1850,10 @@ async function savePiece(){
   const code=$('pc-code').value.trim();const des=$('pc-designation').value.trim();
   if(!code||!des){toast('Code et désignation obligatoires','err');return}
   const gPer=$('pc-peremption').checked;
-  const p={code,designation:des,marque:$('pc-marque').value.trim(),modele:$('pc-modele').value.trim(),seuil_alerte:parseFloat($('pc-seuil').value)||0,agence_id:$('pc-agence').value||null,compatibilites:_compatPiece,gestion_peremption:gPer,lots:gPer?_lotsPiece:[],updated_at:new Date().toISOString()};
+  const cat=$('pc-categorie').value;
+  const p={code,designation:des,marque:$('pc-marque').value.trim(),modele:$('pc-modele').value.trim(),seuil_alerte:parseFloat($('pc-seuil').value)||0,agence_id:$('pc-agence').value||null,
+    categorie:cat,compatible_tous:cat==='piece'&&$('pc-tous').checked,conso_par_controle:cat==='piece'&&$('pc-conso').checked,
+    compatibilites:cat==='piece'&&!$('pc-tous').checked?_compatPiece:[],gestion_peremption:gPer,lots:gPer?_lotsPiece:[],updated_at:new Date().toISOString()};
   const avantP=id?stockPieces.find(x=>x.id===id):null;
   if(_photoPiece){const ph=await uploaderPhotoPiece(code,avantP?.photo_path);if(ph)Object.assign(p,ph)}
   else if(_photoPieceSupprimee&&avantP?.photo_path){await db.storage.from('stock-photos').remove([avantP.photo_path]);p.photo_url=null;p.photo_path=null}
@@ -1968,8 +1995,62 @@ function exportStockXLS(){
   XLSX.writeFile(wb,'BFS_stock_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
+
+// ---- Prévision du besoin de pièces (échéances à venir × pièces consommables) ----
+let _echeancesPrev=[];
+async function chargerPrevision(){
+  const {data}=await db.from('verifications')
+    .select('equipement_id,date_prochaine_echeance,created_at,equipements(marque,modele,type_equipement_code,statut,clients(agence_id))')
+    .not('date_prochaine_echeance','is',null)
+    .order('created_at',{ascending:false}).limit(2000);
+  // Ne garder que la vérification la plus récente de chaque équipement
+  const parEquip={};
+  (data||[]).forEach(v=>{if(v.equipement_id&&!parEquip[v.equipement_id])parEquip[v.equipement_id]=v});
+  _echeancesPrev=Object.values(parEquip).filter(v=>v.equipements&&v.equipements.statut!=='réformé');
+  renderPrevision();
+}
+function renderPrevision(){
+  const el=$('tbl-prevision');if(!el)return;
+  const jours=parseInt($('f-horizon-prev').value,10)||90;
+  const limite=new Date();limite.setDate(limite.getDate()+jours);
+  const auj=new Date();auj.setHours(0,0,0,0);
+  const consommables=stockPieces.filter(p=>p.categorie!=='accessoire'&&p.conso_par_controle&&(!_stockAgFiltre||p.agence_id===_stockAgFiltre));
+  if(!consommables.length){el.innerHTML='<div class="t-empty">Aucune pièce marquée « consommée à chaque contrôle » — coche cette case sur les scellés, joints, etc. pour activer la prévision.</div>';return}
+  const compatible=(p,eq)=>{
+    if(p.compatible_tous)return true;
+    const comp=Array.isArray(p.compatibilites)?p.compatibilites:[];
+    const em=(eq.marque||'').toLowerCase(),emo=(eq.modele||'').toLowerCase();
+    return comp.some(x=>{
+      if((x.marque||'').toLowerCase()!==em||!em)return false;
+      if(!x.modele)return true;
+      const xm=x.modele.toLowerCase();
+      return emo.includes(xm)||xm.includes(emo);
+    });
+  };
+  const lignes=consommables.map(p=>{
+    const controles=_echeancesPrev.filter(v=>{
+      const d=new Date(v.date_prochaine_echeance);
+      if(d>limite)return false;
+      if(p.agence_id&&v.equipements.clients?.agence_id&&v.equipements.clients.agence_id!==p.agence_id)return false;
+      return compatible(p,v.equipements);
+    });
+    const besoin=controles.length;
+    const manque=Math.max(0,besoin-(+p.quantite));
+    return {p,besoin,manque};
+  }).filter(l=>l.besoin>0).sort((a,b)=>b.manque-a.manque);
+  if(!lignes.length){el.innerHTML='<div class="t-empty">Aucun contrôle à venir sous '+jours+' jours ne consomme ces pièces.</div>';return}
+  el.innerHTML=`<table><thead><tr><th>Pièce</th><th>Agence</th><th style="text-align:center">Contrôles à venir</th><th style="text-align:center">En stock</th><th style="text-align:center">Manque</th></tr></thead><tbody>${lignes.map(l=>`<tr>
+    <td><strong>${l.p.code}</strong><br><small style="color:var(--txt-l)">${l.p.designation}</small></td>
+    <td><span class="badge bg">${l.p.agences?.nom||'—'}</span></td>
+    <td style="text-align:center">${l.besoin}</td>
+    <td style="text-align:center;font-weight:700">${l.p.quantite}</td>
+    <td style="text-align:center;font-weight:700;color:${l.manque>0?'#dc2626':'#16a34a'}">${l.manque>0?'⚠ '+l.manque+' à commander':'✓ OK'}</td>
+  </tr>`).join('')}</tbody></table>
+  <div style="font-size:11px;color:var(--txt-l);padding:8px 12px">Hypothèse : 1 pièce consommée par contrôle. Horizon : échéances sous ${jours} jours (retards inclus).</div>`;
+}
+
 // ---- Inventaires & mouvements ----
-const badgeMvt=t=>({entree:'<span class="badge bv">➕ Entrée</span>',rectification:'<span class="badge bo">✎ Rectification</span>',casse:'<span class="badge br">🔻 Casse</span>',import:'<span class="badge bb">⬆ Import</span>',transfert:'<span class="badge bb">⇄ Transfert</span>'}[t]||t);
+const badgeMvt=t=>({entree:'<span class="badge bv">➕ Entrée</span>',rectification:'<span class="badge bo">✎ Rectification</span>',casse:'<span class="badge br">🔻 Casse</span>',import:'<span class="badge bb">⬆ Import</span>',transfert:'<span class="badge bb">⇄ Transfert</span>',utilisation:'<span class="badge bo">🔧 Utilisée au contrôle</span>'}[t]||t);
 
 function renderInventaires(){
   const el=$('tbl-inventaires');

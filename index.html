@@ -501,6 +501,12 @@ tr:hover td{background:#fafafa}
         </div>
         <div class="card"><div id="tbl-stock"><div class="loading"><span class="spin"></span></div></div></div>
         <div class="card" style="margin-top:16px">
+          <div class="card-header"><h2>🔮 Besoin prévisionnel</h2>
+            <select id="f-horizon-prev" onchange="renderPrevision()" style="max-width:160px"><option value="90">90 jours</option><option value="30">30 jours</option><option value="180">180 jours</option></select>
+          </div>
+          <div id="tbl-prevision"><div class="t-empty">Calcul en cours…</div></div>
+        </div>
+        <div class="card" style="margin-top:16px">
           <div class="card-header"><h2>📑 Inventaires</h2></div>
           <div id="tbl-inventaires"></div>
         </div>
@@ -763,13 +769,23 @@ tr:hover td{background:#fafafa}
           <button type="button" class="btn btn-s btn-sm" onclick="ajouterLot()">+ Lot</button>
         </div>
       </div>
-      <div class="fg" style="grid-column:1/-1"><label>Autres compatibilités (marques / modèles)</label>
-        <div id="pc-compat-list" style="margin:6px 0"></div>
-        <div style="display:flex;gap:8px">
-          <input type="text" id="pc-compat-marque" placeholder="Marque" style="flex:1">
-          <input type="text" id="pc-compat-modele" placeholder="Modèle" style="flex:1">
-          <button type="button" class="btn btn-s btn-sm" onclick="ajouterCompat()">+ Ajouter</button>
+      <div class="fg" style="grid-column:1/-1"><label>Catégorie</label>
+        <select id="pc-categorie" onchange="document.getElementById('pc-compat-bloc').style.display=this.value==='piece'?'block':'none'">
+          <option value="piece">Pièce détachée (liée aux extincteurs)</option>
+          <option value="accessoire">Accessoire (panneau… ajout manuel, facturé en plus)</option>
+        </select></div>
+      <div class="fg" style="grid-column:1/-1" id="pc-compat-bloc">
+        <label style="display:flex;gap:8px;align-items:center;text-transform:none;font-weight:400;cursor:pointer;margin-bottom:8px"><input type="checkbox" id="pc-tous" style="width:16px;height:16px;margin:0" onchange="document.getElementById('pc-compat-editeur').style.display=this.checked?'none':'block'"> Compatible avec TOUS les extincteurs (scellés, goupilles…)</label>
+        <div id="pc-compat-editeur">
+          <label>Compatibilités</label>
+          <div id="pc-compat-list" style="margin:6px 0"></div>
+          <div style="display:flex;gap:8px">
+            <select id="pc-cp-marque" style="flex:1" onchange="majModelesPC()"></select>
+            <select id="pc-cp-modele" style="flex:1"></select>
+            <button type="button" class="btn btn-s btn-sm" onclick="ajouterCompat()">+ Ajouter</button>
+          </div>
         </div>
+        <label style="display:flex;gap:8px;align-items:center;text-transform:none;font-weight:400;cursor:pointer;margin-top:10px"><input type="checkbox" id="pc-conso" style="width:16px;height:16px;margin:0"> Consommée à chaque contrôle (scellé, joint…) — sert à la prévision</label>
       </div>
     </div>
     <div class="fa"><button class="btn btn-s" onclick="CM('mo-piece')">Annuler</button><button class="btn btn-p" onclick="savePiece()">Enregistrer</button></div>
