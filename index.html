@@ -466,7 +466,7 @@ tr:hover td{background:#fafafa}
       <div class="page" id="page-bons">
         <div class="stats-grid" id="bons-stats"></div>
         <div class="search-bar">
-          <select id="f-statut-bons" onchange="loadBons()" style="max-width:200px">
+          <button class="btn btn-s" onclick="exportFacturationXLS()" style="margin-right:8px">💶 Export facturation</button><select id="f-statut-bons" onchange="loadBons()" style="max-width:200px">
             <option value="à_facturer">À facturer</option>
             <option value="facturé">Facturés</option>
             <option value="">Tous</option>
@@ -683,7 +683,7 @@ tr:hover td{background:#fafafa}
   <div class="mc"><input type="hidden" id="ct-id">
     <div class="form-grid">
       <div class="fg" style="grid-column:1/-1"><label>Client *</label><select id="ct-client"></select></div>
-      <div class="fg"><label>N° contrat</label><input type="text" id="ct-num"></div>
+      <div class="fg"><label>N° contrat</label><input type="text" id="ct-num" placeholder="auto si vide (CT-2026-001)"></div>
       <div class="fg"><label>Type</label><select id="ct-type"><option value="annuel">Annuel</option><option value="pluriannuel">Pluriannuel</option><option value="ponctuel">Ponctuel</option></select></div>
       <div class="fg"><label>Début</label><input type="date" id="ct-debut"></div>
       <div class="fg"><label>Fin</label><input type="date" id="ct-fin"></div>
@@ -751,6 +751,7 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Modèle</label><input type="text" id="pc-modele"></div>
       <div class="fg"><label>Quantité</label><input type="number" id="pc-qte" min="0" value="0"></div>
       <div class="fg"><label>Seuil d'alerte</label><input type="number" id="pc-seuil" min="0" value="0"></div>
+      <div class="fg"><label>Prix de vente HT (€)</label><input type="number" id="pc-prix" step="0.01" min="0" placeholder="Pour la facturation"></div>
       <div class="fg" style="grid-column:1/-1"><label>Agence</label><select id="pc-agence"></select></div>
       <div class="fg" style="grid-column:1/-1"><label>Photo de la pièce</label>
         <div style="display:flex;gap:12px;align-items:center;margin-top:6px">

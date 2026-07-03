@@ -1035,12 +1035,22 @@ function voirContratsClient(raisonSociale){
   setTimeout(()=>{$('q-contrats').value=raisonSociale;if($('f-ag-contrats'))$('f-ag-contrats').value='';renderContrats()},300);
 }
 
+
+// Numéro de contrat automatique : CT-<année>-<compteur>
+async function prochainNumeroContrat(){
+  const prefixe='CT-'+new Date().getFullYear()+'-';
+  const {data}=await db.from('contrats').select('numero_contrat').like('numero_contrat',prefixe+'%');
+  let max=0;(data||[]).forEach(x=>{const n=parseInt((x.numero_contrat||'').slice(prefixe.length),10);if(n>max)max=n});
+  return prefixe+String(max+1).padStart(3,'0');
+}
+
 async function saveContrat(){
   const id=$('ct-id').value;
   const coches=Array.from(document.querySelectorAll('input[name="ct-type"]:checked')).map(c=>c.value);
   // Les types présents dans le chiffrage sont automatiquement couverts
   const types=[...new Set([...coches,..._lignesContrat.map(l=>l.type)])];
-  const p={client_id:$('ct-client').value,numero_contrat:$('ct-num').value.trim(),type_contrat:$('ct-type').value,types_couverts:types,lignes:_lignesContrat,date_debut:$('ct-debut').value||null,date_fin:$('ct-fin').value||null,tarif_annuel:parseFloat($('ct-tarif').value)||null,periodicite_visite:$('ct-period').value,statut:$('ct-statut').value,notes:$('ct-notes').value.trim(),updated_at:new Date().toISOString()};
+  const numAuto=$('ct-num').value.trim()||await prochainNumeroContrat();
+  const p={client_id:$('ct-client').value,numero_contrat:numAuto,type_contrat:$('ct-type').value,types_couverts:types,lignes:_lignesContrat,date_debut:$('ct-debut').value||null,date_fin:$('ct-fin').value||null,tarif_annuel:parseFloat($('ct-tarif').value)||null,periodicite_visite:$('ct-period').value,statut:$('ct-statut').value,notes:$('ct-notes').value.trim(),updated_at:new Date().toISOString()};
   let error,nouveauContrat=null;
   if(id){({error}=await db.from('contrats').update(p).eq('id',id));}
   else{const r=await db.from('contrats').insert(p).select().single();error=r.error;nouveauContrat=r.data;}
@@ -1371,6 +1381,52 @@ async function loadBons(){
   </tr>`).join('')}</tbody></table>`;
 }
 
+
+
+// ---- Export facturation : bons à facturer + pièces/accessoires posés ----
+async function exportFacturationXLS(){
+  toast('Préparation de l\'export…');
+  const {data:bons,error}=await db.from('bons_intervention')
+    .select('*,clients(raison_sociale,ville,agences(nom)),profils(nom,prenom)')
+    .eq('statut_facturation','à_facturer').order('date_intervention');
+  if(error){toast('Erreur : '+error.message,'err');return}
+  const sessIds=(bons||[]).map(b=>b.session_id).filter(Boolean);
+  let lignesPieces=[];
+  if(sessIds.length){
+    const {data:verifs}=await db.from('verifications')
+      .select('session_id,pieces_utilisees,equipements(numero_identification)')
+      .in('session_id',sessIds).not('pieces_utilisees','is',null);
+    const bonParSession={};(bons||[]).forEach(b=>{if(b.session_id)bonParSession[b.session_id]=b});
+    const {data:sp}=await db.from('stock_pieces').select('id,prix_vente');
+    const prix={};(sp||[]).forEach(x=>prix[x.id]=parseFloat(x.prix_vente)||null);
+    (verifs||[]).forEach(v=>{
+      const bon=bonParSession[v.session_id];if(!bon)return;
+      (Array.isArray(v.pieces_utilisees)?v.pieces_utilisees:[]).forEach(u=>{
+        const pu=prix[u.piece_id];
+        lignesPieces.push({
+          'N° bon':bon.numero_session||'','Client':bon.clients?.raison_sociale||'',
+          'Équipement':v.equipements?.numero_identification||'',
+          'Code pièce':u.code,'Désignation':u.designation,
+          'Type':u.accessoire?'Accessoire (facturé en +)':'Pièce détachée',
+          'Quantité':u.quantite,'PU vente HT':pu??'à renseigner',
+          'Total HT':pu!=null?+(pu*u.quantite).toFixed(2):''
+        });
+      });
+    });
+  }
+  const ws1=XLSX.utils.json_to_sheet((bons||[]).map(b=>({
+    'N° bon':b.numero_session||'','Date':fmt(b.date_intervention),
+    'Client':b.clients?.raison_sociale||'','Ville':b.clients?.ville||'',
+    'Agence':b.clients?.agences?.nom||'','Technicien':`${b.profils?.prenom||''} ${b.profils?.nom||''}`.trim(),
+    'Équipements vérifiés':b.nb_equipements_verifies,'Signataire':b.signataire_nom||''
+  })));
+  const ws2=XLSX.utils.json_to_sheet(lignesPieces.length?lignesPieces:[{'Info':'Aucune pièce/accessoire posé sur les bons à facturer'}]);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws1,'Bons à facturer');
+  XLSX.utils.book_append_sheet(wb,ws2,'Pièces & accessoires');
+  XLSX.writeFile(wb,'BFS_facturation_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  toast((bons||[]).length+' bon(s) exportés pour facturation');
+}
 
 async function marquerFacture(id){
   await db.from('bons_intervention').update({statut_facturation:'facturé',facture_le:new Date().toISOString(),facture_par:ME.id}).eq('id',id);
@@ -1806,7 +1862,7 @@ function ajouterLot(){
 
 function openPieceModal(prefill=null){
   ['pc-id','pc-code','pc-designation','pc-marque','pc-modele'].forEach(id=>$(id).value='');
-  $('pc-qte').value='0';$('pc-seuil').value='0';$('mo-pc-t').textContent='Nouvelle pièce';
+  $('pc-qte').value='0';$('pc-seuil').value='0';$('pc-prix').value='';$('mo-pc-t').textContent='Nouvelle pièce';
   $('pc-qte').disabled=false;
   $('pc-agence').value=_stockAgFiltre||'';
   _compatPiece=[];_lotsPiece=[];
@@ -1816,7 +1872,7 @@ function openPieceModal(prefill=null){
   $('pc-categorie').value='piece';$('pc-tous').checked=false;$('pc-conso').checked=false;
   $('pc-compat-bloc').style.display='block';$('pc-compat-editeur').style.display='block';
   initCompatSelectsPC();
-  if(prefill){$('pc-id').value=prefill.id;$('pc-code').value=prefill.code;$('pc-designation').value=prefill.designation;$('pc-marque').value=prefill.marque||'';$('pc-modele').value=prefill.modele||'';$('pc-qte').value=prefill.quantite;$('pc-qte').disabled=true;$('pc-seuil').value=prefill.seuil_alerte||0;$('pc-agence').value=prefill.agence_id||'';_compatPiece=Array.isArray(prefill.compatibilites)?[...prefill.compatibilites]:[];
+  if(prefill){$('pc-id').value=prefill.id;$('pc-code').value=prefill.code;$('pc-designation').value=prefill.designation;$('pc-marque').value=prefill.marque||'';$('pc-modele').value=prefill.modele||'';$('pc-qte').value=prefill.quantite;$('pc-qte').disabled=true;$('pc-seuil').value=prefill.seuil_alerte||0;$('pc-prix').value=prefill.prix_vente||'';$('pc-agence').value=prefill.agence_id||'';_compatPiece=Array.isArray(prefill.compatibilites)?[...prefill.compatibilites]:[];
     _lotsPiece=Array.isArray(prefill.lots)?prefill.lots.map(l=>({...l})):[];
     $('pc-peremption').checked=!!prefill.gestion_peremption;
     $('pc-lots-bloc').style.display=prefill.gestion_peremption?'block':'none';
@@ -1851,7 +1907,7 @@ async function savePiece(){
   if(!code||!des){toast('Code et désignation obligatoires','err');return}
   const gPer=$('pc-peremption').checked;
   const cat=$('pc-categorie').value;
-  const p={code,designation:des,marque:$('pc-marque').value.trim(),modele:$('pc-modele').value.trim(),seuil_alerte:parseFloat($('pc-seuil').value)||0,agence_id:$('pc-agence').value||null,
+  const p={code,designation:des,marque:$('pc-marque').value.trim(),modele:$('pc-modele').value.trim(),seuil_alerte:parseFloat($('pc-seuil').value)||0,prix_vente:parseFloat($('pc-prix').value)||null,agence_id:$('pc-agence').value||null,
     categorie:cat,compatible_tous:cat==='piece'&&$('pc-tous').checked,conso_par_controle:cat==='piece'&&$('pc-conso').checked,
     compatibilites:cat==='piece'&&!$('pc-tous').checked?_compatPiece:[],gestion_peremption:gPer,lots:gPer?_lotsPiece:[],updated_at:new Date().toISOString()};
   const avantP=id?stockPieces.find(x=>x.id===id):null;

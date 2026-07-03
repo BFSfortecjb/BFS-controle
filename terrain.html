@@ -834,6 +834,28 @@ const SURL='https://dqraobwozowtnrieitkp.supabase.co';
 const SKEY='sb_publishable_UhkImOyooXPnAqTCNMJ4wA_VVqscCmK';
 const db=supabase.createClient(SURL,SKEY);
 
+// ---- MODE HORS-LIGNE ----
+if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{})}
+// Requête avec cache local de secours (l'appli reste consultable sans réseau)
+async function reqCache(key,fn){
+  let d=null;
+  try{const r=await fn();if(!r.error)d=r.data}catch(e){}
+  if(d!==null){try{localStorage.setItem('bfsc_'+key,JSON.stringify(d))}catch(e){}}
+  else{const s=localStorage.getItem('bfsc_'+key);if(s)d=JSON.parse(s)}
+  return d;
+}
+function blobVersDataUrl(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(blob)})}
+function dataUrlVersBlob(du){const [h,b64]=du.split(',');const mime=h.match(/:(.*?);/)[1];const bin=atob(b64);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);return new Blob([arr],{type:mime})}
+function majBadgeSync(){
+  const n=JSON.parse(localStorage.getItem('bfs_queue')||'[]').length;
+  let b=document.getElementById('sync-banner');
+  if(!n){if(b)b.remove();return}
+  if(!b){b=document.createElement('div');b.id='sync-banner';b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:500;background:#b45309;color:#fff;padding:8px 14px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:10px';document.body.appendChild(b)}
+  b.innerHTML='📴 '+n+' vérification(s) à synchroniser <button onclick="syncVerifsHorsLigne()" style="background:rgba(255,255,255,.25);color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:13px">📤 Synchroniser</button>';
+}
+window.addEventListener('online',()=>setTimeout(syncVerifsHorsLigne,1200));
+setTimeout(()=>{majBadgeSync();if(navigator.onLine)syncVerifsHorsLigne()},2000);
+
 // ============================================================
 // ÉTAT
 // ============================================================
@@ -970,7 +992,8 @@ function setFiltreParc(filtre){
 
 
 async function ouvrirClient(clientId){
-  const {data:c}=await db.from('clients').select('*,agences(nom,code)').eq('id',clientId).single();
+  const c=await reqCache('cl_'+clientId,()=>db.from('clients').select('*,agences(nom,code)').eq('id',clientId).single());
+  if(!c){toast('Client indisponible hors-ligne','err');return}
   currentClient=c;
   $('client-nom').textContent=c.raison_sociale;
   $('client-ville').textContent=`${c.ville||''} · ${c.agences?.nom||''}`;
@@ -991,11 +1014,11 @@ async function ouvrirClient(clientId){
   chargerContratsClient(clientId);
 
   // Stats équipements + groupement par type
-  const {data:equips}=await db.from('equipements')
+  const equips=await reqCache('eq_'+clientId,()=>db.from('equipements')
     .select('*,types_equipements(libelle,icone,code)')
     .eq('client_id',clientId)
     .neq('statut','réformé')
-    .order('type_equipement_code');
+    .order('type_equipement_code'));
   currentEquipements=equips||[];
   const total=equips?.length||0;
   const hs=(equips||[]).filter(e=>e.statut==='hors service'||e.statut==='à remplacer').length;
@@ -1443,9 +1466,9 @@ async function ouvrirVerif(equipId){
   const estPA = modePress.toUpperCase().includes('PA') || agent.toLowerCase().includes('auxiliaire');
   const estPP = !estPA && !estCO2; // PP = tout ce qui n'est ni PA ni CO2
 
-  const {data:pts}=await db.from('points_controle').select('*')
+  const pts=await reqCache('pts_'+equip.type_equipement_code,()=>db.from('points_controle').select('*')
     .eq('type_equipement_code',equip.type_equipement_code)
-    .eq('actif',true).order('ordre');
+    .eq('actif',true).order('ordre'));
 
   const points=(pts||[]).filter(p=>{
     // Filtre marque/modèle standard
@@ -1474,7 +1497,7 @@ async function ouvrirVerif(equipId){
   const pointsAffiches = points.map(p=>({...p, libelle: p.libelle.replace(/\s*\[(pp_eau_poudre|pa|co2|quinquennal)\]/gi,'').trim()}));
 
   // Charger pièces catalogue
-  const {data:cat}=await db.from('pieces_catalogue').select('*').eq('type_equipement_code',equip.type_equipement_code).eq('actif',true).order('ordre');
+  const cat=await reqCache('cat_'+equip.type_equipement_code,()=>db.from('pieces_catalogue').select('*').eq('type_equipement_code',equip.type_equipement_code).eq('actif',true).order('ordre'));
   allPiecesCatalogue=cat||[];
 
   // Restaurer état si déjà en cours
@@ -1821,11 +1844,13 @@ function pieceCompatible(p,equip){
 async function chargerStockUsage(equip){
   _stockUsage={};_usageParCatalogue={};
   const agId=currentClient?.agence_id;
-  let q=db.from('stock_pieces').select('*').gt('quantite',0).order('categorie').order('designation');
-  if(agId)q=q.eq('agence_id',agId);
-  const {data:pieces,error}=await q;
+  const pieces=await reqCache('stockag_'+(agId||'x'),()=>{
+    let q=db.from('stock_pieces').select('*').gt('quantite',0).order('categorie').order('designation');
+    if(agId)q=q.eq('agence_id',agId);
+    return q;
+  });
   const el=$('stock-usage');if(!el)return;
-  if(error){el.innerHTML='<div style="font-size:12px;color:#dc2626">Stock indisponible : '+error.message+'</div>';return}
+  if(pieces===null){el.innerHTML='<div style="font-size:12px;color:#dc2626">Stock indisponible (hors-ligne sans cache)</div>';_stockDispo=[];return}
   _stockDispo=(pieces||[]).filter(p=>pieceCompatible(p,equip));
   _usageParCatalogue={};
   // Reprise : re-lier silencieusement les pièces déjà cochées ✓
@@ -1900,6 +1925,107 @@ async function annulerSortieStock(verifId){
   }
 }
 
+
+// ============================================================
+// FILE D'ATTENTE HORS-LIGNE (vérifications)
+// ============================================================
+async function enregistrerVerifHorsLigne(verifPayload,points,obs,echeance){
+  // Résultats des points (extraits du DOM maintenant, insérés à la synchro)
+  const resPts=[];
+  document.querySelectorAll('.pc-item[id^="pci-"]').forEach(item=>{
+    const pid=item.id.replace('pci-','');
+    const label=item.querySelector('.pc-label')?.textContent?.replace('*','').trim()||'';
+    const okSel=item.querySelector('.ok-sel');const nokSel=item.querySelector('.nok-sel');
+    const numInp=item.querySelector(`#pcv-${pid}`);
+    let r={point_controle_id:pid,libelle_snapshot:label,type_reponse:'oui_non'};
+    if(okSel){r.valeur_oui_non=true;r.conforme=true}
+    else if(nokSel){r.valeur_oui_non=false;r.conforme=false}
+    else if(numInp){r.type_reponse=numInp.type==='date'?'date':numInp.type==='number'?'numerique':'texte';
+      if(numInp.type==='number')r.valeur_numerique=parseFloat(numInp.value)||null;
+      else if(numInp.type==='date')r.valeur_date=numInp.value||null;
+      else r.valeur_texte=numInp.value||'';
+    }
+    resPts.push(r);
+  });
+  // Photos (2 max pour rester dans les limites de stockage local)
+  const photos=[];
+  for(const ph of currentPhotosVerif.slice(0,2)){
+    try{photos.push(await blobVersDataUrl(ph.blob))}catch(e){}
+  }
+  if(currentPhotosVerif.length>2)toast('Hors-ligne : seules 2 photos sont conservées','err');
+  const item={
+    verifPayload,resPts,
+    pieces:currentPieces.map(p=>({...p})),
+    equipement_id:currentEquipId,session_id:currentSession?.id||null,
+    stockUsage:{..._stockUsage},photos,ts:Date.now()
+  };
+  const queue=JSON.parse(localStorage.getItem('bfs_queue')||'[]');
+  queue.push(item);
+  try{localStorage.setItem('bfs_queue',JSON.stringify(queue))}
+  catch(e){item.photos=[];queue[queue.length-1]=item;localStorage.setItem('bfs_queue',JSON.stringify(queue));toast('Photos non conservées (stockage local plein)','err')}
+  sessionVerifs[currentEquipId]={points,pieces:currentPieces,resultat:currentStatut,obs,echeance,verifId:null,horsLigne:true};
+  sauvegarderSessionLocale();
+  majBadgeSync();
+  toast('📴 Enregistré hors-ligne — synchro au retour du réseau');
+  goTo('s-session');
+  if(typeof renderSessionEquipList==='function')renderSessionEquipList();
+}
+
+let _syncEnCours=false;
+async function syncVerifsHorsLigne(){
+  if(_syncEnCours||!navigator.onLine)return;
+  let queue=JSON.parse(localStorage.getItem('bfs_queue')||'[]');
+  if(!queue.length){majBadgeSync();return}
+  _syncEnCours=true;
+  toast('📤 Synchronisation de '+queue.length+' vérification(s)…');
+  const restantes=[];
+  for(const item of queue){
+    try{
+      const {data:vData,error}=await db.from('verifications').insert(item.verifPayload).select().single();
+      if(error)throw error;
+      if(item.resPts.length)await db.from('resultats_controle').insert(item.resPts.map(r=>({...r,verification_id:vData.id})));
+      if(item.pieces.length)await db.from('pieces_verif').insert(item.pieces.map(p=>({
+        verification_id:vData.id,equipement_id:item.equipement_id,session_id:item.session_id,
+        piece_catalogue_id:p.piece_catalogue_id||null,libelle:p.libelle,reference:p.reference||null,
+        quantite:p.quantite||1,unite:p.unite||'unité',type_action:p.type_action,delai_remplacement:p.delai_remplacement||null
+      })));
+      // Sortie de stock
+      const utilisees=[];
+      for(const [pid,q] of Object.entries(item.stockUsage||{})){
+        const {data:p}=await db.from('stock_pieces').select('*').eq('id',pid).single();
+        if(!p||!q)continue;
+        const maj={updated_at:new Date().toISOString()};
+        if(p.gestion_peremption&&Array.isArray(p.lots)&&p.lots.length){
+          let reste=q;const lots=p.lots.map(l=>({...l})).sort((a,b)=>a.peremption.localeCompare(b.peremption));
+          for(const l of lots){if(!reste)break;const pris=Math.min(+l.quantite,reste);l.quantite=(+l.quantite)-pris;reste-=pris}
+          maj.lots=lots.filter(l=>(+l.quantite)>0);
+          maj.quantite=maj.lots.reduce((s,l)=>s+(+l.quantite),0);
+        }else maj.quantite=Math.max(0,(+p.quantite)-q);
+        await db.from('stock_pieces').update(maj).eq('id',p.id);
+        await db.from('stock_mouvements').insert({piece_id:p.id,type:'utilisation',quantite_avant:p.quantite,quantite_apres:maj.quantite,delta:-q,motif:'Contrôle (synchro hors-ligne)',par:ME?.id||item.verifPayload.technicien_id,agence_id:p.agence_id});
+        utilisees.push({piece_id:p.id,code:p.code,designation:p.designation,quantite:q,accessoire:p.categorie==='accessoire'});
+      }
+      if(utilisees.length)await db.from('verifications').update({pieces_utilisees:utilisees}).eq('id',vData.id);
+      // Photos
+      for(const du of (item.photos||[])){
+        try{
+          const blob=dataUrlVersBlob(du);
+          const fileName=`photo_${vData.id}_${Date.now()}_${Math.random().toString(36).slice(2,7)}.jpg`;
+          const {error:upErr}=await db.storage.from('photos-verification').upload(fileName,blob,{contentType:'image/jpeg'});
+          if(!upErr){
+            const {data:urlData}=db.storage.from('photos-verification').getPublicUrl(fileName);
+            await db.from('photos_verification').insert({verification_id:vData.id,equipement_id:item.equipement_id,photo_url:urlData.publicUrl,photo_path:fileName,pris_par:ME?.id||item.verifPayload.technicien_id});
+          }
+        }catch(e){}
+      }
+    }catch(e){restantes.push(item)}
+  }
+  localStorage.setItem('bfs_queue',JSON.stringify(restantes));
+  _syncEnCours=false;
+  majBadgeSync();
+  toast(restantes.length?('⚠ '+restantes.length+' vérification(s) restent en attente'):'✓ Synchronisation terminée');
+}
+
 async function validerVerif(){
   if(!currentStatut){toast('Sélectionnez le statut final','err');return}
   const equip=currentEquipements.find(e=>e.id===currentEquipId);
@@ -1941,6 +2067,12 @@ async function validerVerif(){
     reinitialise_compteur:reinitialise,
     updated_at:new Date().toISOString()
   };
+
+  // === HORS-LIGNE : mise en file d'attente, synchronisation au retour du réseau ===
+  if(!navigator.onLine){
+    await enregistrerVerifHorsLigne(verifPayload,points,obs,echeance);
+    return;
+  }
 
   let vData, ve;
   if(existingVerifId){

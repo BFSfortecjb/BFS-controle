@@ -265,7 +265,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <div class="content">
     <div class="fg" style="margin-bottom:12px"><label>Client *</label><select id="nk-client"></select></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-      <div class="fg"><label>N° contrat</label><input type="text" id="nk-num"></div>
+      <div class="fg"><label>N° contrat</label><input type="text" id="nk-num" placeholder="auto si vide"></div>
       <div class="fg"><label>Type</label><select id="nk-type"><option value="annuel">Annuel</option><option value="pluriannuel">Pluriannuel</option><option value="ponctuel">Ponctuel</option></select></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
@@ -658,6 +658,14 @@ function validerLigneContrat(){
     renderLignes();goTo('s-new-contrat');
   }
 }
+
+async function prochainNumeroContrat(){
+  const prefixe='CT-'+new Date().getFullYear()+'-';
+  const {data}=await db.from('contrats').select('numero_contrat').like('numero_contrat',prefixe+'%');
+  let max=0;(data||[]).forEach(x=>{const n=parseInt((x.numero_contrat||'').slice(prefixe.length),10);if(n>max)max=n});
+  return prefixe+String(max+1).padStart(3,'0');
+}
+
 async function saveContratCom(signer){
   const clientId=$('nk-client').value;
   if(!clientId){toast('Choisis un client','err');return}
@@ -665,7 +673,7 @@ async function saveContratCom(signer){
   const total=_lignes.reduce((s,l)=>s+(+l.quantite)*(+l.pu),0);
   const {data:ct,error}=await db.from('contrats').insert({
     client_id:clientId,agence_id:client?.agence_id||ME.agence_id||null,
-    numero_contrat:$('nk-num').value.trim(),type_contrat:$('nk-type').value,
+    numero_contrat:$('nk-num').value.trim()||await prochainNumeroContrat(),type_contrat:$('nk-type').value,
     types_couverts:[...new Set(_lignes.map(l=>l.type))],lignes:_lignes,
     date_debut:$('nk-debut').value||null,date_fin:$('nk-fin').value||null,
     tarif_annuel:total||null,periodicite_visite:$('nk-period').value,
