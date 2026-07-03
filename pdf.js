@@ -85,7 +85,7 @@ async function exportContratPDF(id){
     const eur=n=>n.toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
     doc.autoTable({startY:y,margin:{left:14,right:14},
       head:[['Équipement','Marque','Modèle','Qté','PU HT','Total HT']],
-      body:[...lignes.map(l=>[lib(l.type),l.marque||'—',l.modele||'—',String(l.quantite),eur(+l.pu||0),eur((+l.quantite||0)*(+l.pu||0))]),
+      body:[...lignes.map(l=>[lib(l.type),l.marque||'—',(l.modele||'—')+(l.resume?'\n'+l.resume:''),String(l.quantite),eur(+l.pu||0),eur((+l.quantite||0)*(+l.pu||0))]),
         [{content:'TOTAL HT',colSpan:5,styles:{fontStyle:'bold',halign:'right'}},{content:eur(total),styles:{fontStyle:'bold'}}]],
       styles:{fontSize:9},headStyles:{fillColor:[230,100,40]},
       columnStyles:{3:{halign:'center',cellWidth:14},4:{halign:'right',cellWidth:26},5:{halign:'right',cellWidth:28}}});

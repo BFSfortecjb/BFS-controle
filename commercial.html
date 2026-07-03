@@ -286,9 +286,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <h1>Équipement du contrat</h1>
   </div>
   <div class="content">
-    <div class="fg" style="margin-bottom:12px"><label>Type d'équipement *</label><select id="lk-type"></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Type d'équipement *</label><select id="lk-type" onchange="renderChampsLigne()"></select></div>
     <div class="fg" style="margin-bottom:12px"><label>Marque</label><input type="text" id="lk-marque" placeholder="Ex : Eurofeu"></div>
     <div class="fg" style="margin-bottom:12px"><label>Modèle</label><input type="text" id="lk-modele" placeholder="Ex : PP6 ABC"></div>
+    <div class="sec">Caractéristiques</div>
+    <div id="lk-champs"><div style="font-size:12px;color:var(--txt-l);padding:4px 0">Aucune caractéristique pour ce type.</div></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div class="fg"><label>Quantité *</label><input type="number" id="lk-qte" min="1" value="1" inputmode="numeric"></div>
       <div class="fg"><label>Prix unitaire HT (€) *</label><input type="number" id="lk-pu" step="0.01" min="0" inputmode="decimal"></div>
@@ -363,6 +365,103 @@ async function onLogin(user){
 async function doLogout(){await db.auth.signOut();ME=null;goTo('s-login')}
 db.auth.getSession().then(({data:{session}})=>{if(session)onLogin(session.user)});
 
+
+// ---- Caractéristiques par type (même définition que l'appli bureau) ----
+const CHAMPS_TYPE = {
+  extincteur: [
+    {id:'e-agent',label:'Agent extincteur',type:'select',opts:['CO2','Poudre ABC','Poudre BC','Eau pulvérisée','Eau + additif','Mousse','Halon','Autre']},
+    {id:'e-cap',label:'Capacité',type:'number',placeholder:'6',step:'0.5'},
+    {id:'e-unite',label:'Unité',type:'select',opts:['kg','L']},
+    {id:'e-pression',label:'Pression nominale (bar)',type:'number',placeholder:'15',step:'0.5'},
+  ],
+  ria: [
+    {id:'e-diametre',label:'Diamètre tuyau (mm)',type:'select',opts:['19','25','33']},
+    {id:'e-longueur',label:'Longueur tuyau (m)',type:'select',opts:['20','30']},
+    {id:'e-dmf',label:'Type de DMF',type:'select',opts:['A','B','A/HT','Sans DMF']},
+    {id:'e-pression-stat',label:'Pression statique (bar)',type:'number',placeholder:'3.5',step:'0.1'},
+    {id:'e-pression-dyn',label:'Pression dynamique (bar)',type:'number',placeholder:'2.5',step:'0.1'},
+  ],
+  baes: [
+    {id:'e-type-baes',label:'Type BAES',type:'select',opts:['BAES standard','BAEH (habitation)','BAES SA (autotest)','Bloc de secours']},
+    {id:'e-autonomie',label:'Autonomie',type:'select',opts:['1h','3h','8h']},
+    {id:'e-type-batt',label:'Type batterie',type:'select',opts:['NiCd','NiMH','Li-Ion','Pb']},
+    {id:'e-flux',label:'Flux lumineux (lm)',type:'number',placeholder:'80',step:'10'},
+  ],
+  alarme_t4: [
+    {id:'e-alim',label:'Alimentation',type:'select',opts:['Piles','Accumulateurs','Secteur + piles','Secteur + accus']},
+    {id:'e-nb-declencheurs',label:'Nb déclencheurs manuels',type:'number',placeholder:'1',step:'1'},
+    {id:'e-nb-sirenes',label:'Nb sirènes / avertisseurs',type:'number',placeholder:'1',step:'1'},
+  ],
+  detecteur: [
+    {id:'e-type-det',label:'Type détecteur',type:'select',opts:['Optique fumée','Ionique fumée','Thermique fixe','Thermo-vélocimétrique','Gaz','Flamme','Multi-critères']},
+    {id:'e-num-centrale',label:'N° adresse centrale',type:'text',placeholder:'Zone 1 - Détect. 03'},
+  ],
+  pco: [
+    {id:'e-classement',label:'Classement coupe-feu',type:'select',opts:['EI15','EI30','EI45','EI60','EI90','EI120','EI180','EI240','E30','E60','REI60','REI120']},
+    {id:'e-type-porte',label:'Type',type:'select',opts:['Porte pivotante 1 vantail','Porte pivotante 2 vantaux','Porte coulissante','Trappe de désenfumage','Volet coupe-feu','Cloison CF']},
+    {id:'e-ferme-auto',label:'Fermeture automatique',type:'select',opts:['Électromagnétique','À ressort','Motorisée','Non']},
+  ],
+  vgp_nacelle: [
+    {id:'e-type-nacelle',label:'Type de nacelle',type:'select',opts:['Ciseaux électrique','Ciseaux diesel','Articulée électrique','Articulée diesel','Télescopique','Sur camion','Sur remorque']},
+    {id:'e-hauteur',label:'Hauteur de travail max (m)',type:'number',placeholder:'12',step:'0.5'},
+    {id:'e-cap',label:'Charge max (kg)',type:'number',placeholder:'200',step:'10'},
+    {id:'e-energie',label:'Énergie',type:'select',opts:['Électrique','Diesel','Hybride','GPL']},
+  ],
+  vgp_engin: [
+    {id:'e-type-engin',label:"Type d'engin",type:'select',opts:['Chariot élévateur frontal','Chariot télescopique','Pelle hydraulique','Mini-pelle','Chargeuse','Tombereau','Compacteur','Autre']},
+    {id:'e-ptac',label:'PTAC (tonnes)',type:'number',placeholder:'3.5',step:'0.5'},
+    {id:'e-cap',label:'Capacité de levage (t)',type:'number',placeholder:'1.5',step:'0.1'},
+    {id:'e-energie',label:'Énergie',type:'select',opts:['Diesel','Électrique','Gaz','Hybride']},
+  ],
+  vgp_antichute: [
+    {id:'e-type-ac',label:"Type d'équipement",type:'select',opts:['Harnais complet','Longe double absorbeur','Longe simple','Absorbeur énergie','Enrouleur rappel auto','Ligne de vie horizontale','Connecteur / Mousqueton']},
+    {id:'e-norme',label:'Norme CE',type:'select',opts:['EN 361 (harnais)','EN 358 (maintien)','EN 354 (longe)','EN 355 (absorbeur)','EN 360 (enrouleur)','EN 362 (connecteur)','EN 363 (système)']},
+    {id:'e-date-limite',label:'Date limite utilisation',type:'date'},
+  ],
+};
+
+function champsLigneHTML(type,prefix){
+  return (CHAMPS_TYPE[type]||[]).map(ch=>{
+    const id=prefix+ch.id;
+    if(ch.type==='select')return `<div class="fg" style="margin-bottom:12px"><label>${ch.label}</label><select id="${id}"><option value=""></option>${ch.opts.map(o=>`<option>${o}</option>`).join('')}</select></div>`;
+    return `<div class="fg" style="margin-bottom:12px"><label>${ch.label}</label><input type="${ch.type==='number'?'number':'text'}" id="${id}" ${ch.step?'step="'+ch.step+'"':''} placeholder="${ch.placeholder||''}"></div>`;
+  }).join('');
+}
+function collecteChamps(type,prefix){
+  const caract={};
+  (CHAMPS_TYPE[type]||[]).forEach(ch=>{const el=document.getElementById(prefix+ch.id);if(el&&el.value)caract[ch.id]=el.value});
+  return caract;
+}
+function resumeCaract(type,caract){
+  caract=caract||{};const out=[];
+  (CHAMPS_TYPE[type]||[]).forEach(ch=>{
+    if(ch.id==='e-unite')return;
+    const v=caract[ch.id];if(!v)return;
+    out.push(ch.id==='e-cap'?v+' '+(caract['e-unite']||''):String(v));
+  });
+  return out.join(' · ');
+}
+// ---- Création des équipements du client depuis les lignes du contrat ----
+async function creerEquipementsDepuisContrat(contrat,lignes,clientId){
+  const rows=[];const dateTag=new Date().toISOString().slice(2,10).replace(/-/g,'');
+  lignes.forEach(l=>{
+    const q=parseInt(l.quantite,10)||0;const caract=l.caract||{};
+    for(let i=0;i<q;i++){
+      const num=`${(l.type||'EQ').slice(0,3).toUpperCase()}-${dateTag}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
+      const ds={...caract};delete ds['e-cap'];delete ds['e-unite'];
+      rows.push({client_id:clientId,type_equipement_code:l.type,numero_identification:num,
+        marque:l.marque||null,modele:l.modele||null,
+        capacite_valeur:caract['e-cap']?parseFloat(caract['e-cap']):null,capacite_unite:caract['e-unite']||null,
+        donnees_specifiques:ds,statut:'opérationnel',localisation:'',
+        notes:'Créé depuis le contrat '+(contrat.numero_contrat||'du '+fmt(contrat.created_at))});
+    }
+  });
+  if(!rows.length)return 0;
+  const {error}=await db.from('equipements').insert(rows);
+  if(error){toast('Contrat créé mais erreur équipements : '+error.message,'err');return 0}
+  return rows.length;
+}
+
 // ---- ACCUEIL ----
 async function ouvrirCommercial(){
   goTo('s-commercial');
@@ -419,7 +518,7 @@ function renderLignes(){
   const lib=code=>{const t=typesEquip.find(t=>t.code===code);return t?t.icone+' '+t.libelle:code};
   el.innerHTML=_lignes.length?_lignes.map((l,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:6px">
     <div><div style="font-weight:600;font-size:14px">${lib(l.type)}</div>
-    <div style="font-size:12px;color:var(--txt-l)">${[l.marque,l.modele].filter(Boolean).join(' ')||'—'} · ${l.quantite} × ${(+l.pu).toFixed(2)} €</div></div>
+    <div style="font-size:12px;color:var(--txt-l)">${[l.marque,l.modele].filter(Boolean).join(' ')||'—'}${l.resume?' · '+l.resume:''} · ${l.quantite} × ${(+l.pu).toFixed(2)} €</div></div>
     <div style="display:flex;align-items:center;gap:10px">
       <div style="font-weight:700">${((+l.quantite)*(+l.pu)).toFixed(2)} €</div>
       <button onclick="_lignes.splice(${i},1);renderLignes()" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:4px 8px;font-size:13px">✕</button>
@@ -431,13 +530,20 @@ function renderLignes(){
 function ouvrirLigneContrat(){
   $('lk-type').innerHTML=typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
   $('lk-marque').value='';$('lk-modele').value='';$('lk-qte').value='1';$('lk-pu').value='';
+  renderChampsLigne();
   goTo('s-ligne-contrat');
+}
+function renderChampsLigne(){
+  const html=champsLigneHTML($('lk-type').value,'lk-');
+  $('lk-champs').innerHTML=html||'<div style="font-size:12px;color:var(--txt-l);padding:4px 0">Aucune caractéristique pour ce type.</div>';
 }
 function validerLigneContrat(){
   const qte=parseInt($('lk-qte').value,10);const pu=parseFloat($('lk-pu').value);
   if(!qte||qte<1){toast('Quantité invalide','err');return}
   if(isNaN(pu)||pu<0){toast('Prix unitaire invalide','err');return}
-  _lignes.push({type:$('lk-type').value,marque:$('lk-marque').value.trim(),modele:$('lk-modele').value.trim(),quantite:qte,pu});
+  const type=$('lk-type').value;
+  const caract=collecteChamps(type,'lk-');
+  _lignes.push({type,marque:$('lk-marque').value.trim(),modele:$('lk-modele').value.trim(),quantite:qte,pu,caract,resume:resumeCaract(type,caract)});
   renderLignes();goTo('s-new-contrat');
 }
 async function saveContratCom(signer){
@@ -454,7 +560,8 @@ async function saveContratCom(signer){
     statut:'actif',notes:$('nk-notes').value.trim()
   }).select('*,clients(raison_sociale)').single();
   if(error){toast('Erreur : '+error.message,'err');return}
-  toast('Contrat créé ✓');
+  const nb=await creerEquipementsDepuisContrat(ct,_lignes,clientId);
+  toast('Contrat créé ✓'+(nb?' — '+nb+' équipement(s) ajouté(s) au client':''));
   if(signer)signerContrat(ct.id,ct);
   else ouvrirCommercial();
 }

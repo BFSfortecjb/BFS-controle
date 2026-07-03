@@ -1034,11 +1034,60 @@ async function saveContrat(){
   // Les types présents dans le chiffrage sont automatiquement couverts
   const types=[...new Set([...coches,..._lignesContrat.map(l=>l.type)])];
   const p={client_id:$('ct-client').value,numero_contrat:$('ct-num').value.trim(),type_contrat:$('ct-type').value,types_couverts:types,lignes:_lignesContrat,date_debut:$('ct-debut').value||null,date_fin:$('ct-fin').value||null,tarif_annuel:parseFloat($('ct-tarif').value)||null,periodicite_visite:$('ct-period').value,statut:$('ct-statut').value,notes:$('ct-notes').value.trim(),updated_at:new Date().toISOString()};
-  const {error}=id?await db.from('contrats').update(p).eq('id',id):await db.from('contrats').insert(p);
+  let error,nouveauContrat=null;
+  if(id){({error}=await db.from('contrats').update(p).eq('id',id));}
+  else{const r=await db.from('contrats').insert(p).select().single();error=r.error;nouveauContrat=r.data;}
   if(error){toast('Erreur: '+error.message,'err');return}
-  toast(id?'Contrat modifié':'Contrat créé');CM('mo-contrat');loadContrats();
+  let nb=0;
+  if(nouveauContrat)nb=await creerEquipementsDepuisContrat(nouveauContrat,_lignesContrat,p.client_id);
+  toast(id?'Contrat modifié':'Contrat créé'+(nb?' — '+nb+' équipement(s) ajouté(s) au client':''));
+  CM('mo-contrat');loadContrats();
 }
 async function deleteContrat(id){if(!confirm('Supprimer ?'))return;await db.from('contrats').delete().eq('id',id);toast('Supprimé');loadContrats()}
+
+
+// ---- Caractéristiques dans les lignes de contrat (bureau) ----
+function champsLigneHTML(type,prefix){
+  return (CHAMPS_TYPE[type]||[]).map(ch=>{
+    const id=prefix+ch.id;
+    if(ch.type==='select')return `<div class="fg" style="margin-bottom:12px"><label>${ch.label}</label><select id="${id}"><option value=""></option>${ch.opts.map(o=>`<option>${o}</option>`).join('')}</select></div>`;
+    return `<div class="fg" style="margin-bottom:12px"><label>${ch.label}</label><input type="${ch.type==='number'?'number':'text'}" id="${id}" ${ch.step?'step="'+ch.step+'"':''} placeholder="${ch.placeholder||''}"></div>`;
+  }).join('');
+}
+function collecteChampsLigne(type,prefix){
+  const caract={};
+  (CHAMPS_TYPE[type]||[]).forEach(ch=>{const el=document.getElementById(prefix+ch.id);if(el&&el.value)caract[ch.id]=el.value});
+  return caract;
+}
+function resumeCaract(type,caract){
+  caract=caract||{};const out=[];
+  (CHAMPS_TYPE[type]||[]).forEach(ch=>{
+    if(ch.id==='e-unite')return;
+    const v=caract[ch.id];if(!v)return;
+    out.push(ch.id==='e-cap'?v+' '+(caract['e-unite']||''):String(v));
+  });
+  return out.join(' · ');
+}
+// ---- Création automatique des équipements du client depuis un nouveau contrat ----
+async function creerEquipementsDepuisContrat(contrat,lignes,clientId){
+  const rows=[];const dateTag=new Date().toISOString().slice(2,10).replace(/-/g,'');
+  (lignes||[]).forEach(l=>{
+    const q=parseInt(l.quantite,10)||0;const caract=l.caract||{};
+    for(let i=0;i<q;i++){
+      const num=`${(l.type||'EQ').slice(0,3).toUpperCase()}-${dateTag}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
+      const ds={...caract};delete ds['e-cap'];delete ds['e-unite'];
+      rows.push({client_id:clientId,type_equipement_code:l.type,numero_identification:num,
+        marque:l.marque||null,modele:l.modele||null,
+        capacite_valeur:caract['e-cap']?parseFloat(caract['e-cap']):null,capacite_unite:caract['e-unite']||null,
+        donnees_specifiques:ds,statut:'opérationnel',localisation:'',
+        notes:'Créé depuis le contrat '+(contrat.numero_contrat||'')});
+    }
+  });
+  if(!rows.length)return 0;
+  const {error}=await db.from('equipements').insert(rows);
+  if(error){toast('Contrat créé mais erreur équipements : '+error.message,'err');return 0}
+  return rows.length;
+}
 
 // ============================================================
 // CONTRAT — LIGNES DE CHIFFRAGE
@@ -1050,7 +1099,7 @@ function renderLignesContrat(){
   el.innerHTML='<table style="width:100%;font-size:12px"><thead><tr><th>Équipement</th><th>Marque</th><th>Modèle</th><th style="text-align:center">Qté</th><th style="text-align:right">PU HT</th><th style="text-align:right">Total HT</th><th></th></tr></thead><tbody>'
     +_lignesContrat.map((l,i)=>{
       const t=typesEquip.find(t=>t.code===l.type);
-      return `<tr><td>${t?t.icone+' '+t.libelle:l.type}</td><td>${l.marque||'—'}</td><td>${l.modele||'—'}</td><td style="text-align:center">${l.quantite}</td><td style="text-align:right">${(+l.pu||0).toFixed(2)} €</td><td style="text-align:right;font-weight:600">${((+l.quantite||0)*(+l.pu||0)).toFixed(2)} €</td><td><button type="button" onclick="supprimerLigneContrat(${i})" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px">✕</button></td></tr>`;
+      return `<tr><td>${t?t.icone+' '+t.libelle:l.type}</td><td>${l.marque||'—'}</td><td>${l.modele||'—'}${l.resume?'<br><small style="color:var(--txt-l)">'+l.resume+'</small>':''}</td><td style="text-align:center">${l.quantite}</td><td style="text-align:right">${(+l.pu||0).toFixed(2)} €</td><td style="text-align:right;font-weight:600">${((+l.quantite||0)*(+l.pu||0)).toFixed(2)} €</td><td><button type="button" onclick="supprimerLigneContrat(${i})" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px">✕</button></td></tr>`;
     }).join('')+'</tbody></table>';
   majTotalContrat();
 }
@@ -1067,9 +1116,10 @@ function ajouterLigneContrat(){
     <div class="mh"><h3>Ajouter un équipement au contrat</h3><button class="mclose" onclick="this.closest('.mo').remove()">✕</button></div>
     <div class="mc">
       <div class="fg" style="margin-bottom:12px"><label>Type d'équipement *</label>
-        <select id="lc-type">${typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('')}</select></div>
+        <select id="lc-type" onchange="document.getElementById('lc-champs').innerHTML=champsLigneHTML(this.value,'lc-')">${typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('')}</select></div>
       <div class="fg" style="margin-bottom:12px"><label>Marque</label><input type="text" id="lc-marque" placeholder="Ex : Eurofeu"></div>
       <div class="fg" style="margin-bottom:12px"><label>Modèle</label><input type="text" id="lc-modele" placeholder="Ex : PP6 ABC"></div>
+      <div id="lc-champs">${champsLigneHTML(typesEquip[0]?.code,'lc-')}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="fg"><label>Quantité *</label><input type="number" id="lc-qte" min="1" value="1"></div>
         <div class="fg"><label>Prix unitaire HT (€) *</label><input type="number" id="lc-pu" step="0.01" min="0"></div>
@@ -1088,7 +1138,9 @@ function confirmerLigneContrat(btn){
   const pu=parseFloat(document.getElementById('lc-pu').value);
   if(!qte||qte<1){toast('Quantité invalide','err');return}
   if(isNaN(pu)||pu<0){toast('Prix unitaire invalide','err');return}
-  _lignesContrat.push({type:document.getElementById('lc-type').value,marque:document.getElementById('lc-marque').value.trim(),modele:document.getElementById('lc-modele').value.trim(),quantite:qte,pu:pu});
+  const typeL=document.getElementById('lc-type').value;
+  const caract=collecteChampsLigne(typeL,'lc-');
+  _lignesContrat.push({type:typeL,marque:document.getElementById('lc-marque').value.trim(),modele:document.getElementById('lc-modele').value.trim(),quantite:qte,pu:pu,caract,resume:resumeCaract(typeL,caract)});
   btn.closest('.mo').remove();renderLignesContrat();
 }
 
