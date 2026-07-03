@@ -350,6 +350,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
         <div class="contact-actions" id="client-contact-actions"></div>
       </div>
     </div>
+    <div id="client-contrats-bloc" style="display:none">
+      <div class="sec">Contrats</div>
+      <div id="client-contrats"></div>
+    </div>
     <div class="sec">Équipements</div>
     <div id="client-equip-stats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px"></div>
 
@@ -371,6 +375,19 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       </button>
     </div>
   </div>
+</div>
+
+
+<!-- ===== CONSULTATION CONTRAT ===== -->
+<div class="screen" id="s-contrat-detail">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-client')">←</button>
+    <div style="flex:1;min-width:0">
+      <h1 id="ctd-titre" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Contrat</h1>
+      <div class="hdr-sub" id="ctd-sub"></div>
+    </div>
+  </div>
+  <div class="content" id="ctd-content"></div>
 </div>
 
 <!-- ===== INTERVENTION PONCTUELLE ===== -->
@@ -900,19 +917,8 @@ async function ouvrirClient(clientId){
   if(c.contact_email)actions.push(`<a class="contact-btn cb-mail" href="mailto:${c.contact_email}">✉ Email</a>`);
   $('client-contact-actions').innerHTML=actions.join('');
 
-  // Contrats du client (lecture seule)
-  db.from('contrats').select('numero_contrat,type_contrat,date_debut,date_fin,tarif_annuel,statut,signature_data,signe_le').eq('client_id',clientId).order('created_at',{ascending:false}).then(({data:cts})=>{
-    if(!cts||!cts.length)return;
-    const fmtD=d=>d?new Date(d).toLocaleDateString('fr-FR'):'—';
-    $('client-contact-info').innerHTML+=`<div style="margin-top:12px;padding-top:10px;border-top:1px solid #f0f0f0">
-      <div style="font-weight:700;font-size:13px;margin-bottom:6px">📋 Contrats (${cts.length})</div>
-      ${cts.map(ct=>`<div style="font-size:12px;color:var(--txt-l);margin-bottom:4px">
-        ${ct.numero_contrat||'sans n°'} · ${ct.type_contrat} · ${fmtD(ct.date_debut)} → ${fmtD(ct.date_fin)}
-        ${ct.tarif_annuel?' · '+(+ct.tarif_annuel).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})+' HT':''}
-        ${ct.signature_data?' <span style="color:#16a34a;font-weight:700">✍</span>':' <span style="color:#d97706">⏳</span>'}
-      </div>`).join('')}
-    </div>`;
-  });
+  // Bloc Contrats (sous la carte contact) — appui = consultation
+  chargerContratsClient(clientId);
 
   // Stats équipements + groupement par type
   const {data:equips}=await db.from('equipements')
@@ -2462,6 +2468,71 @@ document.addEventListener('change',e=>{
     if(u&&a&&a!=='Autre')u.value=['CO2','BC','ABC','D'].includes(a)?'kg':'L';
   }
 });
+
+
+// ============================================================
+// CONTRATS DU CLIENT (fiche client) — consultation lecture seule
+// ============================================================
+let _contratsClient=[];
+let typesTerrainCache=null;
+async function chargerContratsClient(clientId){
+  const bloc=$('client-contrats-bloc');const el=$('client-contrats');
+  bloc.style.display='none';el.innerHTML='';
+  if(!typesTerrainCache){
+    const {data:te}=await db.from('types_equipements').select('code,libelle,icone');
+    typesTerrainCache=te||[];
+  }
+  const {data:cts}=await db.from('contrats').select('*').eq('client_id',clientId).order('created_at',{ascending:false});
+  _contratsClient=cts||[];
+  if(!_contratsClient.length)return;
+  bloc.style.display='block';
+  el.innerHTML=_contratsClient.map((ct,i)=>`<div class="card" style="margin-bottom:8px;cursor:pointer" onclick="voirContratTerrain(${i})">
+    <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px">
+      <div>
+        <div style="font-weight:700">${ct.numero_contrat||'Contrat sans n°'}</div>
+        <div style="font-size:12px;color:var(--txt-l)">${ct.type_contrat} · ${fmt(ct.date_debut)} → ${fmt(ct.date_fin)}${ct.tarif_annuel?' · '+(+ct.tarif_annuel).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})+' HT':''}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:12px;font-weight:700;color:${ct.signature_data?'#16a34a':'#d97706'}">${ct.signature_data?'✍ Signé':'⏳ À signer'}</div>
+        <div style="font-size:16px;color:var(--txt-l)">›</div>
+      </div>
+    </div>
+  </div>`).join('');
+}
+function voirContratTerrain(i){
+  const ct=_contratsClient[i];if(!ct)return;
+  $('ctd-titre').textContent=ct.numero_contrat||'Contrat sans n°';
+  $('ctd-sub').textContent=(currentClient?.raison_sociale||'')+' · '+ct.type_contrat;
+  const eur=n=>(+n).toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+  const libT=code=>{const t=(typesTerrainCache||[]).find(t=>t.code===code);return t?(t.icone?t.icone+' ':'')+t.libelle:code};
+  const lignes=Array.isArray(ct.lignes)?ct.lignes:[];
+  const avenants=Array.isArray(ct.avenants)?ct.avenants:[];
+  let html=`<div class="card" style="margin-bottom:14px"><div class="card-body" style="padding:14px 16px;font-size:13px">
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--txt-l)">Période</span><strong>${fmt(ct.date_debut)} → ${fmt(ct.date_fin)}</strong></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--txt-l)">Périodicité</span><strong>${ct.periodicite_visite||'—'}</strong></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--txt-l)">Statut</span><strong>${ct.statut}</strong></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--txt-l)">Tarif annuel HT</span><strong style="color:var(--rouge)">${ct.tarif_annuel?eur(ct.tarif_annuel):'—'}</strong></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--txt-l)">Signature</span><strong style="color:${ct.signature_data?'#16a34a':'#d97706'}">${ct.signature_data?'✍ '+(ct.signataire_nom||'')+' le '+fmt(ct.signe_le):'⏳ En attente'}</strong></div>
+  </div></div>`;
+  if(lignes.length){
+    html+=`<div class="sec">Équipements du contrat</div>`+lignes.map(l=>`<div style="background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+      <div><div style="font-weight:600;font-size:14px">${l.quantite} × ${libT(l.type)}</div>
+      <div style="font-size:12px;color:var(--txt-l)">${[l.marque,l.modele].filter(Boolean).join(' ')||'—'}${l.resume?' · '+l.resume:''}</div></div>
+      <div style="font-weight:700">${eur((+l.quantite)*(+l.pu))}</div>
+    </div>`).join('');
+  }
+  avenants.forEach(av=>{
+    html+=`<div class="sec">Avenant n°${av.num} — ${fmt(av.date)}${av.signataire_nom?' · signé par '+av.signataire_nom:''}</div>`
+      +(av.lignes||[]).map(l=>`<div style="background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:6px;border-left:4px solid ${l.sens==='retrait'?'#dc2626':'#16a34a'};display:flex;justify-content:space-between;align-items:center">
+        <div><div style="font-weight:600;font-size:14px">${l.sens==='retrait'?'➖':'➕'} ${l.quantite} × ${libT(l.type)}</div>
+        <div style="font-size:12px;color:var(--txt-l)">${[l.marque,l.modele].filter(Boolean).join(' ')||'—'}</div></div>
+        <div style="font-weight:700;color:${l.sens==='retrait'?'#dc2626':'#16a34a'}">${l.sens==='retrait'?'−':'+'}${eur((+l.quantite)*(+l.pu))}</div>
+      </div>`).join('');
+  });
+  if(ct.notes)html+=`<div class="sec">Notes</div><div style="background:#fff;border-radius:10px;padding:10px 14px;font-size:13px;color:var(--txt-l)">${ct.notes}</div>`;
+  $('ctd-content').innerHTML=html;
+  goTo('s-contrat-detail');
+}
 
 // ============================================================
 // CHAMPS CONDITIONNELS TERRAIN (même définition que index.html)
