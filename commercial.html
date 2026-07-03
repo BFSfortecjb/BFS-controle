@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>BFS Commercial</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --rouge:#C0392B;--rouge-s:#96251d;--rouge-l:#fdf2f1;
+  --dark:#1a1a2e;--bg:#f0f2f8;--blanc:#fff;
+  --txt:#1a1a2e;--txt-l:#6b7280;
+  --vert:#16a34a;--vert-l:#dcfce7;
+  --orange:#d97706;--orange-l:#fef3c7;
+  --bleu:#2563eb;--bleu-l:#dbeafe;
+  --violet:#7c3aed;--violet-l:#ede9fe;
+  --r:12px;--ombre:0 2px 12px rgba(0,0,0,.1);
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bot:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);font-size:15px;display:flex;flex-direction:column}
+
+/* ÉCRANS */
+.screen{display:none;flex-direction:column;height:100vh;overflow:hidden}
+.screen.active{display:flex}
+
+/* HEADER */
+.hdr{background:var(--rouge);color:#fff;padding:calc(12px + var(--safe-top)) 16px 12px;display:flex;align-items:center;gap:10px;flex-shrink:0}
+.hdr-back{background:rgba(255,255,255,.2);border:none;color:#fff;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.hdr h1{font-size:16px;font-weight:600;flex:1}
+.hdr .hdr-sub{font-size:12px;opacity:.8}
+.hdr-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+
+/* SCROLL CONTENT */
+.content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;padding-bottom:calc(16px + var(--safe-bot))}
+.content.no-pad{padding:0}
+
+/* FOOTER FIXE */
+.footer{padding:12px 16px calc(12px + var(--safe-bot));background:var(--blanc);border-top:1px solid #e5e7eb;flex-shrink:0}
+
+/* TAB BAR */
+.tabbar{display:flex;background:#fff;border-top:1px solid #e5e7eb;padding:6px 0 calc(6px + var(--safe-bot));flex-shrink:0}
+.tab-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;background:none;border:none;cursor:pointer;color:var(--txt-l);font-size:10px;font-weight:600}
+.tab-item.active{color:var(--rouge)}
+.tab-item .tab-ico{font-size:20px}
+
+/* LOGIN */
+#s-login{background:linear-gradient(135deg,var(--dark) 0%,#2d2d5e 100%);align-items:center;justify-content:center}
+.login-box{background:#fff;border-radius:20px;padding:36px 28px;width:100%;max-width:360px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.login-logo{text-align:center;margin-bottom:28px}
+.login-logo strong{display:block;font-size:26px;color:var(--rouge);margin-bottom:4px}
+.login-logo span{font-size:12px;color:var(--txt-l);letter-spacing:1px;text-transform:uppercase}
+.login-err{background:#fee2e2;color:#dc2626;padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:12px;display:none}
+
+/* CARDS */
+.card{background:var(--blanc);border-radius:var(--r);box-shadow:var(--ombre);margin-bottom:12px;overflow:hidden}
+.card-body{padding:14px 16px}
+
+/* CLIENT CARD */
+.client-card{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--blanc);border-radius:var(--r);box-shadow:var(--ombre);margin-bottom:10px;cursor:pointer;transition:all .15s;border:2px solid transparent}
+.client-card:active{transform:scale(.98);border-color:var(--rouge)}
+.client-icon{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.client-info{flex:1;min-width:0}
+.client-name{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.client-meta{font-size:12px;color:var(--txt-l);margin-top:2px}
+.client-badge{font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;white-space:normal;text-align:center;max-width:70px;line-height:1.3}
+.cb-rouge{background:#fee2e2;color:#dc2626}
+.cb-orange{background:#fef3c7;color:#b45309}
+.cb-vert{background:#dcfce7;color:#15803d}
+.cb-gris{background:#f3f4f6;color:#6b7280}
+
+/* BOUTONS PRINCIPAUX */
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:14px 20px;border-radius:var(--r);border:none;cursor:pointer;font-size:15px;font-weight:600;transition:all .15s;width:100%;text-align:center}
+.btn:active{transform:scale(.97)}
+.btn-p{background:var(--rouge);color:#fff}
+.btn-p:active{background:var(--rouge-s)}
+.btn-s{background:var(--bg);color:var(--txt);border:1.5px solid #e5e7eb}
+.btn-vert{background:var(--vert);color:#fff}
+.btn-orange{background:var(--orange);color:#fff}
+.btn-sm{padding:9px 14px;font-size:13px;font-weight:500}
+.btn-xs{padding:6px 10px;font-size:12px;font-weight:500;width:auto}
+.btn-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* FORMS */
+.fg{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.fg label{font-size:12px;font-weight:700;color:var(--txt-l);text-transform:uppercase;letter-spacing:.4px}
+.fg input,.fg select,.fg textarea{padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:15px;width:100%;outline:none;background:#fff;-webkit-appearance:none}
+.fg input:focus,.fg select:focus{border-color:var(--rouge);box-shadow:0 0 0 3px rgba(192,57,43,.1)}
+.fg textarea{resize:none;min-height:80px}
+
+/* POINTS DE CONTRÔLE */
+.pc-item{background:var(--bg);border-radius:10px;padding:12px 14px;margin-bottom:8px;border:1.5px solid #e5e7eb}
+.pc-item.ok{border-color:var(--vert);background:var(--vert-l)}
+.pc-item.nok{border-color:var(--rouge);background:var(--rouge-l)}
+.pc-label{font-size:14px;font-weight:500;margin-bottom:10px}
+.pc-label.req::after{content:'*';color:var(--rouge);margin-left:3px}
+.pc-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pc-btn{padding:10px;border-radius:8px;border:2px solid #e5e7eb;background:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;text-align:center}
+.pc-btn:active{transform:scale(.95)}
+.pc-btn.ok-sel{background:var(--vert);border-color:var(--vert);color:#fff}
+.pc-btn.nok-sel{background:var(--rouge);border-color:var(--rouge);color:#fff}
+.pc-val-input{width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px;margin-top:6px}
+
+/* STATUT FINAL */
+.statut-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}
+.statut-btn{padding:18px 10px;border-radius:var(--r);border:2px solid #e5e7eb;background:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:all .15s;text-align:center;line-height:1.3}
+.statut-btn .ico{font-size:24px;display:block;margin-bottom:6px}
+.statut-btn:active{transform:scale(.95)}
+.statut-btn.sel-conforme{background:var(--vert-l);border-color:var(--vert);color:var(--vert)}
+.statut-btn.sel-surveiller{background:var(--orange-l);border-color:var(--orange);color:var(--orange)}
+.statut-btn.sel-nc{background:var(--rouge-l);border-color:var(--rouge);color:var(--rouge)}
+.statut-btn.sel-hs{background:#1a1a2e;border-color:#1a1a2e;color:#fff}
+
+/* PIÈCES */
+.piece-item{background:var(--bg);border-radius:10px;padding:11px 13px;margin-bottom:7px;display:flex;align-items:center;gap:10px;border:1.5px solid #e5e7eb}
+.piece-item.checked{border-color:var(--vert);background:var(--vert-l)}
+.piece-item.to-replace{border-color:var(--orange);background:var(--orange-l)}
+.piece-check{width:24px;height:24px;border-radius:50%;border:2px solid #d1d5db;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;transition:all .15s}
+.piece-check.done{background:var(--vert);border-color:var(--vert);color:#fff}
+.piece-check.replace{background:var(--orange);border-color:var(--orange);color:#fff}
+.piece-label{flex:1;font-size:14px;font-weight:500}
+.piece-actions{display:flex;gap:5px}
+.piece-action-btn{padding:4px 8px;border-radius:6px;border:none;font-size:12px;font-weight:600;cursor:pointer}
+
+/* PROGRESSION */
+.progress-bar{height:6px;background:#e5e7eb;border-radius:3px;margin:8px 0}
+.progress-fill{height:100%;border-radius:3px;background:var(--vert);transition:width .3s}
+
+/* ÉQUIPEMENT ITEM */
+.equip-item{display:flex;align-items:center;gap:12px;padding:13px 16px;background:var(--blanc);border-bottom:1px solid #f0f0f0;cursor:pointer;transition:background .1s}
+.equip-item:active{background:#f8f8f8}
+.equip-item.done{opacity:.6}
+.equip-item.done .equip-status{background:var(--vert-l);color:var(--vert)}
+.equip-item.hs .equip-status{background:#1a1a2e;color:#fff}
+.equip-ico{font-size:22px;flex-shrink:0}
+.equip-info{flex:1;min-width:0}
+.equip-name{font-size:14px;font-weight:600}
+.equip-loc{font-size:12px;color:var(--txt-l);margin-top:1px}
+.equip-status{font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;background:var(--bg);white-space:nowrap}
+
+/* SCANNER */
+#scan-video{width:100%;height:100%;object-fit:cover}
+.scan-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+.scan-frame{width:240px;height:240px;border:3px solid var(--rouge);border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,.55)}
+.scan-hint{color:#fff;font-size:13px;margin-top:16px;text-align:center;background:rgba(0,0,0,.5);padding:8px 16px;border-radius:20px}
+
+/* RÉCAP */
+.recap-stat{display:flex;align-items:center;gap:12px;padding:13px 16px;border-radius:var(--r);margin-bottom:8px}
+.recap-stat.rs-vert{background:var(--vert-l)}
+.recap-stat.rs-orange{background:var(--orange-l)}
+.recap-stat.rs-rouge{background:var(--rouge-l)}
+.recap-stat.rs-dark{background:#e2e2ec}
+.recap-ico{font-size:22px}
+.recap-val{font-size:22px;font-weight:700;margin-left:auto}
+
+/* TOAST */
+#toast{position:fixed;bottom:calc(20px + var(--safe-bot));left:50%;transform:translateX(-50%) translateY(80px);background:var(--dark);color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;z-index:999;opacity:0;transition:all .25s;white-space:nowrap;pointer-events:none}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+#toast.ok{background:var(--vert)}#toast.err{background:var(--rouge)}
+
+/* MODAL */
+.mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:flex-end;justify-content:center}
+.mo.open{display:flex}
+.mo-box{background:#fff;border-radius:20px 20px 0 0;padding:20px 20px calc(20px + var(--safe-bot));width:100%;max-width:480px;max-height:85vh;overflow-y:auto}
+.mo-box h3{font-size:16px;font-weight:700;margin-bottom:16px}
+.mo-handle{width:40px;height:4px;background:#e5e7eb;border-radius:2px;margin:0 auto 16px}
+
+/* SECTION TITLE */
+.sec{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-l);margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid #e5e7eb}
+
+/* SPIN */
+.spin{display:inline-block;width:18px;height:18px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading{text-align:center;padding:32px;color:var(--txt-l)}
+.spin-dark{border:2px solid #e5e7eb;border-top-color:var(--rouge)}
+
+/* CONTACT ACTIONS */
+.contact-actions{display:flex;gap:8px;margin-top:8px}
+.contact-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border-radius:10px;border:none;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none}
+.cb-tel{background:var(--vert-l);color:var(--vert)}
+.cb-mail{background:var(--bleu-l);color:var(--bleu)}
+.cb-rdv{background:var(--violet-l);color:var(--violet)}
+
+/* CHIP */
+.chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.chip-r{background:#fee2e2;color:#dc2626}
+.chip-o{background:#fef3c7;color:#b45309}
+.chip-v{background:#dcfce7;color:#15803d}
+.chip-g{background:#f3f4f6;color:#6b7280}
+</style>
+</head>
+<body>
+
+<!-- ===== CONNEXION ===== -->
+<div class="screen active" id="s-login">
+  <div class="login-box">
+    <div class="login-logo"><strong>💼 BFS Commercial</strong><span>Clients & contrats sur place</span></div>
+    <div class="login-err" id="login-err"></div>
+    <div class="fg"><label>Email</label><input type="email" id="l-email" placeholder="prenom.nom@bfs.fr" autocomplete="email"></div>
+    <div class="fg"><label>Mot de passe</label><input type="password" id="l-pwd" autocomplete="current-password"></div>
+    <button class="btn btn-p" onclick="doLogin()">Se connecter</button>
+    <a href="terrain.html" style="display:block;text-align:center;margin-top:14px;font-size:13px;color:var(--txt-l)">🔧 Aller au module contrôle</a>
+  </div>
+</div>
+
+<!-- ===== ACCUEIL COMMERCIAL ===== -->
+<div class="screen" id="s-commercial">
+  <div class="hdr">
+    <div style="flex:1">
+      <div style="font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:1px">BFS Commercial</div>
+      <h1 id="com-titre">Commercial</h1>
+    </div>
+    <div class="hdr-right">
+      <button style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer" onclick="location.href='terrain.html'">🔧 Contrôle</button>
+      <button style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer" onclick="doLogout()">⎋</button>
+    </div>
+  </div>
+  <div class="content">
+    <div class="btn-row" style="flex-direction:column;gap:10px;margin-bottom:18px">
+      <button class="btn btn-p" style="width:100%;padding:14px" onclick="ouvrirNouveauClient()">➕ Nouveau client</button>
+      <button class="btn btn-p" style="width:100%;padding:14px" onclick="ouvrirNouveauContrat()">📋 Nouveau contrat</button>
+    </div>
+    <div class="sec">Contrats récents</div>
+    <div id="com-contrats"><div class="loading"><div class="spin spin-dark"></div></div></div>
+  </div>
+</div>
+
+<!-- ===== NOUVEAU CLIENT ===== -->
+<div class="screen" id="s-new-client">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-commercial')">←</button>
+    <h1>Nouveau client</h1>
+  </div>
+  <div class="content">
+    <div class="fg" style="margin-bottom:12px"><label>Raison sociale *</label><input type="text" id="nc-rs"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Adresse</label><input type="text" id="nc-adr"></div>
+    <div style="display:grid;grid-template-columns:110px 1fr;gap:10px;margin-bottom:12px">
+      <div class="fg"><label>CP</label><input type="text" id="nc-cp" inputmode="numeric"></div>
+      <div class="fg"><label>Ville</label><input type="text" id="nc-ville"></div>
+    </div>
+    <div class="fg" style="margin-bottom:12px"><label>SIRET</label><input type="text" id="nc-siret" inputmode="numeric"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Contact (nom)</label><input type="text" id="nc-contact"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Téléphone</label><input type="tel" id="nc-tel"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Email</label><input type="email" id="nc-email"></div>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="saveClientCom()">✅ Créer le client</button>
+  </div>
+</div>
+
+<!-- ===== NOUVEAU CONTRAT ===== -->
+<div class="screen" id="s-new-contrat">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-commercial')">←</button>
+    <h1>Nouveau contrat</h1>
+  </div>
+  <div class="content">
+    <div class="fg" style="margin-bottom:12px"><label>Client *</label><select id="nk-client"></select></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div class="fg"><label>N° contrat</label><input type="text" id="nk-num"></div>
+      <div class="fg"><label>Type</label><select id="nk-type"><option value="annuel">Annuel</option><option value="pluriannuel">Pluriannuel</option><option value="ponctuel">Ponctuel</option></select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div class="fg"><label>Début</label><input type="date" id="nk-debut"></div>
+      <div class="fg"><label>Fin</label><input type="date" id="nk-fin"></div>
+    </div>
+    <div class="fg" style="margin-bottom:12px"><label>Périodicité</label><select id="nk-period"><option value="annuelle">Annuelle</option><option value="semestrielle">Semestrielle</option><option value="trimestrielle">Trimestrielle</option><option value="mensuelle">Mensuelle</option></select></div>
+    <div class="sec">Chiffrage — équipements</div>
+    <div id="nk-lignes"></div>
+    <button type="button" class="btn btn-s btn-sm" onclick="ouvrirLigneContrat()" style="margin:8px 0">+ Ajouter un équipement</button>
+    <div id="nk-total" style="text-align:right;font-weight:700;font-size:16px;margin-bottom:12px;color:var(--rouge)"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Notes / conditions</label><textarea id="nk-notes" rows="2"></textarea></div>
+  </div>
+  <div class="footer" style="display:flex;flex-direction:column;gap:8px">
+    <button class="btn btn-vert" onclick="saveContratCom(true)">✍ Créer et faire signer</button>
+    <button class="btn btn-s" onclick="saveContratCom(false)">💾 Créer sans signature</button>
+  </div>
+</div>
+
+<!-- ===== LIGNE DE CONTRAT ===== -->
+<div class="screen" id="s-ligne-contrat">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-new-contrat')">←</button>
+    <h1>Équipement du contrat</h1>
+  </div>
+  <div class="content">
+    <div class="fg" style="margin-bottom:12px"><label>Type d'équipement *</label><select id="lk-type"></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Marque</label><input type="text" id="lk-marque" placeholder="Ex : Eurofeu"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Modèle</label><input type="text" id="lk-modele" placeholder="Ex : PP6 ABC"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div class="fg"><label>Quantité *</label><input type="number" id="lk-qte" min="1" value="1" inputmode="numeric"></div>
+      <div class="fg"><label>Prix unitaire HT (€) *</label><input type="number" id="lk-pu" step="0.01" min="0" inputmode="decimal"></div>
+    </div>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="validerLigneContrat()">✅ Ajouter au contrat</button>
+  </div>
+</div>
+
+<!-- ===== SIGNATURE CONTRAT ===== -->
+<div class="screen" id="s-sign-contrat">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-commercial')">←</button>
+    <h1>Signature du contrat</h1>
+  </div>
+  <div class="content">
+    <div class="card" style="margin-bottom:14px"><div style="padding:12px 16px;font-size:13px;color:var(--txt-l)" id="sk-recap"></div></div>
+    <div class="fg" style="margin-bottom:14px">
+      <label>Nom du signataire (client) *</label>
+      <input type="text" id="sk-nom" placeholder="Nom et prénom du client">
+    </div>
+    <div class="sec">Signature du client</div>
+    <div style="background:#fff;border:2px dashed #d1d5db;border-radius:12px;position:relative;margin-bottom:8px">
+      <canvas id="sk-canvas" style="width:100%;height:200px;display:block;touch-action:none"></canvas>
+      <div id="sk-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;pointer-events:none">Le client signe ici</div>
+    </div>
+    <button class="btn btn-s btn-sm" onclick="effacerSignatureCom()">🗑 Effacer</button>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="validerSignatureCom()">✅ Valider la signature</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ============================================================
+// BFS COMMERCIAL — fichier indépendant de terrain.html
+// Création de clients et de contrats chiffrés, signés sur place.
+// ============================================================
+const SURL='https://dqraobwozowtnrieitkp.supabase.co';
+const SKEY='sb_publishable_UhkImOyooXPnAqTCNMJ4wA_VVqscCmK';
+const db=supabase.createClient(SURL,SKEY);
+
+const $=id=>document.getElementById(id);
+const fmt=d=>d?new Date(d).toLocaleDateString('fr-FR'):'—';
+function toast(msg,type='ok'){const t=$('toast');t.textContent=msg;t.className='show '+type;setTimeout(()=>t.className='',2800)}
+function goTo(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active')}
+
+let ME=null,typesEquip=[],clientsList=[],_lignes=[],_contratASigner=null;
+
+// ---- AUTH ----
+async function doLogin(){
+  const email=$('l-email').value.trim();const pwd=$('l-pwd').value;
+  const err=$('login-err');err.style.display='none';
+  if(!email||!pwd){err.textContent='Email et mot de passe requis.';err.style.display='block';return}
+  const {data,error}=await db.auth.signInWithPassword({email,password:pwd});
+  if(error){err.textContent='Email ou mot de passe incorrect.';err.style.display='block';return}
+  await onLogin(data.user);
+}
+$('l-pwd').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+async function onLogin(user){
+  const {data:profil}=await db.from('profils').select('*,agences(nom,code)').eq('id',user.id).single();
+  if(!profil){const err=$('login-err');err.textContent='Profil introuvable.';err.style.display='block';await db.auth.signOut();return}
+  ME=profil;
+  $('com-titre').textContent=`${profil.prenom||''} ${profil.nom}`.trim();
+  const {data:te}=await db.from('types_equipements').select('*').eq('actif',true).order('categorie').order('libelle');
+  typesEquip=te||[];
+  ouvrirCommercial();
+}
+async function doLogout(){await db.auth.signOut();ME=null;goTo('s-login')}
+db.auth.getSession().then(({data:{session}})=>{if(session)onLogin(session.user)});
+
+// ---- ACCUEIL ----
+async function ouvrirCommercial(){
+  goTo('s-commercial');
+  const el=$('com-contrats');
+  el.innerHTML='<div class="loading"><div class="spin spin-dark"></div></div>';
+  const {data,error}=await db.from('contrats').select('*,clients(raison_sociale,ville)').order('created_at',{ascending:false}).limit(10);
+  if(error){el.innerHTML='<div style="padding:16px;color:var(--txt-l)">Erreur : '+error.message+'</div>';return}
+  const cts=data||[];
+  if(!cts.length){el.innerHTML='<div style="padding:16px;text-align:center;color:var(--txt-l);font-size:13px">Aucun contrat pour l\'instant.</div>';return}
+  el.innerHTML=cts.map(ct=>`<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px" onclick="${ct.signature_data?'':`signerContrat('${ct.id}')`}">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-weight:600">${ct.clients?.raison_sociale||'—'}</div>
+        <div style="font-size:12px;color:var(--txt-l)">${ct.numero_contrat||'sans n°'} · ${fmt(ct.date_debut)} → ${fmt(ct.date_fin)} · ${ct.tarif_annuel?(+ct.tarif_annuel).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})+' HT':'—'}</div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:${ct.signature_data?'#16a34a':'#d97706'}">${ct.signature_data?'✍ Signé':'⏳ À signer'}</div>
+    </div>
+  </div>`).join('');
+}
+
+// ---- NOUVEAU CLIENT ----
+function ouvrirNouveauClient(){
+  ['nc-rs','nc-adr','nc-cp','nc-ville','nc-siret','nc-contact','nc-tel','nc-email'].forEach(id=>$(id).value='');
+  goTo('s-new-client');
+}
+async function saveClientCom(){
+  const rs=$('nc-rs').value.trim();
+  if(!rs){toast('Raison sociale obligatoire','err');return}
+  const {data:nc,error}=await db.from('clients').insert({
+    raison_sociale:rs,agence_id:ME.agence_id||null,
+    adresse:$('nc-adr').value.trim(),code_postal:$('nc-cp').value.trim(),ville:$('nc-ville').value.trim(),
+    siret:$('nc-siret').value.trim(),contact_nom:$('nc-contact').value.trim(),
+    contact_telephone:$('nc-tel').value.trim(),contact_email:$('nc-email').value.trim()
+  }).select().single();
+  if(error){toast('Erreur : '+error.message,'err');return}
+  toast('Client créé ✓');
+  if(confirm('Client créé.\nCréer un contrat pour '+rs+' ?'))ouvrirNouveauContrat(nc.id);
+  else ouvrirCommercial();
+}
+
+// ---- NOUVEAU CONTRAT ----
+async function ouvrirNouveauContrat(clientId){
+  const {data:cls}=await db.from('clients').select('id,raison_sociale,ville,agence_id').order('raison_sociale');
+  clientsList=cls||[];
+  $('nk-client').innerHTML=clientsList.map(x=>`<option value="${x.id}">${x.raison_sociale}${x.ville?' ('+x.ville+')':''}</option>`).join('');
+  if(clientId)$('nk-client').value=clientId;
+  ['nk-num','nk-debut','nk-fin','nk-notes'].forEach(id=>$(id).value='');
+  $('nk-type').value='annuel';$('nk-period').value='annuelle';
+  _lignes=[];renderLignes();
+  goTo('s-new-contrat');
+}
+function renderLignes(){
+  const el=$('nk-lignes');
+  const lib=code=>{const t=typesEquip.find(t=>t.code===code);return t?t.icone+' '+t.libelle:code};
+  el.innerHTML=_lignes.length?_lignes.map((l,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:6px">
+    <div><div style="font-weight:600;font-size:14px">${lib(l.type)}</div>
+    <div style="font-size:12px;color:var(--txt-l)">${[l.marque,l.modele].filter(Boolean).join(' ')||'—'} · ${l.quantite} × ${(+l.pu).toFixed(2)} €</div></div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="font-weight:700">${((+l.quantite)*(+l.pu)).toFixed(2)} €</div>
+      <button onclick="_lignes.splice(${i},1);renderLignes()" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:4px 8px;font-size:13px">✕</button>
+    </div>
+  </div>`).join(''):'<div style="padding:10px;text-align:center;color:var(--txt-l);font-size:13px">Aucun équipement — ajoute le résultat du repérage.</div>';
+  const tot=_lignes.reduce((s,l)=>s+(+l.quantite)*(+l.pu),0);
+  $('nk-total').textContent=_lignes.length?'Total HT : '+tot.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'';
+}
+function ouvrirLigneContrat(){
+  $('lk-type').innerHTML=typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
+  $('lk-marque').value='';$('lk-modele').value='';$('lk-qte').value='1';$('lk-pu').value='';
+  goTo('s-ligne-contrat');
+}
+function validerLigneContrat(){
+  const qte=parseInt($('lk-qte').value,10);const pu=parseFloat($('lk-pu').value);
+  if(!qte||qte<1){toast('Quantité invalide','err');return}
+  if(isNaN(pu)||pu<0){toast('Prix unitaire invalide','err');return}
+  _lignes.push({type:$('lk-type').value,marque:$('lk-marque').value.trim(),modele:$('lk-modele').value.trim(),quantite:qte,pu});
+  renderLignes();goTo('s-new-contrat');
+}
+async function saveContratCom(signer){
+  const clientId=$('nk-client').value;
+  if(!clientId){toast('Choisis un client','err');return}
+  const client=clientsList.find(x=>x.id===clientId);
+  const total=_lignes.reduce((s,l)=>s+(+l.quantite)*(+l.pu),0);
+  const {data:ct,error}=await db.from('contrats').insert({
+    client_id:clientId,agence_id:client?.agence_id||ME.agence_id||null,
+    numero_contrat:$('nk-num').value.trim(),type_contrat:$('nk-type').value,
+    types_couverts:[...new Set(_lignes.map(l=>l.type))],lignes:_lignes,
+    date_debut:$('nk-debut').value||null,date_fin:$('nk-fin').value||null,
+    tarif_annuel:total||null,periodicite_visite:$('nk-period').value,
+    statut:'actif',notes:$('nk-notes').value.trim()
+  }).select('*,clients(raison_sociale)').single();
+  if(error){toast('Erreur : '+error.message,'err');return}
+  toast('Contrat créé ✓');
+  if(signer)signerContrat(ct.id,ct);
+  else ouvrirCommercial();
+}
+
+// ---- SIGNATURE ----
+let _sigCom=null;
+function setupSigCom(){
+  const canvas=$('sk-canvas');
+  const rect=canvas.getBoundingClientRect();
+  const dpr=window.devicePixelRatio||1;
+  canvas.width=rect.width*dpr;canvas.height=rect.height*dpr;
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr);ctx.lineWidth=2.5;ctx.lineCap='round';ctx.strokeStyle='#1a1a2e';
+  _sigCom={canvas,ctx,has:false,drawing:false};
+  $('sk-placeholder').style.display='flex';
+  const getPos=e=>{const r=canvas.getBoundingClientRect();const t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top}};
+  const start=e=>{e.preventDefault();_sigCom.drawing=true;_sigCom.has=true;$('sk-placeholder').style.display='none';const p=getPos(e);ctx.beginPath();ctx.moveTo(p.x,p.y)};
+  const move=e=>{if(!_sigCom.drawing)return;e.preventDefault();const p=getPos(e);ctx.lineTo(p.x,p.y);ctx.stroke()};
+  const end=()=>{_sigCom.drawing=false};
+  canvas.ontouchstart=start;canvas.ontouchmove=move;canvas.ontouchend=end;
+  canvas.onmousedown=start;canvas.onmousemove=move;canvas.onmouseup=end;canvas.onmouseleave=end;
+}
+function effacerSignatureCom(){if(_sigCom){_sigCom.ctx.clearRect(0,0,_sigCom.canvas.width,_sigCom.canvas.height);_sigCom.has=false;$('sk-placeholder').style.display='flex'}}
+async function signerContrat(id,ct){
+  if(!ct){const {data}=await db.from('contrats').select('*,clients(raison_sociale)').eq('id',id).single();ct=data}
+  if(!ct){toast('Contrat introuvable','err');return}
+  _contratASigner=ct;
+  $('sk-nom').value='';
+  $('sk-recap').innerHTML=`<strong>${ct.clients?.raison_sociale||'—'}</strong><br>
+    ${ct.numero_contrat?'N° '+ct.numero_contrat+' · ':''}${ct.type_contrat} · ${fmt(ct.date_debut)} → ${fmt(ct.date_fin)}<br>
+    ${(Array.isArray(ct.lignes)?ct.lignes.length:0)} ligne(s) — <strong>${ct.tarif_annuel?(+ct.tarif_annuel).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})+' HT':'—'}</strong>`;
+  goTo('s-sign-contrat');
+  setTimeout(setupSigCom,150);
+}
+async function validerSignatureCom(){
+  const nom=$('sk-nom').value.trim();
+  if(!nom){toast('Nom du signataire obligatoire','err');return}
+  if(!_sigCom||!_sigCom.has){toast('Le client doit signer','err');return}
+  const {error}=await db.from('contrats').update({
+    signature_data:_sigCom.canvas.toDataURL('image/png'),
+    signataire_nom:nom,signe_le:new Date().toISOString()
+  }).eq('id',_contratASigner.id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  toast('Contrat signé ✓ — PDF disponible depuis le bureau');
+  ouvrirCommercial();
+}
+console.log('✓ commercial.html chargé');
+</script>
+</body>
+</html>
