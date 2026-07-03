@@ -1962,6 +1962,48 @@ window.showQR=function(id,numero,client,type){
   new QRCode(c,{text:String(numero||id),width:200,height:200,correctLevel:QRCode.CorrectLevel.M});
   OM('mo-qr');
 };
+
+// Étiquette PNG 40×30 mm (400×300 px) pour imprimante Niimbot :
+// télécharger puis imprimer comme image depuis l'appli Niimbot.
+function telechargerEtiquette(){
+  const src=$('qrcode-container').querySelector('img,canvas');
+  if(!src){toast('QR non généré','err');return}
+  const code=$('qr-numero').textContent||'';
+  const info=($('qr-info').textContent||'').trim();
+  const cv=document.createElement('canvas');cv.width=400;cv.height=300;
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,400,300);
+  // QR à gauche
+  const img=src.tagName==='IMG'?src:null;
+  const draw=()=>{
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(img||src,15,35,230,230);
+    // Textes à droite
+    ctx.fillStyle='#000';ctx.textAlign='center';
+    const cx=322;
+    ctx.font='bold 26px Arial';
+    // Code sur 1-2 lignes
+    const lignes=[];let mot=code;
+    while(mot.length>10){lignes.push(mot.slice(0,10));mot=mot.slice(10)}
+    lignes.push(mot);
+    let ty=110;
+    lignes.forEach(l=>{ctx.fillText(l,cx,ty);ty+=30});
+    ctx.font='16px Arial';
+    // Désignation (max 3 lignes de ~14 caractères)
+    const mots=info.split(/\s+/);let ligne='';const dls=[];
+    mots.forEach(m=>{if((ligne+' '+m).trim().length>14){dls.push(ligne.trim());ligne=m}else ligne+=' '+m});
+    if(ligne.trim())dls.push(ligne.trim());
+    ty+=6;
+    dls.slice(0,3).forEach(l=>{ctx.fillText(l,cx,ty);ty+=20});
+    const a=document.createElement('a');
+    a.download='etiquette_'+code.replace(/[^a-zA-Z0-9-]/g,'_')+'.png';
+    a.href=cv.toDataURL('image/png');
+    a.click();
+    toast('Étiquette téléchargée — à imprimer depuis l\'appli Niimbot');
+  };
+  if(img&&!img.complete)img.onload=draw;else draw();
+}
+
 window.printQR=function(){
   const el=$('qrcode-container').querySelector('img,canvas');
   if(!el){toast('QR non généré','err');return}
