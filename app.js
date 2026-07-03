@@ -1046,6 +1046,19 @@ async function saveContrat(){
 async function deleteContrat(id){if(!confirm('Supprimer ?'))return;await db.from('contrats').delete().eq('id',id);toast('Supprimé');loadContrats()}
 
 
+
+// Unité automatique selon l'agent extincteur : CO2/BC/ABC/D → kg, autres → L
+const AGENTS_KG=['CO2','BC','ABC','D'];
+document.addEventListener('change',e=>{
+  if(!e.target||!e.target.id)return;
+  if(e.target.id.endsWith('e-agent')){
+    const prefix=e.target.id.slice(0,-'e-agent'.length);
+    const u=document.getElementById(prefix+'e-unite');
+    const a=e.target.value;
+    if(u&&a&&a!=='Autre')u.value=AGENTS_KG.includes(a)?'kg':'L';
+  }
+});
+
 // ---- Caractéristiques dans les lignes de contrat (bureau) ----
 function champsLigneHTML(type,prefix){
   return (CHAMPS_TYPE[type]||[]).map(ch=>{
@@ -1070,9 +1083,14 @@ function resumeCaract(type,caract){
 }
 // ---- Création automatique des équipements du client depuis un nouveau contrat ----
 async function creerEquipementsDepuisContrat(contrat,lignes,clientId){
-  const rows=[];const dateTag=new Date().toISOString().slice(2,10).replace(/-/g,'');
+  const rows=[];const lignePourRow=[];
+  const dateTag=new Date().toISOString().slice(2,10).replace(/-/g,'');
   (lignes||[]).forEach(l=>{
     const q=parseInt(l.quantite,10)||0;const caract=l.caract||{};
+    const hist=[];
+    if(l.d_verif)hist.push({date:l.d_verif,type:'Vérification annuelle',commentaire:'Constaté à la prise en contrat'});
+    if(l.d_maa)hist.push({date:l.d_maa,type:'Maintenance approfondie (MAA)',commentaire:'Constaté à la prise en contrat'});
+    if(l.d_rev)hist.push({date:l.d_rev,type:'Révision atelier',commentaire:'Constaté à la prise en contrat'});
     for(let i=0;i<q;i++){
       const num=`${(l.type||'EQ').slice(0,3).toUpperCase()}-${dateTag}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
       const ds={...caract};delete ds['e-cap'];delete ds['e-unite'];
@@ -1080,12 +1098,30 @@ async function creerEquipementsDepuisContrat(contrat,lignes,clientId){
         marque:l.marque||null,modele:l.modele||null,
         capacite_valeur:caract['e-cap']?parseFloat(caract['e-cap']):null,capacite_unite:caract['e-unite']||null,
         donnees_specifiques:ds,statut:'opérationnel',localisation:'',
+        date_fabrication:l.annee_fab?l.annee_fab+'-01-01':null,
+        historique:hist,
         notes:'Créé depuis le contrat '+(contrat.numero_contrat||'')});
+      lignePourRow.push(l);
     }
   });
   if(!rows.length)return 0;
-  const {error}=await db.from('equipements').insert(rows);
+  const {data:crees,error}=await db.from('equipements').insert(rows).select('id');
   if(error){toast('Contrat créé mais erreur équipements : '+error.message,'err');return 0}
+  // Vérification antérieure → alimente le calcul des échéances
+  const verifs=[];
+  (crees||[]).forEach((eq,i)=>{
+    const l=lignePourRow[i];
+    if(!l||!l.d_verif)return;
+    const proch=new Date(l.d_verif);proch.setFullYear(proch.getFullYear()+1);
+    verifs.push({equipement_id:eq.id,client_id:clientId,type_equipement_code:l.type,
+      date_verification:l.d_verif,date_prochaine_echeance:proch.toISOString().slice(0,10),
+      technicien:'Antérieur (prise en contrat)',technicien_id:ME.id,resultat:'conforme',
+      realisee_par_bfs:false,observations:'Vérification antérieure constatée à la prise en contrat'});
+  });
+  if(verifs.length){
+    const {error:ev}=await db.from('verifications').insert(verifs);
+    if(ev)toast('Équipements créés, mais erreur échéances : '+ev.message,'err');
+  }
   return rows.length;
 }
 
@@ -1123,6 +1159,13 @@ function ajouterLigneContrat(){
         <div class="fg"><label>Quantité *</label><input type="number" id="lc-qte" min="1" value="1"></div>
         <div class="fg"><label>Prix unitaire HT (€) *</label><input type="number" id="lc-pu" step="0.01" min="0"></div>
       </div>
+      <div style="font-weight:700;font-size:12px;margin:14px 0 8px;text-transform:uppercase;color:var(--txt-l)">Prise en contrat — état constaté</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="fg"><label>Année de fabrication</label><input type="number" id="lc-annee" min="1980" max="2100" placeholder="2021"></div>
+        <div class="fg"><label>Dernière vérification annuelle</label><input type="date" id="lc-dverif"></div>
+        <div class="fg"><label>Dernière MAA</label><input type="date" id="lc-dmaa"></div>
+        <div class="fg"><label>Dernière révision / recharge</label><input type="date" id="lc-drev"></div>
+      </div>
       <div class="fa" style="margin-top:12px">
         <button class="btn btn-s" onclick="this.closest('.mo').remove()">Annuler</button>
         <button class="btn btn-p" onclick="confirmerLigneContrat(this)">Ajouter</button>
@@ -1140,7 +1183,10 @@ function confirmerLigneContrat(btn){
   const typeL=document.getElementById('lc-type').value;
   const caract=collecteChampsLigne(typeL,'lc-');
   const {marque,modele}=lireMarqueModele('lc-');
-  _lignesContrat.push({type:typeL,marque,modele,quantite:qte,pu:pu,caract,resume:resumeCaract(typeL,caract)});
+  const annee=parseInt(document.getElementById('lc-annee').value,10)||null;
+  const resume=[resumeCaract(typeL,caract),annee?'fab. '+annee:''].filter(Boolean).join(' · ');
+  _lignesContrat.push({type:typeL,marque,modele,quantite:qte,pu:pu,caract,resume,
+    annee_fab:annee,d_verif:document.getElementById('lc-dverif').value||null,d_maa:document.getElementById('lc-dmaa').value||null,d_rev:document.getElementById('lc-drev').value||null});
   btn.closest('.mo').remove();renderLignesContrat();
 }
 
@@ -1444,7 +1490,7 @@ async function deletePoint(id){if(!confirm('Supprimer ?'))return;await db.from('
 // ============================================================
 const CHAMPS_TYPE = {
   extincteur: [
-    {id:'e-agent',label:'Agent extincteur',type:'select',opts:['CO2','BC','ABC','A','AB','ABF','A lith','Autre']},
+    {id:'e-agent',label:'Agent extincteur',type:'select',opts:['CO2','BC','ABC','D','A','AB','ABF','A lith','Autre']},
     {id:'e-cap',label:'Capacité',type:'number',placeholder:'6',step:'0.5'},
     {id:'e-unite',label:'Unité',type:'select',opts:['kg','L']},
     {id:'e-pression',label:'Pression nominale (bar)',type:'number',placeholder:'15',step:'0.5'},

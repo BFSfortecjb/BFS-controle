@@ -2439,12 +2439,21 @@ async function terminerInventaire(){
   ouvrirStock();
 }
 
+
+// Unité automatique selon l'agent extincteur : CO2/BC/ABC/D → kg, autres → L
+document.addEventListener('change',e=>{
+  if(e.target&&e.target.id==='ef-agent'){
+    const u=document.getElementById('ef-unite');const a=e.target.value;
+    if(u&&a&&a!=='Autre')u.value=['CO2','BC','ABC','D'].includes(a)?'kg':'L';
+  }
+});
+
 // ============================================================
 // CHAMPS CONDITIONNELS TERRAIN (même définition que index.html)
 // ============================================================
 const CHAMPS_TYPE_TERRAIN = {
   extincteur: [
-    {id:'ef-agent',label:'Agent extincteur',type:'select',opts:['CO2','BC','ABC','A','AB','ABF','A lith','Autre']},
+    {id:'ef-agent',label:'Agent extincteur',type:'select',opts:['CO2','BC','ABC','D','A','AB','ABF','A lith','Autre']},
     {id:'ef-cap',label:'Capacité',type:'number',placeholder:'6',step:'0.5'},
     {id:'ef-unite',label:'Unité',type:'select',opts:['kg','L']},
     {id:'ef-pression',label:'Pression nominale (bar)',type:'number',placeholder:'15',step:'0.5'},

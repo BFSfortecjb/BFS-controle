@@ -295,6 +295,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <div class="fg"><label>Quantité *</label><input type="number" id="lk-qte" min="1" value="1" inputmode="numeric"></div>
       <div class="fg"><label>Prix unitaire HT (€) *</label><input type="number" id="lk-pu" step="0.01" min="0" inputmode="decimal"></div>
     </div>
+    <div class="sec">Prise en contrat — état constaté</div>
+    <div class="fg" style="margin-bottom:12px"><label>Année de fabrication</label><input type="number" id="lk-annee" min="1980" max="2100" placeholder="2021" inputmode="numeric"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Dernière vérification annuelle</label><input type="date" id="lk-dverif"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Dernière maintenance approfondie (MAA)</label><input type="date" id="lk-dmaa"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Dernière révision atelier / recharge</label><input type="date" id="lk-drev"></div>
   </div>
   <div class="footer">
     <button class="btn btn-vert" onclick="validerLigneContrat()">✅ Ajouter au contrat</button>
@@ -369,7 +374,7 @@ db.auth.getSession().then(({data:{session}})=>{if(session)onLogin(session.user)}
 // ---- Caractéristiques par type (même définition que l'appli bureau) ----
 const CHAMPS_TYPE = {
   extincteur: [
-    {id:'e-agent',label:'Agent extincteur',type:'select',opts:['CO2','BC','ABC','A','AB','ABF','A lith','Autre']},
+    {id:'e-agent',label:'Agent extincteur',type:'select',opts:['CO2','BC','ABC','D','A','AB','ABF','A lith','Autre']},
     {id:'e-cap',label:'Capacité',type:'number',placeholder:'6',step:'0.5'},
     {id:'e-unite',label:'Unité',type:'select',opts:['kg','L']},
     {id:'e-pression',label:'Pression nominale (bar)',type:'number',placeholder:'15',step:'0.5'},
@@ -443,9 +448,15 @@ function resumeCaract(type,caract){
 }
 // ---- Création des équipements du client depuis les lignes du contrat ----
 async function creerEquipementsDepuisContrat(contrat,lignes,clientId){
-  const rows=[];const dateTag=new Date().toISOString().slice(2,10).replace(/-/g,'');
+  const rows=[];const lignePourRow=[];
+  const dateTag=new Date().toISOString().slice(2,10).replace(/-/g,'');
   lignes.forEach(l=>{
     const q=parseInt(l.quantite,10)||0;const caract=l.caract||{};
+    // Historique repris à la prise en contrat
+    const hist=[];
+    if(l.d_verif)hist.push({date:l.d_verif,type:'Vérification annuelle',commentaire:'Constaté à la prise en contrat'});
+    if(l.d_maa)hist.push({date:l.d_maa,type:'Maintenance approfondie (MAA)',commentaire:'Constaté à la prise en contrat'});
+    if(l.d_rev)hist.push({date:l.d_rev,type:'Révision atelier',commentaire:'Constaté à la prise en contrat'});
     for(let i=0;i<q;i++){
       const num=`${(l.type||'EQ').slice(0,3).toUpperCase()}-${dateTag}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
       const ds={...caract};delete ds['e-cap'];delete ds['e-unite'];
@@ -453,14 +464,45 @@ async function creerEquipementsDepuisContrat(contrat,lignes,clientId){
         marque:l.marque||null,modele:l.modele||null,
         capacite_valeur:caract['e-cap']?parseFloat(caract['e-cap']):null,capacite_unite:caract['e-unite']||null,
         donnees_specifiques:ds,statut:'opérationnel',localisation:'',
+        date_fabrication:l.annee_fab?l.annee_fab+'-01-01':null,
+        historique:hist,
         notes:'Créé depuis le contrat '+(contrat.numero_contrat||'du '+fmt(contrat.created_at))});
+      lignePourRow.push(l);
     }
   });
   if(!rows.length)return 0;
-  const {error}=await db.from('equipements').insert(rows);
+  const {data:crees,error}=await db.from('equipements').insert(rows).select('id');
   if(error){toast('Contrat créé mais erreur équipements : '+error.message,'err');return 0}
+  // Vérification antérieure → alimente le calcul des échéances
+  const verifs=[];
+  (crees||[]).forEach((eq,i)=>{
+    const l=lignePourRow[i];
+    if(!l||!l.d_verif)return;
+    const proch=new Date(l.d_verif);proch.setFullYear(proch.getFullYear()+1);
+    verifs.push({equipement_id:eq.id,client_id:clientId,type_equipement_code:l.type,
+      date_verification:l.d_verif,date_prochaine_echeance:proch.toISOString().slice(0,10),
+      technicien:'Antérieur (prise en contrat)',technicien_id:ME.id,resultat:'conforme',
+      realisee_par_bfs:false,observations:'Vérification antérieure constatée à la prise en contrat'});
+  });
+  if(verifs.length){
+    const {error:ev}=await db.from('verifications').insert(verifs);
+    if(ev)toast('Équipements créés, mais erreur échéances : '+ev.message,'err');
+  }
   return rows.length;
 }
+
+
+// Unité automatique selon l'agent extincteur : CO2/BC/ABC/D → kg, autres → L
+const AGENTS_KG=['CO2','BC','ABC','D'];
+document.addEventListener('change',e=>{
+  if(!e.target||!e.target.id)return;
+  if(e.target.id.endsWith('e-agent')){
+    const prefix=e.target.id.slice(0,-'e-agent'.length);
+    const u=document.getElementById(prefix+'e-unite');
+    const a=e.target.value;
+    if(u&&a&&a!=='Autre')u.value=AGENTS_KG.includes(a)?'kg':'L';
+  }
+});
 
 // ---- ACCUEIL ----
 async function ouvrirCommercial(){
@@ -543,6 +585,7 @@ function renderLignes(){
 function ouvrirLigneContrat(){
   $('lk-type').innerHTML=typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
   $('lk-qte').value='1';$('lk-pu').value='';
+  ['lk-annee','lk-dverif','lk-dmaa','lk-drev'].forEach(id=>$(id).value='');
   renderChampsLigne();
   goTo('s-ligne-contrat');
 }
@@ -559,7 +602,10 @@ function validerLigneContrat(){
   const type=$('lk-type').value;
   const caract=collecteChamps(type,'lk-');
   const {marque,modele}=lireMarqueModele('lk-');
-  _lignes.push({type,marque,modele,quantite:qte,pu,caract,resume:resumeCaract(type,caract)});
+  const annee=parseInt($('lk-annee').value,10)||null;
+  const resume=[resumeCaract(type,caract),annee?'fab. '+annee:''].filter(Boolean).join(' · ');
+  _lignes.push({type,marque,modele,quantite:qte,pu,caract,resume,
+    annee_fab:annee,d_verif:$('lk-dverif').value||null,d_maa:$('lk-dmaa').value||null,d_rev:$('lk-drev').value||null});
   renderLignes();goTo('s-new-contrat');
 }
 async function saveContratCom(signer){
