@@ -296,6 +296,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div id="lk-marque-modele"></div>
     <div class="sec">Caractéristiques</div>
     <div id="lk-champs"><div style="font-size:12px;color:var(--txt-l);padding:4px 0">Aucune caractéristique pour ce type.</div></div>
+    <div class="fg" style="margin-bottom:12px"><label>Tarif de la base (remplit le prix)</label><select id="lk-tarif" onchange="const t=_tarifsCom.find(x=>x.id===this.value);if(t)$('lk-pu').value=(+t.prix_ht).toFixed(2)"><option value=""></option></select></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div class="fg"><label>Quantité *</label><input type="number" id="lk-qte" min="1" value="1" inputmode="numeric"></div>
       <div class="fg"><label>Prix unitaire HT (€) *</label><input type="number" id="lk-pu" step="0.01" min="0" inputmode="decimal"></div>
@@ -373,7 +374,7 @@ const fmt=d=>d?new Date(d).toLocaleDateString('fr-FR'):'—';
 function toast(msg,type='ok'){const t=$('toast');t.textContent=msg;t.className='show '+type;setTimeout(()=>t.className='',2800)}
 function goTo(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active')}
 
-let ME=null,typesEquip=[],clientsList=[],_lignes=[],_contratASigner=null;
+let ME=null,typesEquip=[],clientsList=[],_lignes=[],_contratASigner=null,_tarifsCom=[];
 
 // ---- AUTH ----
 async function doLogin(){
@@ -392,6 +393,8 @@ async function onLogin(user){
   $('com-titre').textContent=`${profil.prenom||''} ${profil.nom}`.trim();
   const {data:te}=await db.from('types_equipements').select('*').eq('actif',true).order('categorie').order('libelle');
   typesEquip=te||[];
+  const {data:trf}=await db.from('tarifs').select('id,code,designation,prix_ht,categorie').eq('actif',true).order('designation');
+  _tarifsCom=trf||[];
   ouvrirCommercial();
 }
 async function doLogout(){await db.auth.signOut();ME=null;goTo('s-login')}
@@ -626,6 +629,7 @@ function renderLignes(){
   $('nk-total').textContent=_lignes.length?'Total HT : '+tot.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'';
 }
 function ouvrirLigneContrat(){
+  $('lk-tarif').innerHTML='<option value=""></option>'+_tarifsCom.map(t=>`<option value="${t.id}">${t.designation} — ${(+t.prix_ht).toFixed(2)} €</option>`).join('');
   $('lk-type').innerHTML=typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
   $('lk-qte').value='1';$('lk-pu').value='';
   ['lk-annee','lk-dverif','lk-dmaa','lk-drev'].forEach(id=>$(id).value='');

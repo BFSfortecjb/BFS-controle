@@ -485,6 +485,22 @@ tr:hover td{background:#fafafa}
       </div>
 
 
+
+      <!-- TARIFS -->
+      <div class="page" id="page-tarifs">
+        <div class="search-bar">
+          <input type="text" id="q-tarifs" placeholder="Rechercher code, désignation…" oninput="renderTarifs()">
+          <select id="f-cat-tarifs" onchange="renderTarifs()" style="max-width:170px"><option value="">Toutes catégories</option><option value="prestation">Prestations</option><option value="piece">Pièces</option><option value="equipement">Équipements neufs</option><option value="accessoire">Accessoires</option></select>
+          <button class="btn btn-s" id="btn-import-tarifs" onclick="document.getElementById('tarifs-file').click()">⬆ Import Excel</button>
+          <input type="file" id="tarifs-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importTarifsExcel(this)">
+          <button class="btn btn-s" onclick="exportTarifsXLS()">⬇ Excel</button>
+          <button class="btn btn-s" id="btn-augm-tarifs" onclick="augmentationTarifs()">📈 Augmentation %</button>
+          <button class="btn btn-p" id="btn-add-tarif" onclick="openTarifModal()">+ Tarif</button>
+        </div>
+        <div id="tarifs-droits" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:9px 14px;margin-bottom:12px;font-size:12.5px">🔒 Consultation seule — la modification des tarifs est réservée aux gestionnaires désignés (case « Gestion des tarifs » sur la fiche utilisateur).</div>
+        <div class="card"><div id="tbl-tarifs"><div class="loading"><span class="spin"></span></div></div></div>
+      </div>
+
       <!-- STOCK PIÈCES -->
       <div class="page" id="page-stock">
         <div style="display:flex;gap:8px;margin-bottom:14px">
@@ -714,6 +730,7 @@ tr:hover td{background:#fafafa}
       <div class="fg" id="fg-visibilite"><label>Visibilité tableau de bord</label>
         <select id="u-visibilite"><option value="perso">Perso uniquement</option><option value="perso_agence">Perso + son agence</option><option value="tout">Toutes agences</option></select>
       </div>
+      <div class="fg" style="grid-column:1/-1"><label style="display:flex;gap:8px;align-items:center;text-transform:none;font-weight:400;cursor:pointer"><input type="checkbox" id="u-tarifs" style="width:16px;height:16px;margin:0"> 💶 Gestion des tarifs (création, import, augmentation)</label></div>
     </div>
     <div class="fa"><button class="btn btn-s" onclick="CM('mo-user')">Annuler</button><button class="btn btn-p" id="btn-save-user" onclick="saveUser()">Inviter</button></div>
   </div></div>
@@ -738,6 +755,22 @@ tr:hover td{background:#fafafa}
 
 
 
+
+
+<!-- Modal tarif -->
+<div class="mo" id="mo-tarif">
+  <div class="modal" style="max-width:480px"><div class="mh"><h3 id="mo-tf-t">Nouveau tarif</h3><button class="mclose" onclick="CM('mo-tarif')">✕</button></div>
+  <div class="mc"><input type="hidden" id="tf-id">
+    <div class="form-grid">
+      <div class="fg"><label>Code *</label><input type="text" id="tf-code" placeholder="Ex : VERIF-EXT"></div>
+      <div class="fg"><label>Catégorie</label><select id="tf-cat"><option value="prestation">Prestation</option><option value="piece">Pièce</option><option value="equipement">Équipement neuf</option><option value="accessoire">Accessoire</option></select></div>
+      <div class="fg" style="grid-column:1/-1"><label>Désignation *</label><input type="text" id="tf-designation" placeholder="Ex : Vérification annuelle extincteur"></div>
+      <div class="fg"><label>Unité</label><input type="text" id="tf-unite" value="unité"></div>
+      <div class="fg"><label>Prix HT (€) *</label><input type="number" id="tf-prix" step="0.01" min="0"></div>
+    </div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-tarif')">Annuler</button><button class="btn btn-p" onclick="saveTarif()">Enregistrer</button></div>
+  </div></div>
+</div>
 
 <!-- Modal pièce de stock -->
 <div class="mo" id="mo-piece">
