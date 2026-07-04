@@ -497,7 +497,7 @@ async function openEquipModal(prefill=null){
   $('e-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
   $('e-type').innerHTML=typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
   $('e-tech').innerHTML='<option value="">— Non affecté —</option>'+profils.map(p=>`<option value="${p.id}">${p.prenom||''} ${p.nom}</option>`).join('');
-  ['e-id','e-num','e-serie','e-lot','e-num-ent','e-emplacement','e-marque','e-modele','e-loc','e-zone','e-notes'].forEach(id=>$(id).value='');
+  ['e-id','e-num','e-serie','e-lot','e-num-ent','e-emplacement','e-loc','e-zone','e-notes'].forEach(id=>$(id).value='');
   _equipRestoreData={};
   $('e-statut').value='opérationnel';
   $('mo-eq-t').textContent='Nouvel équipement';
@@ -512,8 +512,7 @@ async function openEquipModal(prefill=null){
     $('e-lot').value=prefill.numero_lot||'';
     $('e-num-ent').value=prefill.numero_entreprise||'';
     $('e-emplacement').value=prefill.emplacement||'';
-    $('e-marque').value=prefill.marque||'';
-    $('e-modele').value=prefill.modele||'';
+    setTimeout(()=>setMarqueModele(prefill.type_equipement_code||$('e-type').value,'e-',prefill.marque||'',prefill.modele||''),50);
     $('e-loc').value=prefill.localisation||'';
     $('e-zone').value=prefill.etage_zone||'';
     $('e-statut').value=prefill.statut||'opérationnel';
@@ -605,7 +604,7 @@ function supprimerLigneHistorique(idx){
 
 async function saveEquip(){
   const id=$('e-id').value;
-  const p={client_id:$('e-client').value,technicien_id:$('e-tech').value||null,type_equipement_code:$('e-type').value,numero_identification:$('e-num').value.trim(),numero_serie:$('e-serie').value.trim()||null,numero_lot:$('e-lot').value.trim()||null,numero_entreprise:$('e-num-ent').value.trim()||null,emplacement:$('e-emplacement').value.trim()||null,marque:$('e-marque').value.trim(),modele:$('e-modele').value.trim(),capacite_valeur:parseFloat($('e-cap')?.value)||null,capacite_unite:$('e-unite')?.value?.trim()||null,donnees_specifiques:getEquipSpecificData(),date_fabrication:$('e-fab')?.value||null,date_mise_en_service:$('e-mis')?.value||null,localisation:$('e-loc').value.trim(),etage_zone:$('e-zone').value.trim(),statut:$('e-statut').value,notes:$('e-notes').value.trim(),historique:_historiqueEquip,updated_at:new Date().toISOString()};
+  const p={client_id:$('e-client').value,technicien_id:$('e-tech').value||null,type_equipement_code:$('e-type').value,numero_identification:$('e-num').value.trim(),numero_serie:$('e-serie').value.trim()||null,numero_lot:$('e-lot').value.trim()||null,numero_entreprise:$('e-num-ent').value.trim()||null,emplacement:$('e-emplacement').value.trim()||null,marque:(lireMarqueModele('e-').marque||'').trim(),modele:(lireMarqueModele('e-').modele||'').trim(),capacite_valeur:parseFloat($('e-cap')?.value)||null,capacite_unite:$('e-unite')?.value?.trim()||null,donnees_specifiques:getEquipSpecificData(),date_fabrication:$('e-fab')?.value||null,date_mise_en_service:$('e-mis')?.value||null,localisation:$('e-loc').value.trim(),etage_zone:$('e-zone').value.trim(),statut:$('e-statut').value,notes:$('e-notes').value.trim(),historique:_historiqueEquip,updated_at:new Date().toISOString()};
   const {error}=id?await db.from('equipements').update(p).eq('id',id):await db.from('equipements').insert(p);
   if(error){toast('Erreur: '+error.message,'err');return}
   toast(id?'Modifié':'Créé');CM('mo-equip');loadEquipements();
@@ -1615,6 +1614,12 @@ let _champPersoCount = 0;
 
 function onEquipTypeChange(){
   const code = document.getElementById('e-type').value;
+  const mmDiv=document.getElementById('e-marque-modele');
+  if(mmDiv){
+    const {marque:mAv,modele:moAv}=mmDiv.innerHTML?lireMarqueModele('e-'):{marque:'',modele:''};
+    mmDiv.innerHTML=marqueModeleHTML(code,'e-');
+    if(mAv||moAv)setMarqueModele(code,'e-',mAv,moAv);
+  }
   const container = document.getElementById('e-champs-specifiques');
   if(!container) return;
   container.innerHTML = '';

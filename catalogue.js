@@ -97,4 +97,23 @@ function lireMarqueModele(prefix){
   }
   return {marque,modele};
 }
+
+// Restaure marque/modèle dans le couple de champs généré par marqueModeleHTML
+function setMarqueModele(type,prefix,marque,modele){
+  const g=id=>document.getElementById(id);
+  const mSel=g(prefix+'marque-sel');
+  if(!mSel){if(g(prefix+'marque'))g(prefix+'marque').value=marque||'';if(g(prefix+'modele'))g(prefix+'modele').value=modele||'';return}
+  const marques=marquesPour(type);
+  const mNorm=marques.find(x=>x.toLowerCase()===(marque||'').toLowerCase());
+  if(marque&&!mNorm){mSel.value='__autre__';g(prefix+'marque').style.display='block';g(prefix+'marque').value=marque;}
+  else{mSel.value=mNorm||'';g(prefix+'marque').style.display='none';}
+  // reconstruire la liste des modèles sans passer par l'événement (pas de prompt)
+  const modeles=mNorm?modelesPour(type,mNorm):[];
+  const moSel=g(prefix+'modele-sel');
+  moSel.innerHTML='<option value="">'+(mNorm?'Tous les modèles '+mNorm:'— Modèle —')+'</option>'+modeles.map(x=>`<option>${x}</option>`).join('')+'<option value="__autre__">Autre…</option>';
+  const moNorm=modeles.find(x=>x.toLowerCase()===(modele||'').toLowerCase());
+  if(modele&&!moNorm){moSel.value='__autre__';g(prefix+'modele').style.display='block';g(prefix+'modele').value=modele;}
+  else{moSel.value=moNorm||'';g(prefix+'modele').style.display='none';}
+}
+
 console.log('✓ catalogue.js chargé');

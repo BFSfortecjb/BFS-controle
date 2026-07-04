@@ -356,6 +356,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <div class="sec">Contrats</div>
       <div id="client-contrats"></div>
     </div>
+    <div id="ecart-contrat"></div>
     <div class="sec">Équipements</div>
     <div id="client-equip-stats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px"></div>
 
@@ -716,6 +717,18 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <h1 id="equip-form-titre">Nouvel équipement</h1>
   </div>
   <div class="content">
+    <div id="ef-avert" style="display:none;background:#fffbeb;border:1.5px solid #fde68a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.5">
+      ⚠️ <strong>Cet ajout ne crée pas d'avenant au contrat</strong> — rien ne sera facturé.<br>
+      Pour un ajout facturable → <strong>💼 Commercial → contrat → ➕ Avenant</strong>.
+      <div class="fg" style="margin-top:10px"><label>Motif de l'ajout direct *</label>
+        <select id="ef-motif">
+          <option value=""></option>
+          <option>Reprise d'équipement historique (déjà au contrat)</option>
+          <option>Remplacement d'un appareil réformé</option>
+          <option>Équipement hors contrat (vérification seule)</option>
+        </select>
+      </div>
+    </div>
     <input type="hidden" id="ef-id">
     <div class="fg"><label>Client</label><input type="text" id="ef-client-nom" disabled style="background:#f5f5f5"></div>
     <div class="fg"><label>Type d'équipement *</label>
@@ -736,8 +749,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="fg"><label>Emplacement précis *</label>
       <input type="text" id="ef-emplacement" placeholder="Ex: Couloir RDC face toilettes, Atelier pilier B3">
     </div>
-    <div class="fg"><label>Marque</label><input type="text" id="ef-marque"></div>
-    <div class="fg"><label>Modèle</label><input type="text" id="ef-modele"></div>
+    <div id="ef-marque-modele"></div>
     <div class="fg"><label>Date de fabrication</label><input type="date" id="ef-fab"></div>
     <div class="fg"><label>Mise en service</label><input type="date" id="ef-mis"></div>
 
@@ -1021,6 +1033,7 @@ async function ouvrirClient(clientId){
     .neq('statut','réformé')
     .order('type_equipement_code'));
   currentEquipements=equips||[];
+  majEcartEquipContrat();
   const total=equips?.length||0;
   const hs=(equips||[]).filter(e=>e.statut==='hors service'||e.statut==='à remplacer').length;
   const op=(equips||[]).filter(e=>e.statut==='opérationnel').length;
@@ -3144,6 +3157,7 @@ async function chargerContratsClient(clientId){
   _contratsClient=cts||[];
   if(!_contratsClient.length)return;
   bloc.style.display='block';
+  majEcartEquipContrat();
   el.innerHTML=_contratsClient.map((ct,i)=>`<div class="card" style="margin-bottom:8px;cursor:pointer" onclick="voirContratTerrain(${i})">
     <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px">
       <div>
@@ -3157,6 +3171,25 @@ async function chargerContratsClient(clientId){
     </div>
   </div>`).join('');
 }
+
+// Garde-fou : écart entre équipements réels et prévus au contrat
+function majEcartEquipContrat(){
+  const el=$('ecart-contrat');if(!el)return;
+  if(!Array.isArray(_contratsClient)||!_contratsClient.length||!Array.isArray(currentEquipements)){el.innerHTML='';return}
+  let prevu=0;
+  _contratsClient.forEach(ct=>{
+    (Array.isArray(ct.lignes)?ct.lignes:[]).forEach(l=>prevu+=parseInt(l.quantite)||0);
+    (Array.isArray(ct.avenants)?ct.avenants:[]).forEach(av=>(av.lignes||[]).forEach(l=>prevu+=(l.sens==='retrait'?-1:1)*(parseInt(l.quantite)||0)));
+  });
+  const reel=currentEquipements.length;
+  if(prevu<=0){el.innerHTML='';return}
+  if(reel>prevu){
+    el.innerHTML=`<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:10px;padding:9px 13px;margin-bottom:12px;font-size:12.5px">⚠ <strong>${reel} équipement${reel>1?'s':''} réel${reel>1?'s':''}</strong> pour <strong>${prevu} prévu${prevu>1?'s':''} au contrat</strong> — vérifier s'il manque un avenant.</div>`;
+  }else if(reel<prevu){
+    el.innerHTML=`<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:10px;padding:9px 13px;margin-bottom:12px;font-size:12.5px">ℹ ${reel} équipement${reel>1?'s':''} créé${reel>1?'s':''} sur ${prevu} prévu${prevu>1?'s':''} au contrat.</div>`;
+  }else el.innerHTML='';
+}
+
 function voirContratTerrain(i){
   const ct=_contratsClient[i];if(!ct)return;
   $('ctd-titre').textContent=ct.numero_contrat||'Contrat sans n°';
@@ -3256,6 +3289,13 @@ function goBack(){
 }
 
 function onEFTypeChange(){
+  const mmType=document.getElementById('ef-type')?.value;
+  const mmDiv=document.getElementById('ef-marque-modele');
+  if(mmDiv&&typeof marqueModeleHTML==='function'){
+    const {marque:mAv,modele:moAv}=typeof lireMarqueModele==='function'&&mmDiv.innerHTML?lireMarqueModele('ef-'):{marque:'',modele:''};
+    mmDiv.innerHTML=marqueModeleHTML(mmType,'ef-');
+    if(mAv||moAv)setMarqueModele(mmType,'ef-',mAv,moAv);
+  }
   const code = document.getElementById('ef-type').value;
   const container = document.getElementById('ef-champs-specifiques');
   if(!container) return;
@@ -3383,13 +3423,15 @@ function verifierCetEquip(){
 // CRÉER / MODIFIER ÉQUIPEMENT TERRAIN
 // ============================================================
 async function creerEquipement(){
+  await ensureTypesTerrain();
   _prevScreen = document.querySelector('.screen.active')?.id || 's-client';
   _efRestoreData = {};
   _historiqueEquipTerrain = [];
+  const av=document.getElementById('ef-avert');if(av)av.style.display='block';
   document.getElementById('ef-id').value = '';
   document.getElementById('ef-client-nom').value = currentClient?.raison_sociale||'';
   document.getElementById('equip-form-titre').textContent = 'Nouvel équipement';
-  ['ef-num','ef-serie','ef-lot','ef-num-ent','ef-emplacement','ef-marque','ef-modele','ef-loc','ef-zone','ef-notes'].forEach(id=>{
+  ['ef-num','ef-serie','ef-lot','ef-num-ent','ef-emplacement','ef-loc','ef-zone','ef-notes'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.value='';
   });
   document.getElementById('ef-statut').value='opérationnel';
@@ -3402,6 +3444,8 @@ async function creerEquipement(){
 }
 
 async function editerEquipement(){
+  await ensureTypesTerrain();
+  const av=document.getElementById('ef-avert');if(av)av.style.display='none';
   _prevScreen = 's-fiche-equip';
   const equip = currentEquipements.find(e=>e.id===_ficheEquipId);
   if(!equip){toast('Équipement introuvable','err');return}
@@ -3415,8 +3459,7 @@ async function editerEquipement(){
   document.getElementById('ef-lot').value = equip.numero_lot||'';
   document.getElementById('ef-num-ent').value = equip.numero_entreprise||'';
   document.getElementById('ef-emplacement').value = equip.emplacement||'';
-  document.getElementById('ef-marque').value = equip.marque||'';
-  document.getElementById('ef-modele').value = equip.modele||'';
+  setMarqueModele(equip.type_equipement_code,'ef-',equip.marque||'',equip.modele||'');
   document.getElementById('ef-loc').value = equip.localisation||'';
   document.getElementById('ef-zone').value = equip.etage_zone||'';
   document.getElementById('ef-statut').value = equip.statut||'opérationnel';
@@ -3495,6 +3538,12 @@ function supprimerLigneHistoriqueTerrain(idx){
 }
 
 async function saveEquipTerrain(){
+  // Garde-fou : motif obligatoire pour un ajout direct (pas d'avenant)
+  const estCreation=!document.getElementById('ef-id').value;
+  const motifSel=document.getElementById('ef-motif');
+  if(estCreation&&motifSel&&document.getElementById('ef-avert').style.display!=='none'){
+    if(!motifSel.value){toast('Choisis le motif de l\'ajout direct','err');return}
+  }
   const id = document.getElementById('ef-id').value;
   const num = document.getElementById('ef-num').value.trim();
   if(!num){toast('N° identification obligatoire','err');return}
@@ -3508,12 +3557,12 @@ async function saveEquipTerrain(){
     numero_lot: document.getElementById('ef-lot').value.trim()||null,
     numero_entreprise: document.getElementById('ef-num-ent').value.trim()||null,
     emplacement: document.getElementById('ef-emplacement').value.trim()||null,
-    marque: document.getElementById('ef-marque').value.trim()||null,
-    modele: document.getElementById('ef-modele').value.trim()||null,
+    marque: (lireMarqueModele('ef-').marque||'').trim()||null,
+    modele: (lireMarqueModele('ef-').modele||'').trim()||null,
     localisation: document.getElementById('ef-loc').value.trim()||null,
     etage_zone: document.getElementById('ef-zone').value.trim()||null,
     statut: document.getElementById('ef-statut').value,
-    notes: document.getElementById('ef-notes').value.trim()||null,
+    notes: ((estCreation&&motifSel&&motifSel.value?'['+motifSel.value+'] ':'')+document.getElementById('ef-notes').value.trim())||null,
     donnees_specifiques: getEFSpecificData(),
     historique: _historiqueEquipTerrain,
     updated_at: new Date().toISOString()
@@ -3618,7 +3667,7 @@ async function reforme_surPlace(equipId){
   document.getElementById('ef-id').value = '';
   document.getElementById('ef-client-nom').value = currentClient?.raison_sociale||'';
   document.getElementById('equip-form-titre').textContent = '🔄 Nouvel extincteur (remplacement)';
-  ['ef-num','ef-serie','ef-lot','ef-num-ent','ef-emplacement','ef-marque','ef-modele','ef-loc','ef-zone','ef-notes'].forEach(id=>{
+  ['ef-num','ef-serie','ef-lot','ef-num-ent','ef-emplacement','ef-loc','ef-zone','ef-notes'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.value='';
   });
   // Pré-remplir localisation, N° interne et emplacement de l'ancien
@@ -3631,6 +3680,7 @@ async function reforme_surPlace(equipId){
   }
   document.getElementById('ef-statut').value = 'opérationnel';
   const sel = document.getElementById('ef-type');
+  await ensureTypesTerrain();
   sel.innerHTML = typesEquipTerrain.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
   if(ancien) sel.value = ancien.type_equipement_code||'extincteur';
   onEFTypeChange();
@@ -3645,6 +3695,11 @@ async function reforme_surPlace(equipId){
 }
 
 let typesEquipTerrain = [];
+async function ensureTypesTerrain(){
+  if(typesEquipTerrain.length)return;
+  const te=await reqCache('types_actifs',()=>db.from('types_equipements').select('*').eq('actif',true).order('categorie').order('libelle'));
+  typesEquipTerrain=te||[];
+}
 
 // ============================================================
 // PHOTOS D'ANOMALIE — capture et prévisualisation
