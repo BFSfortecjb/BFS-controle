@@ -16,6 +16,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="catalogue.js"></script>
+<script src="preconisations.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -1571,6 +1572,8 @@ async function ouvrirVerif(equipId){
       }).join('')}
     </div>
 
+    <div class="sec">📖 Préconisations constructeur</div>
+    <div id="preco-bloc"></div>
     <div class="sec">Pièces</div>
     <div id="pieces-catalogue">
       ${allPiecesCatalogue.map(p=>{
@@ -1628,6 +1631,7 @@ async function ouvrirVerif(equipId){
   currentPhotosVerif = [];
   renderPhotosVerif();
   chargerStockUsage(equip);
+  renderPreconisations(equip);
 
   // Restaurer pièces
   currentPieces.forEach(p=>{
@@ -1822,6 +1826,56 @@ window.confirmerHS=function(){
 };
 
 // Valider vérification
+
+
+// ============================================================
+// PRÉCONISATIONS CONSTRUCTEUR (marque + modèle + âge)
+// ============================================================
+function renderPreconisations(equip){
+  const el=$('preco-bloc');if(!el)return;
+  if(typeof preconisationsPour!=='function'){el.innerHTML='';return}
+  const {age,regles}=preconisationsPour(equip);
+  if(!regles.length){
+    el.innerHTML=`<div style="font-size:12px;color:var(--txt-l);padding:4px 0 10px">Aucune préconisation connue pour « ${equip.marque||'?'} ${equip.modele||''} » (base : Andrieu, Mobiak, Anaf).${equip.date_fabrication?'':' Renseigne la marque et la date de fabrication pour les activer.'}</div>`;
+    return;
+  }
+  const dues=regles.filter(r=>r.due);
+  const autres=regles.filter(r=>!r.due);
+  el.innerHTML=
+    (age!==null?`<div style="font-size:12px;color:var(--txt-l);margin-bottom:6px">Âge de l'appareil : <strong>${age} an${age>1?'s':''}</strong> (fabrication ${new Date(equip.date_fabrication).getFullYear()}) · ${regles[0].source}</div>`
+      :`<div style="font-size:12px;color:#b45309;margin-bottom:6px">⚠ Date de fabrication inconnue — seules les préconisations annuelles sont sûres. Source : ${regles[0].source}</div>`)
+    +(dues.length?dues.map(r=>`<div style="display:flex;align-items:center;gap:10px;background:#fff7ed;border:1.5px solid #fdba74;border-radius:10px;padding:9px 12px;margin-bottom:6px">
+      <div style="flex:1"><div style="font-weight:600;font-size:13px">⚠ ${r.piece}</div><div style="font-size:11px;color:var(--txt-l)">${r.info}</div></div>
+      <button onclick="appliquerPreco('${r.piece.replace(/'/g,"\\'")}')" style="background:var(--vert-l);color:var(--vert);border:none;border-radius:8px;padding:8px 10px;font-size:12px;font-weight:600">✓ Changée</button>
+    </div>`).join(''):'<div style="font-size:12px;color:var(--txt-l);padding:2px 0 6px">Aucune pièce échue cette année selon le constructeur.</div>')
+    +(autres.length?`<details style="margin-bottom:10px"><summary style="font-size:12px;color:var(--txt-l);padding:4px 0;cursor:pointer">Voir les ${autres.length} autres périodicités</summary>
+      ${autres.map(r=>`<div style="font-size:12px;color:var(--txt-l);padding:3px 0 3px 10px">• ${r.piece} — ${r.info}</div>`).join('')}</details>`:'');
+}
+// Relie une préconisation à la liste de pièces existante (et donc au stock)
+window.appliquerPreco=function(libelle){
+  // 1. chercher la pièce du catalogue correspondante (mêmes mots-clés)
+  const mots=normMots(libelle);
+  let meilleur=null,meilleurScore=0;
+  (allPiecesCatalogue||[]).forEach(p=>{
+    const pm=normMots(p.libelle);
+    const score=mots.filter(m=>pm.some(x=>x.includes(m)||m.includes(x))).length;
+    if(score>meilleurScore){meilleur=p;meilleurScore=score}
+  });
+  if(meilleur){
+    const deja=currentPieces.find(x=>x.piece_catalogue_id===meilleur.id&&x.type_action==='changée');
+    if(deja){toast('Déjà cochée dans la liste','err');return}
+    togglePiece(meilleur.id,meilleur.libelle,'changée');
+    toast('Préconisation appliquée : '+meilleur.libelle+' ✓');
+  }else{
+    // 2. sinon, pièce manuelle
+    currentPieces.push({piece_catalogue_id:null,libelle:libelle,reference:null,quantite:1,unite:'unité',type_action:'changée'});
+    refreshPiecesManuelles();
+    // et tentative de liaison stock directe
+    const cands=candidatsStock(libelle);
+    if(cands.length===1)appliquerLien('preco_'+Date.now(),cands[0].p);
+    toast('Ajoutée en pièce manuelle : '+libelle);
+  }
+};
 
 // ============================================================
 // SORTIE DE STOCK PENDANT LE CONTRÔLE
