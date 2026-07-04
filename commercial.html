@@ -334,6 +334,19 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
 </div>
 
+
+<!-- ===== RETRAIT D'ÉQUIPEMENT (avenant) ===== -->
+<div class="screen" id="s-retrait-equip">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-avenant')">←</button>
+    <h1>Retirer un équipement</h1>
+  </div>
+  <div class="content">
+    <div style="font-size:13px;color:var(--txt-l);margin-bottom:12px">Touche l'équipement à retirer du contrat — il sera réformé à la signature de l'avenant.</div>
+    <div id="retrait-list"><div class="loading"><div class="spin spin-dark"></div></div></div>
+  </div>
+</div>
+
 <!-- ===== SIGNATURE CONTRAT ===== -->
 <div class="screen" id="s-sign-contrat">
   <div class="hdr">
@@ -705,8 +718,49 @@ async function ouvrirAvenant(id){
   goTo('s-avenant');
 }
 function ouvrirLigneAvenant(sens){
-  _ligneCible='avenant';_avSens=sens;
+  if(sens==='retrait'){ouvrirRetraitEquip();return}
+  _ligneCible='avenant';_avSens='ajout';
   ouvrirLigneContrat();
+}
+
+// ---- Retrait : sélection parmi les équipements existants du client ----
+let _equipsRetrait=[];
+async function ouvrirRetraitEquip(){
+  goTo('s-retrait-equip');
+  const el=$('retrait-list');
+  el.innerHTML='<div class="loading"><div class="spin spin-dark"></div></div>';
+  const {data:eqs,error}=await db.from('equipements')
+    .select('*,types_equipements(libelle,icone)')
+    .eq('client_id',_avContrat.client_id).neq('statut','réformé')
+    .order('type_equipement_code');
+  if(error){el.innerHTML='<div style="padding:16px;color:var(--txt-l)">Erreur : '+error.message+'</div>';return}
+  _equipsRetrait=(eqs||[]).filter(e=>!_avLignes.find(l=>l.equipement_id===e.id));
+  if(!_equipsRetrait.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--txt-l);font-size:13px">Aucun équipement retirables chez ce client.</div>';return}
+  el.innerHTML=_equipsRetrait.map((e,i)=>`<div style="display:flex;align-items:center;gap:12px;background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px" onclick="retirerEquipement(${i})">
+    <div style="font-size:22px">${e.types_equipements?.icone||'🔧'}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600">${e.numero_identification||'—'}</div>
+      <div style="font-size:12px;color:var(--txt-l)">${e.types_equipements?.libelle||e.type_equipement_code} · ${[e.marque,e.modele].filter(Boolean).join(' ')||'—'}${e.localisation?' · '+e.localisation:''}</div>
+    </div>
+    <div style="font-size:18px;color:#dc2626">➖</div>
+  </div>`).join('');
+}
+function retirerEquipement(i){
+  const e=_equipsRetrait[i];if(!e)return;
+  // Prix : reprendre celui de la ligne de contrat correspondante si trouvée
+  const toutes=[...(Array.isArray(_avContrat.lignes)?_avContrat.lignes:[]),
+    ...((Array.isArray(_avContrat.avenants)?_avContrat.avenants:[]).flatMap(a=>(a.lignes||[]).filter(l=>l.sens!=='retrait')))];
+  const match=toutes.find(l=>l.type===e.type_equipement_code&&(l.marque||'').toLowerCase()===(e.marque||'').toLowerCase());
+  const puDef=match?(+match.pu).toFixed(2):'0';
+  const saisie=prompt('Montant annuel HT à déduire pour '+(e.numero_identification||'cet équipement')+' :',puDef);
+  if(saisie===null)return;
+  const pu=parseFloat(saisie.replace(',','.'));
+  if(isNaN(pu)||pu<0){toast('Montant invalide','err');return}
+  _avLignes.push({sens:'retrait',type:e.type_equipement_code,marque:e.marque||'',modele:e.modele||'',
+    quantite:1,pu,equipement_id:e.id,resume:e.numero_identification||''});
+  renderAvLignes();
+  toast('Retrait ajouté à l\'avenant');
+  goTo('s-avenant');
 }
 function renderAvLignes(){
   const el=$('av-lignes');
@@ -745,9 +799,13 @@ async function validerSignatureAvenant(nom){
   const ajouts=_avLignes.filter(l=>l.sens!=='retrait');
   let nb=0;
   if(ajouts.length)nb=await creerEquipementsDepuisContrat(_avContrat,ajouts,_avContrat.client_id);
-  const retraits=_avLignes.filter(l=>l.sens==='retrait');
-  toast('Avenant signé ✓'+(nb?' — '+nb+' équipement(s) ajouté(s)':''));
-  if(retraits.length)setTimeout(()=>toast('⚠ Pense à réformer les équipements retirés (bureau)','err'),2500);
+  const retraits=_avLignes.filter(l=>l.sens==='retrait'&&l.equipement_id);
+  let nbRef=0;
+  for(const r of retraits){
+    const {error:er}=await db.from('equipements').update({statut:'réformé',updated_at:new Date().toISOString()}).eq('id',r.equipement_id);
+    if(!er)nbRef++;
+  }
+  toast('Avenant signé ✓'+(nb?' — '+nb+' ajouté(s)':'')+(nbRef?' — '+nbRef+' réformé(s)':''));
   _avContrat=null;_avLignes=[];_signMode='contrat';
   ouvrirCommercial();
 }
