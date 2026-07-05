@@ -1146,8 +1146,17 @@ async function voirFicheEquip(id){
 // SESSION DE CONTRÔLE
 // ============================================================
 async function demarrerSessionType(typeCode){
-  // Filtrer les équipements sur ce type uniquement
-  const equipsDuType=currentEquipements.filter(e=>e.type_equipement_code===typeCode);
+  // Recharger depuis la base (comme la session complète) plutôt que de
+  // filtrer currentEquipements : ce tableau vient d'un fetch avec cache
+  // hors-ligne (reqCache) et peut être périmé si un équipement vient
+  // d'être ajouté, faisant croire à tort qu'il n'y en a aucun de ce type.
+  const {data:equipsDuTypeData,error:errEquips}=await db.from('equipements')
+    .select('*,types_equipements(libelle,icone,code)')
+    .eq('client_id',currentClient.id)
+    .eq('type_equipement_code',typeCode)
+    .neq('statut','réformé');
+  if(errEquips){toast('Erreur chargement équipements','err');return}
+  const equipsDuType=equipsDuTypeData||[];
   if(!equipsDuType.length){toast('Aucun équipement de ce type','err');return}
 
   const {data:sess,error}=await db.from('sessions_controle').insert({
@@ -1484,6 +1493,15 @@ async function ouvrirVerif(equipId){
     .eq('type_equipement_code',equip.type_equipement_code)
     .eq('actif',true).order('ordre'));
 
+  // ===== CALCUL DU PALIER DE MAINTENANCE SUGGÉRÉ =====
+  // (calculé ICI, avant le filtre des points, car le filtre a besoin de
+  // connaître le palier pour décider d'afficher les points "[quinquennal]" —
+  // le référencer avant sa déclaration plus bas provoquait un plantage
+  // silencieux de ouvrirVerif() sur tout équipement ayant un point marqué
+  // [quinquennal] dans son libellé, typiquement les RIA)
+  const {data:paliers}=await db.from('paliers_maintenance').select('*').eq('type_equipement_code',equip.type_equipement_code).eq('actif',true).order('ordre');
+  const palierSuggere = calculerPalierSuggere(equip, paliers||[]);
+
   const points=(pts||[]).filter(p=>{
     // Filtre marque/modèle standard
     if(p.marque||p.modele){
@@ -1524,10 +1542,6 @@ async function ouvrirVerif(equipId){
   // Dernière vérification
   const {data:lastV}=await db.from('verifications').select('date_verification,date_prochaine_echeance,resultat').eq('equipement_id',equipId).order('date_verification',{ascending:false}).limit(1);
   const last=lastV?.[0];
-
-  // ===== CALCUL DU PALIER DE MAINTENANCE SUGGÉRÉ =====
-  const {data:paliers}=await db.from('paliers_maintenance').select('*').eq('type_equipement_code',equip.type_equipement_code).eq('actif',true).order('ordre');
-  const palierSuggere = calculerPalierSuggere(equip, paliers||[]);
 
   const content=$('verif-content');
   content.innerHTML=`
