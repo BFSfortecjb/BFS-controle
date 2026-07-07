@@ -20,6 +20,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root{
   --rouge:#C0392B;--rouge-s:#96251d;--rouge-l:#fdf2f1;
@@ -565,6 +566,36 @@ tr:hover td{background:#fafafa}
         <div class="card"><div id="tbl-points"><div class="t-empty">Sélectionnez un type d'équipement</div></div></div>
       </div>
 
+      <!-- SAUVEGARDE / RESTAURATION -->
+      <div class="page" id="page-sauvegarde">
+        <div class="card" style="margin-bottom:16px">
+          <h3 style="margin-top:0">📤 Exporter</h3>
+          <p style="color:#666;font-size:14px">Télécharge l'intégralité des données de l'application dans un fichier Excel (une feuille par table), et/ou les fichiers stockés (PDF de bons, photos, étiquettes QR) dans une archive ZIP.</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-p" id="btn-export-excel" onclick="bfsExporterExcel()">📊 Exporter les données (Excel)</button>
+            <button class="btn" id="btn-export-zip" onclick="bfsExporterFichiersZip()">🗂️ Exporter les fichiers (ZIP)</button>
+          </div>
+          <div id="sauvegarde-export-rapport" style="margin-top:12px;font-size:13px;color:#444;white-space:pre-line"></div>
+        </div>
+
+        <div class="card" style="border:1px solid #e0b3b3">
+          <h3 style="margin-top:0">📥 Restaurer</h3>
+          <p style="color:#666;font-size:14px">
+            ⚠️ La restauration <b>fusionne</b> les données du fichier avec la base actuelle (mise à jour des lignes existantes, ajout des lignes manquantes) — elle n'efface rien. À utiliser après une réinitialisation de la base, ou pour récupérer des données perdues.<br>
+            Limite connue : les comptes utilisateurs supprimés (table <code>profils</code>) ne peuvent pas être recréés automatiquement — seuls les comptes encore existants peuvent être mis à jour.
+          </p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+            <input type="file" id="inp-import-excel" accept=".xlsx">
+            <button class="btn btn-p" onclick="bfsImporterExcel()">Restaurer les données (Excel)</button>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <input type="file" id="inp-import-zip" accept=".zip">
+            <button class="btn" onclick="bfsImporterFichiersZip()">Restaurer les fichiers (ZIP)</button>
+          </div>
+          <div id="sauvegarde-import-rapport" style="margin-top:12px;font-size:13px;color:#444;white-space:pre-line"></div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </main>
 </div><!-- /app -->
@@ -885,5 +916,6 @@ tr:hover td{background:#fafafa}
 <script src="catalogue.js"></script>
 <script src="app.js"></script>
 <script src="pdf.js"></script>
+<script src="backup.js"></script>
 </body>
 </html>

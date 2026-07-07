@@ -200,6 +200,7 @@ function buildNav(){
     html+=navA('utilisateurs','👥','Utilisateurs');
     html+=navA('audit','🔍','Journal d\'audit');
     html+=navA('config-points','⚙️','Points de contrôle');
+    html+=navA('sauvegarde','💾','Sauvegarde');
   }
   nav.innerHTML=html;
   nav.querySelectorAll('a').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();navigate(a.dataset.page)}));
@@ -218,7 +219,8 @@ function navigate(page){
     'dash-admin':'Vue globale','dash-tech':'Mon tableau de bord','dash-sec':'Secrétariat',
     profil:'Mon profil',clients:'Clients',equipements:'Équipements',verifications:'Vérifications',
     contrats:'Contrats',planning:'Planning',utilisateurs:'Utilisateurs','config-points':'Points de contrôle',
-    commandes:'Commandes à prévoir',bons:'Bons d\'intervention',audit:'Journal d\'audit',stock:'Stock pièces',tarifs:'Base tarifaire'
+    commandes:'Commandes à prévoir',bons:'Bons d\'intervention',audit:'Journal d\'audit',stock:'Stock pièces',tarifs:'Base tarifaire',
+    sauvegarde:'Sauvegarde'
   };
   $('page-title').textContent=titles[page]||page;
   if(page==='dash-admin')loadDashAdmin();
