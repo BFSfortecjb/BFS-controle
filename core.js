@@ -1,182 +1,265 @@
-// core.js — LE SOCLE. Connexion Supabase, login staff, entrée stagiaire, navigation.
-// ⚠️ Ce fichier ne bouge que pour une bonne raison. Le métier vit dans app.js.
+// ============================================================
+// BFS Contrôle — CORE (core.js)
+// ============================================================
+// SOCLE de l'appli : Supabase, connexion/déconnexion, reset mot de passe,
+// sidebar, navigation, chargement initial. NE PAS MODIFIER sans raison :
+// c'est ce fichier qui garantit que la connexion marche toujours.
+// Ordre de chargement : debug.js → (CDN) → core.js → app.js → pdf.js
+// ============================================================
 
-// ======= CONFIGURATION — À REMPLACER (Supabase > Settings > API) =======
-const SUPABASE_URL = 'https://mpcehmbocrbhmczvrukm.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_uCzxHKlFH_SlnZmxAEvu9Q_mBv-iBY8';
-// =======================================================================
+console.log('BFS Index: début du script');
+// ============================================================
+// SUPABASE
+// ============================================================
+const SURL='https://dqraobwozowtnrieitkp.supabase.co';
+const SKEY='sb_publishable_UhkImOyooXPnAqTCNMJ4wA_VVqscCmK';
+const db=supabase.createClient(SURL,SKEY);
+console.log('BFS Index: Supabase OK');
 
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// ============================================================
+// ÉTAT GLOBAL
+// ============================================================
+let ME=null;
+let clients=[],equipements=[],typesEquip=[],profils=[],contrats=[],rdvs=[];
+let pointsControle=[];
+let calDate=new Date();let calpDate=new Date();
+let adminAgenceFilter='';
 
-// État global partagé avec app.js
-const S = {
-  user: null,        // profil staff connecté {id, nom, role, cis}
-  stagiaire: null,   // stagiaire connecté par code {id, nom, prenom, session_id}
-  session: null,     // session courante (objet complet)
-  formation: null,   // formation + référentiel {competences, criteres, themes, cas}
-};
+// ============================================================
+// UTILS
+// ============================================================
+const $=id=>document.getElementById(id);
+const fmt=d=>d?new Date(d).toLocaleDateString('fr-FR'):'—';
+const fmtH=t=>t?t.slice(0,5):'—';
+const ecClass=d=>{if(!d)return'';const j=(new Date(d)-new Date())/86400000;return j<0?'ec-retard':j<30?'ec-urgent':j<90?'ec-proche':'ec-ok'};
+const badgeR=r=>({conforme:'<span class="badge bv">✓ Conforme</span>','non conforme':'<span class="badge br">✗ Non conforme</span>','à surveiller':'<span class="badge bo">⚡ À surveiller</span>'}[r]||'<span class="badge bg">—</span>');
+const badgeSt=s=>({opérationnel:'<span class="badge bv">Opérationnel</span>','à remplacer':'<span class="badge br">À remplacer</span>','en révision':'<span class="badge bo">En révision</span>','hors service':'<span class="badge br">Hors service</span>',réformé:'<span class="badge bg">Réformé</span>',actif:'<span class="badge bv">Actif</span>',suspendu:'<span class="badge bo">Suspendu</span>',terminé:'<span class="badge bg">Terminé</span>'}[s]||'<span class="badge bg">'+s+'</span>');
 
-// ---------- Navigation : montre un écran, cache les autres ----------
-function show(id) {
-  document.querySelectorAll('.ecran').forEach(e => e.classList.remove('actif'));
-  const el = document.getElementById(id);
-  if (el) el.classList.add('actif');
-  window.scrollTo(0, 0);
+function toast(msg,type='ok'){const t=$('toast');t.textContent=msg;t.className='show '+type;setTimeout(()=>t.className='',3000)}
+function CM(id){$(id).classList.remove('open')}
+function OM(id){$(id).classList.add('open')}
+document.querySelectorAll('.mo').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
+
+// ============================================================
+// AUTH — ÉCRANS
+// ============================================================
+function showScreen(name){
+  document.querySelectorAll('.auth-screen').forEach(s=>s.classList.remove('active'));
+  const s=$(name);if(s)s.classList.add('active');
+  $('app').style.display='none';
+}
+function showApp(){
+  document.querySelectorAll('.auth-screen').forEach(s=>s.classList.remove('active'));
+  $('app').style.display='flex';
 }
 
-// ---------- Helpers ----------
-function $(id) { return document.getElementById(id); }
-function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-function toast(msg, ok = true) {
-  const t = document.createElement('div');
-  t.className = 'toast ' + (ok ? 'ok' : 'ko');
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3000);
+// ============================================================
+// CONNEXION
+// ============================================================
+async function doLogin(){
+  const email=$('login-email').value.trim();
+  const pwd=$('login-pwd').value;
+  const err=$('login-err');err.style.display='none';
+  if(!email||!pwd){err.textContent='Email et mot de passe requis.';err.style.display='block';return}
+  window.__loginEnCours=true;
+  try{
+    const {data,error}=await db.auth.signInWithPassword({email,password:pwd});
+    if(error){err.textContent='Email ou mot de passe incorrect.';err.style.display='block';return}
+    await onLogin(data.user);
+  }finally{window.__loginEnCours=false}
 }
+$('login-pwd').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 
-// ---------- Chargement du référentiel d'une formation ----------
-async function chargerFormation(formationId) {
-  const [f, comp, crit, th, cas] = await Promise.all([
-    sb.from('formations').select('*').eq('id', formationId).single(),
-    sb.from('competences').select('*').eq('formation_id', formationId).order('ordre'),
-    sb.from('criteres').select('*').eq('formation_id', formationId).order('ordre'),
-    sb.from('themes').select('*').eq('formation_id', formationId).order('libelle'),
-    sb.from('cas_concrets').select('*').eq('formation_id', formationId).order('libelle'),
-  ]);
-  for (const r of [f, comp, crit, th, cas]) if (r.error) throw r.error;
-  S.formation = { ...f.data, competences: comp.data, criteres: crit.data, themes: th.data, cas: cas.data };
-}
-
-// ---------- Login staff (email + mot de passe) ----------
-async function loginStaff() {
-  const email = $('login-email').value.trim();
-  const mdp = $('login-mdp').value;
-  if (!email || !mdp) return toast('Email et mot de passe requis', false);
-  const { error } = await sb.auth.signInWithPassword({ email, password: mdp });
-  if (error) return toast('Connexion refusée : ' + error.message, false);
-  await chargerProfil();
-}
-
-async function chargerProfil() {
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return;
-  let { data: profil } = await sb.from('profils').select('*').eq('id', user.id).maybeSingle();
-
-  // Pas de profil : création automatique depuis la liste d'aptitude (par l'email)
-  if (!profil) {
-    const { data: apt } = await sb.from('aptitudes').select('*, qualifications(*)').ilike('email', user.email || '').limit(1);
-    if (apt && apt.length) {
-      const a = apt[0];
-      const estRP = (a.qualifications || []).some(q => q.role === 'rp');
-      // a.gfor (case à cocher dans la liste d'aptitude) permet de donner l'accès GFor
-      // sans passer par la base — sinon rôle déduit des qualifications (RP > Formateur).
-      const ins = await sb.from('profils').insert({
-        id: user.id, nom: a.prenom + ' ' + a.nom, email: user.email,
-        role: a.gfor ? 'gfor' : (estRP ? 'rp' : 'formateur'), cis: a.cis,
-      }).select().single();
-      if (ins.error) debugShow('Création de profil impossible : ' + JSON.stringify(ins.error));
-      profil = ins.data;
-    }
-  }
-  if (!profil) {
-    toast('Adresse email absente de la liste d\'aptitude — contacter le GFor.', false);
-    await sb.auth.signOut();
-    show('ecran-login');
+async function onLogin(user){
+  showScreen('screen-login'); // sécurité
+  const {data:profil,error}=await db.from('profils').select('*,agences(nom,code)').eq('id',user.id).single();
+  if(error||!profil){
+    await db.auth.signOut();
+    const err=$('login-err');
+    err.textContent='Profil introuvable. Contactez l\'administrateur BFS.';
+    err.style.display='block';
     return;
   }
-  S.user = profil;
-  S.vision = profil.role;
-  S.omniscient = true; // par défaut : le GFor voit tout, même pendant le développement/tests
-  $('bandeau-user').textContent = profil.nom;
-  $('btn-logout').style.display = '';
-  // Un rôle donne accès à sa vision et à celles en dessous
-  const hierarchie = {
-    gfor: ['gfor', 'rp', 'formateur', 'stagiaire'],
-    rp: ['rp', 'formateur', 'stagiaire'],
-    formateur: ['formateur', 'stagiaire'],
-    chef_centre: ['chef_centre'],
+  ME=profil;
+  updateSidebar();
+  buildNav();
+  await init();
+  showApp();
+}
+
+async function doLogout(){
+  await db.auth.signOut();ME=null;
+  showScreen('screen-login');
+  $('login-pwd').value='';
+}
+
+// ============================================================
+// RESET PASSWORD
+// ============================================================
+async function doResetPassword(){
+  const pwd1=$('reset-pwd1').value;
+  const pwd2=$('reset-pwd2').value;
+  const err=$('reset-err');const ok=$('reset-ok');
+  err.style.display='none';ok.style.display='none';
+  if(pwd1.length<8){err.textContent='Minimum 8 caractères.';err.style.display='block';return}
+  if(pwd1!==pwd2){err.textContent='Les mots de passe ne correspondent pas.';err.style.display='block';return}
+  const {error}=await db.auth.updateUser({password:pwd1});
+  if(error){err.textContent='Erreur: '+error.message;err.style.display='block';return}
+  ok.textContent='✓ Mot de passe modifié ! Redirection…';ok.style.display='block';
+  setTimeout(()=>{showScreen('screen-login');},2000);
+}
+
+// Écouter les events Supabase Auth
+// ⚠️ RÈGLE SUPABASE : ne JAMAIS faire d'appel Supabase (db.from, db.auth…)
+// directement dans ce callback → deadlock (la connexion se fige sans erreur).
+// C'est pourquoi tout le corps est différé avec setTimeout.
+db.auth.onAuthStateChange((event,session)=>{
+  setTimeout(async()=>{
+    if(event==='PASSWORD_RECOVERY'){
+      showScreen('screen-reset');
+      return;
+    }
+    if(event==='SIGNED_IN'&&session){
+      if($('screen-reset').classList.contains('active'))return;
+      if(!ME&&!window.__loginEnCours)await onLogin(session.user);
+    }
+    if(event==='SIGNED_OUT'){
+      ME=null;showScreen('screen-login');
+    }
+  },0);
+});
+
+// Vérifier session existante au chargement
+db.auth.getSession().then(async({data:{session}})=>{
+  if(session&&!window.location.hash.includes('type=recovery')){
+    await onLogin(session.user);
+  }
+});
+
+// ============================================================
+// SIDEBAR — UTILISATEUR
+// ============================================================
+function updateSidebar(){
+  if(!ME)return;
+  const initiales=((ME.prenom||'').charAt(0)+(ME.nom||'').charAt(0)).toUpperCase()||'?';
+  $('sb-avatar').textContent=initiales;
+  $('sb-nom').textContent=`${ME.prenom||''} ${ME.nom}`.trim();
+  const roleLabel={admin:'Administrateur',secretariat:'Secrétariat',technicien:'Technicien'};
+  $('sb-role-txt').textContent=roleLabel[ME.role]||ME.role;
+  if(ME.agences){$('sb-agence').textContent=ME.agences.nom;$('sb-agence').style.display='inline-block'}
+  else $('sb-agence').style.display='none';
+  $('sud-nom').textContent=`${ME.prenom||''} ${ME.nom}`.trim();
+  $('sud-email').textContent=ME.email||'';
+  $('sud-badges').innerHTML=`<span class="badge bb">${roleLabel[ME.role]||ME.role}</span>${ME.agences?'<span class="badge bg">'+ME.agences.nom+'</span>':'<span class="badge bg">Briec + Sevremont</span>'}`;
+}
+
+function toggleUserDropdown(e){
+  e.stopPropagation();
+  const dd=$('user-dropdown');
+  dd.classList.toggle('open');
+  // Positionner verticalement au niveau du clic
+  if(dd.classList.contains('open')){
+    dd.style.top=Math.min(e.clientY - 20, window.innerHeight - dd.offsetHeight - 20)+'px';
+  }
+}
+function closeDropdown(){
+  const dd=$('user-dropdown');
+  if(dd)dd.classList.remove('open');
+}
+document.addEventListener('click',e=>{
+  const su=document.querySelector('.sb-user');
+  const dd=$('user-dropdown');
+  if(dd&&su&&!su.contains(e.target)&&!dd.contains(e.target))closeDropdown();
+});
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function buildNav(){
+  const nav=$('sb-nav');const role=ME.role;let html='';
+  html+=`<div class="nav-sec">Tableau de bord</div>`;
+  if(role==='admin'){
+    html+=navA('dash-admin','📊','Vue globale');
+    html+=navA('dash-tech','👤','Mon tableau de bord');
+  }
+  if(role==='secretariat')html+=navA('dash-sec','📊','Secrétariat');
+  if(role==='technicien')html+=navA('dash-tech','📊','Mon tableau de bord');
+  html+=`<div class="nav-sec">Gestion</div>`;
+  html+=navA('clients','🏢','Clients');
+  html+=navA('equipements','🔧','Équipements');
+  html+=navA('verifications','✅','Vérifications');
+  html+=navA('contrats','📋','Contrats');
+  html+=navA('planning','📅','Planning');
+  if(role==='admin'||role==='secretariat'){
+    html+=navA('bons','📝','Bons d\'intervention');
+    html+=navA('stock','📦','Stock & commandes');
+    html+=navA('tarifs','💶','Tarifs');
+  }
+  if(role==='admin'){
+    html+=`<div class="nav-sec">Administration</div>`;
+    html+=navA('utilisateurs','👥','Utilisateurs');
+    html+=navA('audit','🔍','Journal d\'audit');
+    html+=navA('config-points','⚙️','Points de contrôle');
+  }
+  nav.innerHTML=html;
+  nav.querySelectorAll('a').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();navigate(a.dataset.page)}));
+  const def={admin:'dash-admin',secretariat:'dash-sec',technicien:'dash-tech'}[ME.role]||'dash-tech';
+  navigate(def);
+}
+const navA=(p,ico,label)=>`<a href="#" data-page="${p}"><span class="ico">${ico}</span><span>${label}</span></a>`;
+
+function navigate(page){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('#sb nav a').forEach(a=>a.classList.remove('active'));
+  const pg=$('page-'+page);if(!pg)return;
+  pg.classList.add('active');
+  const lnk=document.querySelector(`[data-page="${page==='commandes'?'stock':page}"]`);if(lnk)lnk.classList.add('active');
+  const titles={
+    'dash-admin':'Vue globale','dash-tech':'Mon tableau de bord','dash-sec':'Secrétariat',
+    profil:'Mon profil',clients:'Clients',equipements:'Équipements',verifications:'Vérifications',
+    contrats:'Contrats',planning:'Planning',utilisateurs:'Utilisateurs','config-points':'Points de contrôle',
+    commandes:'Commandes à prévoir',bons:'Bons d\'intervention',audit:'Journal d\'audit',stock:'Stock pièces',tarifs:'Base tarifaire'
   };
-  const visions = hierarchie[profil.role] || [profil.role];
-  const sel = $('sel-vision');
-  sel.innerHTML = visions.map(r => '<option value="' + r + '">Vision : ' + libelleRole(r) + '</option>').join('');
-  sel.style.display = visions.length > 1 ? '' : 'none';
-  // « Vue globale » : réservé au GFor, permet de basculer entre voir toutes les sessions (dev/tests)
-  // et ne voir que celles où l'on est réellement déclaré RP/Formateur (pour tester en conditions réelles).
-  $('lbl-omniscient').style.display = profil.role === 'gfor' ? '' : 'none';
-  $('chk-omniscient').checked = true;
-  ecranAccueilStaff(); // défini dans app.js
+  $('page-title').textContent=titles[page]||page;
+  if(page==='dash-admin')loadDashAdmin();
+  if(page==='dash-tech')loadDashTech();
+  if(page==='dash-sec')loadDashSec();
+  if(page==='profil')loadProfil();
+  if(page==='clients')loadClients();
+  if(page==='equipements')loadEquipements();
+  if(page==='verifications')loadVerifs();
+  if(page==='contrats')loadContrats();
+  if(page==='planning')loadPlanningPage();
+  if(page==='utilisateurs')loadUsers();
+  if(page==='audit')loadAudit();
+  if(page==='commandes')loadCommandes();
+  if(page==='bons')loadBons();
+  if(page==='config-points')loadConfigPage();
+  if(page==='stock')loadStock();
+  if(page==='tarifs')loadTarifs();
 }
 
-function toggleOmniscient(v) {
-  S.omniscient = v;
-  ecranAccueilStaff();
+// ============================================================
+// INIT
+// ============================================================
+async function init(){
+  const [{data:te},{data:pr},{data:ag}]=await Promise.all([
+    db.from('types_equipements').select('*').eq('actif',true).order('categorie').order('libelle'),
+    db.from('profils').select('*,agences(nom)').eq('actif',true).order('nom'),
+    db.from('agences').select('*')
+  ]);
+  typesEquip=te||[];profils=pr||[];
+  // Remplir filtres types
+  [$('f-type-equip'),$('f-type-verif'),$('f-type-config')].forEach(el=>{if(!el)return;
+    const prefix=el.id==='f-type-config'?'<option value="">Sélectionner…</option>':'<option value="">Tous types</option>';
+    el.innerHTML=prefix+typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
+  });
+  // Select agences
+  const agOpts='<option value="">— Toutes —</option>'+(ag||[]).map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
+  [$('c-agence'),$('u-agence')].forEach(el=>{if(el)el.innerHTML=agOpts});
+  // Select techniciens planning
+  const ftp=$('f-tech-plan');if(ftp)ftp.innerHTML='<option value="">Tous techniciens</option>'+profils.map(p=>`<option value="${p.id}">${p.prenom||''} ${p.nom}</option>`).join('');
 }
 
-function libelleRole(r) {
-  return { rp: 'Resp. pédagogique', formateur: 'Formateur', gfor: 'GFOR', chef_centre: 'Chef de centre', stagiaire: 'Stagiaire' }[r] || r;
-}
 
-async function logout() {
-  await sb.auth.signOut();
-  S.user = null; S.stagiaire = null; S.session = null; S.vision = null;
-  $('bandeau-user').textContent = '';
-  $('btn-logout').style.display = 'none';
-  $('sel-vision').style.display = 'none';
-  $('lbl-omniscient').style.display = 'none';
-  $('menu-gauche').style.display = 'none';
-  show('ecran-login');
-}
-
-async function motDePasseOublie() {
-  const email = $('login-email').value.trim().toLowerCase();
-  if (!email) return toast('Saisir d\'abord ton email dans le champ ci-dessus', false);
-  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
-  toast(error ? error.message : 'Email de réinitialisation envoyé à ' + email, !error);
-}
-
-// Retour du lien de réinitialisation : demande du nouveau mot de passe
-sb.auth.onAuthStateChange(async (event) => {
-  if (event === 'PASSWORD_RECOVERY') {
-    const np = prompt('Nouveau mot de passe (6 caractères minimum) :');
-    if (np && np.length >= 6) {
-      const { error } = await sb.auth.updateUser({ password: np });
-      toast(error ? error.message : 'Mot de passe mis à jour', !error);
-      if (!error) await chargerProfil();
-    }
-  }
-});
-
-// ---------- Entrée stagiaire (code session + choix du nom) ----------
-async function entreeStagiaireCode() {
-  const code = $('stag-code').value.trim().toUpperCase();
-  if (!code) return toast('Saisir le code de session', false);
-  const { data: sess, error } = await sb.from('sessions').select('*').eq('code_acces', code).single();
-  if (error || !sess) return toast('Code de session inconnu', false);
-  S.session = sess;
-  await chargerFormation(sess.formation_id);
-  const { data: stags } = await sb.from('stagiaires').select('*').eq('session_id', sess.id).order('nom');
-  $('stag-liste').innerHTML = stags.map(s =>
-    `<button class="btn-liste" onclick="entreeStagiaireNom(${s.id})">${esc(s.prenom)} ${esc(s.nom)}</button>`
-  ).join('');
-  show('ecran-stag-nom');
-  window._stags = stags;
-}
-
-async function entreeStagiaireNom(id) {
-  S.stagiaire = window._stags.find(s => s.id === id);
-  $('bandeau-user').textContent = S.stagiaire.prenom + ' ' + S.stagiaire.nom + ' (stagiaire)';
-  $('btn-logout').style.display = '';
-  ecranAccueilStagiaire(); // défini dans app.js
-}
-
-// ---------- Démarrage ----------
-window.addEventListener('DOMContentLoaded', async () => {
-  if (SUPABASE_URL.includes('VOTRE-PROJET')) {
-    debugShow('CONFIGURATION MANQUANTE : renseigner SUPABASE_URL et SUPABASE_ANON_KEY en haut de core.js');
-    return;
-  }
-  const { data: { session } } = await sb.auth.getSession();
-  if (session) await chargerProfil();
-  else show('ecran-login');
-});
+console.log('✓ core.js chargé');
