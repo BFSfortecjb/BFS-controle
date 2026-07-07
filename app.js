@@ -609,7 +609,13 @@ async function saveEquip(){
   if(error){toast('Erreur: '+error.message,'err');return}
   toast(id?'Modifié':'Créé');CM('mo-equip');loadEquipements();
 }
-async function deleteEquip(id){if(!confirm('Supprimer ?'))return;await db.from('equipements').delete().eq('id',id);toast('Supprimé');loadEquipements()}
+async function deleteEquip(id){
+  if(!confirm('Supprimer ?'))return;
+  const {data,error}=await db.from('equipements').delete().eq('id',id).select();
+  if(error){toast('Erreur: '+error.message,'err');return}
+  if(!data||!data.length){toast('Suppression refusée par les droits (RLS)','err');return}
+  toast('Supprimé');loadEquipements();
+}
 async function verifierEquip(id){const e=equipements.find(x=>x.id===id);if(e){navigate('verifications');setTimeout(()=>openVerifModal({client_id:e.client_id,equipement_id:id}),200)}}
 
 // ============================================================
@@ -776,8 +782,11 @@ async function confirmerSupprVerif(id, btn){
   // On stocke le motif dans une note temporaire via update puis delete
   await db.from('verifications').update({observations:(await db.from('verifications').select('observations').eq('id',id).single()).data?.observations||''}).eq('id',id);
 
-  const {error}=await db.from('verifications').delete().eq('id',id);
+  // RLS : une suppression refusée ne renvoie PAS d'erreur, elle renvoie
+  // juste 0 ligne — d'où le .select() + test data.length (règle du projet).
+  const {data:delData,error}=await db.from('verifications').delete().eq('id',id).select();
   if(error){toast('Erreur: '+error.message,'err');btn.disabled=false;btn.textContent='Confirmer';return}
+  if(!delData||!delData.length){toast('Suppression refusée par les droits (RLS)','err');btn.disabled=false;btn.textContent='Confirmer';return}
 
   // Enregistrer le motif manuellement dans audit_log
   await db.from('audit_log').insert({

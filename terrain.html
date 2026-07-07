@@ -2107,10 +2107,26 @@ async function syncVerifsHorsLigne(){
   toast(restantes.length?('⚠ '+restantes.length+' vérification(s) restent en attente'):'✓ Synchronisation terminée');
 }
 
+let _validationEnCours=false;
 async function validerVerif(){
+  // Garde-fou anti double-tap : sans ça, un appui rapide (ou un appareil
+  // qui répond lentement) déclenche deux/trois insertions de la même
+  // vérification avant que la première n'ait eu le temps de se terminer.
+  if(_validationEnCours)return;
   if(!currentStatut){toast('Sélectionnez le statut final','err');return}
   const equip=currentEquipements.find(e=>e.id===currentEquipId);
   if(!equip){toast('Équipement introuvable','err');return}
+  _validationEnCours=true;
+  const btnValider=$('btn-valider-verif');
+  if(btnValider)btnValider.disabled=true;
+  try{
+    await _validerVerifInterne(equip);
+  } finally {
+    _validationEnCours=false;
+    if(btnValider)btnValider.disabled=false;
+  }
+}
+async function _validerVerifInterne(equip){
 
   // Collecter points
   const points={};
@@ -2732,8 +2748,15 @@ async function validerSignatureEtCloturer(){
   const nbVerifies=Object.keys(sessionVerifs).length;
 
   // Enregistrer le bon d'intervention (même sans PDF uploadé)
+  // NOTE : la table bons_intervention n'a pas de colonnes signature_data /
+  // signature_tech_data (les signatures sont déjà dans le PDF signé) —
+  // les inclure ici faisait échouer l'insert à chaque fois (erreur
+  // PGRST204 "column not found") sans que ce soit visible : le try/catch
+  // n'attrape pas les erreurs Supabase (elles reviennent dans {error},
+  // elles ne sont pas levées comme exception).
+  let bonEnregistre=false;
   try{
-    await db.from('bons_intervention').insert({
+    const {error:bonErr}=await db.from('bons_intervention').insert({
       session_id:currentSession?.id,
       client_id:currentClient.id,
       agence_id:currentClient.agence_id,
@@ -2741,13 +2764,17 @@ async function validerSignatureEtCloturer(){
       date_intervention:new Date().toISOString().slice(0,10),
       nb_equipements_verifies:nbVerifies,
       signataire_nom:nom,
-      signature_data:signatureDataUrl,
-      signature_tech_data:signatureTechDataUrl,
       pdf_url:pdfUrl,
       pdf_path:pdfUrl?fileName:null,
       statut_facturation:'à_facturer'
     });
-  }catch(e){console.warn('Erreur enregistrement bon:',e);}
+    if(bonErr){
+      console.error('Erreur enregistrement bon:',bonErr);
+      toast('⚠️ Bon d\'intervention NON enregistré : '+bonErr.message,'err');
+    } else {
+      bonEnregistre=true;
+    }
+  }catch(e){console.warn('Erreur enregistrement bon:',e);toast('⚠️ Bon d\'intervention NON enregistré','err');}
 
   // Clôturer la session — toujours exécuté
   if(currentSession){
@@ -2757,7 +2784,10 @@ async function validerSignatureEtCloturer(){
 
   currentSession=null;sessionVerifs={};currentEquipements=[];
   effacerSessionLocale();
-  toast(pdfUrl?'Bon d\'intervention signé et enregistré ✓':'Session clôturée ✓ (PDF à configurer: créer bucket bons-intervention dans Supabase Storage)');
+  if(bonEnregistre){
+    toast(pdfUrl?'Bon d\'intervention signé et enregistré ✓':'Bon enregistré ✓ (PDF à configurer: créer bucket bons-intervention dans Supabase Storage)');
+  }
+  // sinon : le toast d'erreur déjà affiché plus haut reste visible, on ne l'écrase pas par un message de succès trompeur
   btn.disabled=false;btn.textContent='✅ Valider et clôturer';
   await loadParc();
   goTo('s-parc');
