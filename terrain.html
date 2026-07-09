@@ -363,6 +363,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <!-- Bloc équipements par type avec boutons vérification ciblée -->
     <div id="client-equip-par-type" style="display:none;margin-bottom:14px"></div>
 
+    <!-- Derniers rapports d'intervention (à consulter avant de partir chez le client) -->
+    <div id="client-rapports-bloc" style="display:none;margin-bottom:14px">
+      <div class="sec">📄 Derniers rapports</div>
+      <div id="client-rapports"></div>
+    </div>
+
     <div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:4px">
       <button class="btn btn-s btn-sm" onclick="voirEquipements()" style="margin-bottom:8px">
         📋 Voir tous les équipements
@@ -1025,6 +1031,9 @@ async function ouvrirClient(clientId){
 
   // Bloc Contrats (sous la carte contact) — appui = consultation
   chargerContratsClient(clientId);
+
+  // Derniers rapports d'intervention (bons) — pour consulter avant de partir chez le client
+  chargerRapportsClient(clientId);
 
   // Stats équipements + groupement par type
   const equips=await reqCache('eq_'+clientId,()=>db.from('equipements')
@@ -3212,6 +3221,31 @@ async function chargerContratsClient(clientId){
         <div style="font-size:12px;font-weight:700;color:${ct.signature_data?'#16a34a':'#d97706'}">${ct.signature_data?'✍ Signé':'⏳ À signer'}</div>
         <div style="font-size:16px;color:var(--txt-l)">›</div>
       </div>
+    </div>
+  </div>`).join('');
+}
+
+// Derniers rapports d'intervention (bons) du client, avec accès direct au PDF
+async function chargerRapportsClient(clientId){
+  const bloc=$('client-rapports-bloc');const el=$('client-rapports');
+  bloc.style.display='none';el.innerHTML='';
+  const {data:bons,error}=await db.from('bons_intervention')
+    .select('*')
+    .eq('client_id',clientId)
+    .order('date_intervention',{ascending:false})
+    .limit(5);
+  if(error||!bons||!bons.length)return;
+  bloc.style.display='block';
+  el.innerHTML=bons.map(b=>`<div class="card" style="margin-bottom:8px">
+    <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;gap:10px">
+      <div style="min-width:0">
+        <div style="font-weight:700">${fmt(b.date_intervention)}</div>
+        <div style="font-size:12px;color:var(--txt-l)">${b.nb_equipements_verifies||0} équipement(s) vérifié(s)${b.signataire_nom?' · signé par '+b.signataire_nom:''}</div>
+      </div>
+      ${b.pdf_url
+        ? `<a class="btn btn-s btn-sm" style="flex-shrink:0" href="${b.pdf_url}" target="_blank" rel="noopener">📄 Voir le PDF</a>`
+        : `<span style="font-size:11px;color:var(--txt-l);flex-shrink:0">Pas de PDF</span>`
+      }
     </div>
   </div>`).join('');
 }
