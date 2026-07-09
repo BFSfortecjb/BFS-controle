@@ -43,6 +43,103 @@ function _bfsMajRapport(id, lignes){
 }
 
 // ------------------------------------------------------------
+// JOURNAL — historique consultable et partageable par mail
+// ------------------------------------------------------------
+async function _bfsJournaliser(type, resume, lignesDetail){
+  try{
+    const {data:{user}} = await db.auth.getUser();
+    await db.from('journal_sauvegardes').insert({
+      type,
+      resume,
+      detail: (lignesDetail||[]).join('\n'),
+      utilisateur_id: user?.id || null
+    });
+  }catch(e){
+    console.warn('Journalisation de la sauvegarde impossible :', e);
+  }
+  if(document.getElementById('page-sauvegarde')?.classList.contains('active')) loadSauvegarde();
+}
+
+const BFS_TYPE_LABEL = {
+  export_excel: '📊 Export Excel',
+  export_zip: '🗂️ Export fichiers (ZIP)',
+  import_excel: '📥 Restauration Excel',
+  import_zip: '📥 Restauration fichiers (ZIP)'
+};
+
+async function loadSauvegarde(){
+  const el = $('tbl-historique-sauvegarde');
+  if(!el) return;
+  const {data, error} = await db.from('journal_sauvegardes')
+    .select('*, profils(nom, prenom)')
+    .order('created_at', {ascending:false})
+    .limit(100);
+  if(error){
+    // Table pas encore créée côté base, ou droits manquants : on n'affiche rien de bloquant
+    el.innerHTML = `<div class="t-empty">Historique indisponible (${error.message})</div>`;
+    return;
+  }
+  const logs = data || [];
+  window.__sauvegardeLogs = logs;
+  if(!logs.length){ el.innerHTML = '<div class="t-empty">Aucune sauvegarde enregistrée pour le moment</div>'; return; }
+
+  el.innerHTML = `<table><thead><tr><th>Date</th><th>Type</th><th>Par</th><th>Résumé</th><th>Actions</th></tr></thead><tbody>${logs.map((l,i)=>`<tr>
+    <td style="white-space:nowrap;font-size:12px">${new Date(l.created_at).toLocaleString('fr-FR')}</td>
+    <td style="font-size:13px">${BFS_TYPE_LABEL[l.type] || l.type}</td>
+    <td style="font-size:12px">${l.profils ? (l.profils.prenom||'')+' '+(l.profils.nom||'') : '—'}</td>
+    <td style="font-size:12px">${l.resume || '—'}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-s btn-xs" title="Voir le détail" onclick="showSauvegardeDetail(${i})">👁</button>
+      <button class="btn btn-s btn-xs" title="Copier" onclick="copierRapportSauvegarde(${i})">📋</button>
+      <button class="btn btn-s btn-xs" title="Envoyer par email" onclick="emailRapportSauvegarde(${i})">✉️</button>
+    </td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+function _bfsTexteRapport(l){
+  return `BFS Contrôle — ${BFS_TYPE_LABEL[l.type] || l.type}\n`
+    + `Date : ${new Date(l.created_at).toLocaleString('fr-FR')}\n`
+    + `Par : ${l.profils ? (l.profils.prenom||'')+' '+(l.profils.nom||'') : '—'}\n`
+    + `Résumé : ${l.resume || '—'}\n\n`
+    + `Détail :\n${l.detail || '(aucun détail)'}`;
+}
+
+function showSauvegardeDetail(idx){
+  const l = window.__sauvegardeLogs?.[idx]; if(!l) return;
+  const modal = document.createElement('div');
+  modal.className = 'mo open';
+  modal.innerHTML = `<div class="modal" style="max-width:600px"><div class="mh"><h3>${BFS_TYPE_LABEL[l.type] || l.type}</h3><button class="mclose" onclick="this.closest('.mo').remove()">✕</button></div><div class="mc">
+    <div style="margin-bottom:8px;font-size:13px;color:var(--txt-l)">${new Date(l.created_at).toLocaleString('fr-FR')} · ${l.profils ? (l.profils.prenom||'')+' '+(l.profils.nom||'') : '—'}</div>
+    <pre style="background:var(--bg);padding:10px;border-radius:8px;font-size:12px;overflow:auto;max-height:400px;white-space:pre-wrap">${(l.detail||'(aucun détail)').replace(/</g,'&lt;')}</pre>
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <button class="btn btn-s" onclick="copierRapportSauvegarde(${idx})">📋 Copier</button>
+      <button class="btn btn-s" onclick="emailRapportSauvegarde(${idx})">✉️ Envoyer par email</button>
+    </div>
+  </div></div>`;
+  modal.addEventListener('click', e=>{ if(e.target===modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+async function copierRapportSauvegarde(idx){
+  const l = window.__sauvegardeLogs?.[idx]; if(!l) return;
+  try{
+    await navigator.clipboard.writeText(_bfsTexteRapport(l));
+    toast('Rapport copié ✓ — collez-le où vous voulez (mail, note…)');
+  }catch(e){
+    toast('Impossible de copier automatiquement, sélectionnez le texte manuellement', 'err');
+  }
+}
+
+function emailRapportSauvegarde(idx){
+  const l = window.__sauvegardeLogs?.[idx]; if(!l) return;
+  const sujet = `BFS Contrôle — ${BFS_TYPE_LABEL[l.type] || l.type} du ${new Date(l.created_at).toLocaleDateString('fr-FR')}`;
+  let corps = _bfsTexteRapport(l);
+  // Les liens mailto: ont une limite pratique (~2000 caractères) selon les clients mail
+  if(corps.length > 1800) corps = corps.slice(0, 1800) + '\n\n[…rapport tronqué — utilisez "Copier" pour le texte complet]';
+  window.location.href = `mailto:?subject=${encodeURIComponent(sujet)}&body=${encodeURIComponent(corps)}`;
+}
+
+// ------------------------------------------------------------
 // EXPORT — Données (Excel, une feuille par table)
 // ------------------------------------------------------------
 async function bfsExporterExcel(){
@@ -100,9 +197,11 @@ async function bfsExporterExcel(){
     const filename = `BFS_Sauvegarde_${horodatage}.xlsx`;
     XLSX.writeFile(wb, filename);
     toast(`Sauvegarde Excel générée ✓ (${totalLignes} lignes, ${BFS_TABLE_ORDER.length} tables)`);
+    await _bfsJournaliser('export_excel', `${totalLignes} lignes, ${BFS_TABLE_ORDER.length} tables (${filename})`, rapport);
   }catch(e){
     console.error('Erreur export Excel:', e);
     toast('Erreur pendant l\'export : ' + e.message, 'err');
+    await _bfsJournaliser('export_excel', '⚠️ Interrompu par une erreur : ' + e.message, rapport);
   }finally{
     if(btn){btn.disabled = false; btn.textContent = '📊 Exporter les données (Excel)';}
   }
@@ -176,9 +275,11 @@ async function bfsImporterExcel(){
     }
 
     toast('Restauration terminée — voir le détail ci-dessous');
+    await _bfsJournaliser('import_excel', `Fichier : ${file.name}`, rapport);
   }catch(e){
     console.error('Erreur import Excel:', e);
     toast('Erreur pendant la restauration : ' + e.message, 'err');
+    await _bfsJournaliser('import_excel', `⚠️ Interrompu par une erreur : ${e.message} (fichier : ${file.name})`, rapport);
   }
 }
 
@@ -211,30 +312,36 @@ async function bfsExporterFichiersZip(){
     return;
   }
   if(btn){btn.disabled = true; btn.textContent = '⏳ Récupération des fichiers…';}
+  const rapport = [];
+  let filename = null;
   try{
     const zip = new JSZip();
     let total = 0;
     for(const bucket of BFS_BUCKETS){
       const n = await _bfsListerRecursif(zip, bucket, '');
       total += n;
-      _bfsMajRapport('sauvegarde-export-rapport', [`${bucket} : ${n} fichier(s)`]);
+      rapport.push(`${bucket} : ${n} fichier(s)`);
+      _bfsMajRapport('sauvegarde-export-rapport', rapport);
     }
     if(!total){
       toast('Aucun fichier trouvé dans le stockage', 'err');
+      await _bfsJournaliser('export_zip', 'Aucun fichier trouvé', rapport);
       return;
     }
     if(btn) btn.textContent = '⏳ Compression…';
     const blob = await zip.generateAsync({type:'blob'});
     const horodatage = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
-    const filename = `BFS_Fichiers_${horodatage}.zip`;
+    filename = `BFS_Fichiers_${horodatage}.zip`;
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     toast(`Archive ZIP générée ✓ (${total} fichier(s))`);
+    await _bfsJournaliser('export_zip', `${total} fichier(s) (${filename})`, rapport);
   }catch(e){
     console.error('Erreur export ZIP:', e);
     toast('Erreur pendant l\'export des fichiers : ' + e.message, 'err');
+    await _bfsJournaliser('export_zip', '⚠️ Interrompu par une erreur : ' + e.message, rapport);
   }finally{
     if(btn){btn.disabled = false; btn.textContent = '🗂️ Exporter les fichiers (ZIP)';}
   }
@@ -278,8 +385,10 @@ async function bfsImporterFichiersZip(){
     }
     _bfsMajRapport('sauvegarde-import-rapport', rapport);
     toast(`Fichiers restaurés : ${ok}/${entrees.length} ✓`);
+    await _bfsJournaliser('import_zip', `${ok}/${entrees.length} fichier(s) (${file.name})`, rapport);
   }catch(e){
     console.error('Erreur import ZIP:', e);
     toast('Erreur pendant la restauration des fichiers : ' + e.message, 'err');
+    await _bfsJournaliser('import_zip', `⚠️ Interrompu par une erreur : ${e.message} (fichier : ${file.name})`, rapport);
   }
 }

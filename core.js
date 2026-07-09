@@ -239,6 +239,7 @@ function navigate(page){
   if(page==='config-points')loadConfigPage();
   if(page==='stock')loadStock();
   if(page==='tarifs')loadTarifs();
+  if(page==='sauvegarde')loadSauvegarde();
 }
 
 // ============================================================
