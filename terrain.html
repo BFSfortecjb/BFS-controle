@@ -2489,12 +2489,12 @@ function validerChecklistEtSigner(){
 function genererPdfSession(signatureDataUrl, signataireNom, signatureTechDataUrl){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'mm',format:'a4'});
-  // Filigrane logo BFS — chargé en arrière-plan depuis GitHub
+  // Filigrane logo BFS — même format que le reste de l'appli (carré 110x110, opacité 5%)
   try{
     if(window._bfsLogoB64){
       doc.saveGraphicsState();
-      doc.setGState(new doc.GState({opacity:0.08}));
-      doc.addImage(window._bfsLogoB64,'PNG',35,60,140,258);
+      doc.setGState(new doc.GState({opacity:0.05}));
+      doc.addImage(window._bfsLogoB64,'PNG',50,93,110,110);
       doc.restoreGraphicsState();
     }
   }catch(e){}
@@ -2503,27 +2503,17 @@ function genererPdfSession(signatureDataUrl, signataireNom, signatureTechDataUrl
   const today=new Date();
   const dateStr=today.toLocaleDateString('fr-FR');
 
-  // ---- LOGO BFS vectoriel + raison sociale selon agence ----
+  // ---- LOGO BFS (image) + raison sociale selon agence ----
   const agenceCode = currentClient?.agences?.code || ME.agences?.code || '';
   const raisonSociale = agenceCode === 'sevremont' ? 'Bocage Formation Sécurité' : 'Bretagne Formation Sécurité';
 
   const drawLogo = () => {
-    // Flamme BFS dessinée en vecteur jsPDF
-    doc.setFillColor(192,57,43);
-    // Arc rouge principal
-    doc.setDrawColor(192,57,43);doc.setLineWidth(2.5);
-    doc.lines([[0,8],[2,12],[0,6],[-2,4]],14,6,null,'F');
-    // Trait gris
-    doc.setDrawColor(80);doc.setLineWidth(1.5);
-    doc.lines([[0,10],[1,8],[0,-4]],13,6,null,null);
-    // Trait doré
-    doc.setDrawColor(210,160,0);doc.setLineWidth(1);
-    doc.lines([[4,3],[-2,0],[-2,-3]],15,14,null,null);
-    // Texte BFS
-    doc.setLineWidth(0.2);doc.setFont('helvetica','bold');doc.setFontSize(20);doc.setTextColor(50,50,50);
-    doc.text('BFS',22,20);
+    try{ if(window._bfsLogoB64) doc.addImage(window._bfsLogoB64,'PNG',12,5,16,16); }catch(e){}
+    doc.setFont('helvetica','bold');doc.setFontSize(20);doc.setTextColor(50,50,50);
+    doc.text('BFS',29,15);
     doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');
-    doc.text(raisonSociale,14,24);
+    doc.text(raisonSociale,29,19.5);
+    doc.setTextColor(0);
   };
   drawLogo();
 
@@ -3238,13 +3228,13 @@ async function chargerRapportsClient(clientId){
   bloc.style.display='block';
   el.innerHTML=bons.map(b=>`<div class="card" style="margin-bottom:8px">
     <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;gap:10px">
-      <div style="min-width:0">
+      <div style="min-width:0;flex:1">
         <div style="font-weight:700">${fmt(b.date_intervention)}</div>
         <div style="font-size:12px;color:var(--txt-l)">${b.nb_equipements_verifies||0} équipement(s) vérifié(s)${b.signataire_nom?' · signé par '+b.signataire_nom:''}</div>
       </div>
       ${b.pdf_url
-        ? `<a class="btn btn-s btn-sm" style="flex-shrink:0" href="${b.pdf_url}" target="_blank" rel="noopener">📄 Voir le PDF</a>`
-        : `<span style="font-size:11px;color:var(--txt-l);flex-shrink:0">Pas de PDF</span>`
+        ? `<a class="btn btn-s btn-sm" style="width:auto;flex-shrink:0;white-space:nowrap" href="${b.pdf_url}" target="_blank" rel="noopener">📄 Voir le PDF</a>`
+        : `<span style="font-size:11px;color:var(--txt-l);flex-shrink:0;white-space:nowrap">Pas de PDF</span>`
       }
     </div>
   </div>`).join('');
