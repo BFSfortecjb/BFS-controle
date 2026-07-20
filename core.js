@@ -33,7 +33,7 @@ const fmt=d=>d?new Date(d).toLocaleDateString('fr-FR'):'—';
 const fmtH=t=>t?t.slice(0,5):'—';
 const ecClass=d=>{if(!d)return'';const j=(new Date(d)-new Date())/86400000;return j<0?'ec-retard':j<30?'ec-urgent':j<90?'ec-proche':'ec-ok'};
 const badgeR=r=>({conforme:'<span class="badge bv">✓ Conforme</span>','non conforme':'<span class="badge br">✗ Non conforme</span>','à surveiller':'<span class="badge bo">⚡ À surveiller</span>'}[r]||'<span class="badge bg">—</span>');
-const badgeSt=s=>({opérationnel:'<span class="badge bv">Opérationnel</span>','à remplacer':'<span class="badge br">À remplacer</span>','en révision':'<span class="badge bo">En révision</span>','hors service':'<span class="badge br">Hors service</span>',réformé:'<span class="badge bg">Réformé</span>',actif:'<span class="badge bv">Actif</span>',suspendu:'<span class="badge bo">Suspendu</span>',terminé:'<span class="badge bg">Terminé</span>'}[s]||'<span class="badge bg">'+s+'</span>');
+const badgeSt=s=>({opérationnel:'<span class="badge bv">Opérationnel</span>','en stock':'<span class="badge bo">🧯 En stock</span>','à remplacer':'<span class="badge br">À remplacer</span>','en révision':'<span class="badge bo">En révision</span>','hors service':'<span class="badge br">Hors service</span>',réformé:'<span class="badge bg">Réformé</span>',actif:'<span class="badge bv">Actif</span>',suspendu:'<span class="badge bo">Suspendu</span>',terminé:'<span class="badge bg">Terminé</span>'}[s]||'<span class="badge bg">'+s+'</span>');
 
 function toast(msg,type='ok'){const t=$('toast');t.textContent=msg;t.className='show '+type;setTimeout(()=>t.className='',3000)}
 function CM(id){$(id).classList.remove('open')}

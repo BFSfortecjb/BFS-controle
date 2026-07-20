@@ -475,7 +475,7 @@ async function deleteClient(id){if(!confirm('Supprimer ce client ?'))return;awai
 // ÉQUIPEMENTS
 // ============================================================
 async function loadEquipements(){
-  const {data}=await db.from('equipements').select('*,clients(raison_sociale),agences(nom,code),profils(nom,prenom),types_equipements(libelle,icone)').order('created_at',{ascending:false});
+  const {data}=await db.from('equipements').select('*,clients(raison_sociale),agences(nom,code),profils(nom,prenom),types_equipements(libelle,icone)').neq('statut','en stock').order('created_at',{ascending:false});
   equipements=data||[];renderEquip();
 }
 function renderEquip(){
@@ -494,7 +494,9 @@ function renderEquip(){
 }
 async function openEquipModal(prefill=null){
   if(!clients.length)await loadClients();
-  $('e-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
+  if(!_agencesCache.length){const {data:ag}=await db.from('agences').select('*').order('nom');_agencesCache=ag||[];}
+  $('e-client').innerHTML='<option value="">— En stock (aucun client) —</option>'+clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
+  $('e-agence-stock').innerHTML=_agencesCache.map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
   $('e-type').innerHTML=typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
   $('e-tech').innerHTML='<option value="">— Non affecté —</option>'+profils.map(p=>`<option value="${p.id}">${p.prenom||''} ${p.nom}</option>`).join('');
   ['e-id','e-num','e-serie','e-lot','e-num-ent','e-emplacement','e-loc','e-zone','e-notes'].forEach(id=>$(id).value='');
@@ -504,7 +506,8 @@ async function openEquipModal(prefill=null){
 
   if(prefill){
     $('e-id').value=prefill.id;
-    $('e-client').value=prefill.client_id;
+    $('e-client').value=prefill.client_id||'';
+    if(!prefill.client_id)$('e-agence-stock').value=prefill.agence_id||'';
     $('e-type').value=prefill.type_equipement_code;
     $('e-tech').value=prefill.technicien_id||'';
     $('e-num').value=prefill.numero_identification||'';
@@ -533,9 +536,26 @@ async function openEquipModal(prefill=null){
   renderHistoriqueEquip();
   // Toujours appeler APRÈS avoir défini la valeur du select
   onEquipTypeChange();
+  onEquipClientChange();
   OM('mo-equip');
 }
 function editEquip(id){openEquipModal(equipements.find(e=>e.id===id))}
+let _agencesCache=[];
+function onEquipClientChange(){
+  const bloc=$('e-agence-stock-bloc');
+  const sansClient=!$('e-client').value;
+  bloc.style.display=sansClient?'block':'none';
+  if(sansClient&&$('e-statut').value==='opérationnel')$('e-statut').value='en stock';
+}
+function openStockNeufModal(prefill=null){
+  openEquipModal(prefill);
+  setTimeout(()=>{
+    if(!prefill){$('e-client').value='';onEquipClientChange();$('e-statut').value='en stock';
+      const ext=typesEquip.find(t=>t.code==='extincteur');if(ext)$('e-type').value='extincteur';
+      onEquipTypeChange();
+    }
+  },60);
+}
 
 // ============================================================
 // HISTORIQUE INFORMATIF ÉQUIPEMENT
@@ -604,10 +624,18 @@ function supprimerLigneHistorique(idx){
 
 async function saveEquip(){
   const id=$('e-id').value;
-  const p={client_id:$('e-client').value,technicien_id:$('e-tech').value||null,type_equipement_code:$('e-type').value,numero_identification:$('e-num').value.trim(),numero_serie:$('e-serie').value.trim()||null,numero_lot:$('e-lot').value.trim()||null,numero_entreprise:$('e-num-ent').value.trim()||null,emplacement:$('e-emplacement').value.trim()||null,marque:(lireMarqueModele('e-').marque||'').trim(),modele:(lireMarqueModele('e-').modele||'').trim(),capacite_valeur:parseFloat($('e-cap')?.value)||null,capacite_unite:$('e-unite')?.value?.trim()||null,donnees_specifiques:getEquipSpecificData(),date_fabrication:$('e-fab')?.value||null,date_mise_en_service:$('e-mis')?.value||null,localisation:$('e-loc').value.trim(),etage_zone:$('e-zone').value.trim(),statut:$('e-statut').value,notes:$('e-notes').value.trim(),historique:_historiqueEquip,updated_at:new Date().toISOString()};
+  const clientId=$('e-client').value||null;
+  let agenceId=null;
+  if(clientId){agenceId=(clients.find(c=>c.id===clientId)||{}).agence_id||null;}
+  else{
+    agenceId=$('e-agence-stock').value||null;
+    if(!agenceId){toast('Choisis l\'agence de stockage','err');return}
+  }
+  const p={client_id:clientId,agence_id:agenceId,technicien_id:$('e-tech').value||null,type_equipement_code:$('e-type').value,numero_identification:$('e-num').value.trim(),numero_serie:$('e-serie').value.trim()||null,numero_lot:$('e-lot').value.trim()||null,numero_entreprise:$('e-num-ent').value.trim()||null,emplacement:$('e-emplacement').value.trim()||null,marque:(lireMarqueModele('e-').marque||'').trim(),modele:(lireMarqueModele('e-').modele||'').trim(),capacite_valeur:parseFloat($('e-cap')?.value)||null,capacite_unite:$('e-unite')?.value?.trim()||null,donnees_specifiques:getEquipSpecificData(),date_fabrication:$('e-fab')?.value||null,date_mise_en_service:$('e-mis')?.value||null,localisation:$('e-loc').value.trim(),etage_zone:$('e-zone').value.trim(),statut:$('e-statut').value,notes:$('e-notes').value.trim(),historique:_historiqueEquip,updated_at:new Date().toISOString()};
   const {error}=id?await db.from('equipements').update(p).eq('id',id):await db.from('equipements').insert(p);
   if(error){toast('Erreur: '+error.message,'err');return}
   toast(id?'Modifié':'Créé');CM('mo-equip');loadEquipements();
+  if(document.getElementById('page-stock')?.classList.contains('active'))chargerStockNeufs();
 }
 async function deleteEquip(id){
   if(!confirm('Supprimer ?'))return;
@@ -615,6 +643,7 @@ async function deleteEquip(id){
   if(error){toast('Erreur: '+error.message,'err');return}
   if(!data||!data.length){toast('Suppression refusée par les droits (RLS)','err');return}
   toast('Supprimé');loadEquipements();
+  if(document.getElementById('page-stock')?.classList.contains('active'))chargerStockNeufs();
 }
 async function verifierEquip(id){const e=equipements.find(x=>x.id===id);if(e){navigate('verifications');setTimeout(()=>openVerifModal({client_id:e.client_id,equipement_id:id}),200)}}
 
@@ -1861,6 +1890,75 @@ async function loadStock(){
   if($('tf-dest'))$('tf-dest').innerHTML=_stockAgences.map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
   renderStock();renderInventaires();renderMouvements();
   chargerPrevision();
+  chargerStockNeufs();
+}
+
+// ---- Extincteurs neufs en stock (à installer) ----
+let stockNeufs=[];
+async function chargerStockNeufs(){
+  const el=$('tbl-stock-neufs');if(!el)return;
+  const {data,error}=await db.from('equipements')
+    .select('*,agences(nom,code),types_equipements(libelle,icone)')
+    .eq('statut','en stock')
+    .order('created_at',{ascending:false});
+  if(error){el.innerHTML='<div class="t-empty">Erreur : '+error.message+'</div>';return}
+  stockNeufs=data||[];
+  renderStockNeufs();
+}
+function renderStockNeufs(){
+  const el=$('tbl-stock-neufs');if(!el)return;
+  const anneeCourante=new Date().getFullYear();
+  const seulLocation=$('f-stockneuf-location')?.checked;
+  const anneeDe=e=>e.date_fabrication?new Date(e.date_fabrication).getFullYear():null;
+  let data=stockNeufs;
+  if(seulLocation)data=data.filter(e=>{const a=anneeDe(e);return a&&a!==anneeCourante});
+  if(!data.length){el.innerHTML='<div class="t-empty">Aucun extincteur neuf en stock'+(seulLocation?' à privilégier en location':'')+'.</div>';return}
+  el.innerHTML=`<table><thead><tr><th>Type</th><th>Marque/Modèle</th><th>N° série</th><th>N° lot</th><th>Date fabrication</th><th>Agence</th><th>Actions</th></tr></thead><tbody>${data.map(e=>{
+    const annee=anneeDe(e);
+    const alerteLocation=annee&&annee!==anneeCourante;
+    return `<tr>
+    <td>${e.types_equipements?.icone||''} ${e.types_equipements?.libelle||e.type_equipement_code}</td>
+    <td>${e.marque||'—'}${e.modele?' / '+e.modele:''}</td>
+    <td>${e.numero_serie||'—'}</td>
+    <td>${e.numero_lot||'—'}</td>
+    <td>${fmt(e.date_fabrication)}${alerteLocation?' <span class="badge bo" title="Année de fabrication différente de '+anneeCourante+'">🔄 À privilégier en location</span>':''}</td>
+    <td><span class="badge bg">${e.agences?.nom||'—'}</span></td>
+    <td><div class="ia">
+      <button class="btn btn-s btn-xs" title="Modifier / installer chez un client" onclick="openStockNeufModal(stockNeufs.find(x=>x.id==='${e.id}'))">✏️</button>
+      <button class="btn btn-s btn-xs" title="Supprimer" onclick="deleteEquip('${e.id}')">🗑</button>
+    </div></td>
+  </tr>`}).join('')}</tbody></table>`;
+}
+
+// ---- Matériovigilance : recherche d'un n° de lot signalé défectueux ----
+function ouvrirMaterioVigilance(){
+  $('mv-lot').value='';
+  $('mv-resultats').innerHTML='<div class="t-empty">Saisissez un n° de lot pour lancer la recherche.</div>';
+  OM('mo-materiovigilance');
+  setTimeout(()=>$('mv-lot').focus(),100);
+}
+async function rechercherLotVigilance(){
+  const lot=$('mv-lot').value.trim();
+  if(!lot){toast('Saisis un n° de lot','err');return}
+  const el=$('mv-resultats');
+  el.innerHTML='<div class="loading"><span class="spin"></span></div>';
+  const {data,error}=await db.from('equipements')
+    .select('*,clients(raison_sociale),agences(nom),types_equipements(libelle,icone)')
+    .ilike('numero_lot','%'+lot+'%')
+    .order('created_at',{ascending:false});
+  if(error){el.innerHTML='<div class="t-empty">Erreur : '+error.message+'</div>';return}
+  const res=data||[];
+  if(!res.length){el.innerHTML='<div class="t-empty">Aucun équipement (installé ou en stock) trouvé pour ce n° de lot.</div>';return}
+  el.innerHTML=`<div style="margin-bottom:8px;font-size:13px;color:var(--txt-l)">${res.length} équipement(s) trouvé(s) :</div>
+  <table><thead><tr><th>Type</th><th>Marque/Modèle</th><th>N° série</th><th>N° lot</th><th>Où</th><th>Statut</th><th>Agence</th></tr></thead><tbody>${res.map(e=>`<tr>
+    <td>${e.types_equipements?.icone||''} ${e.types_equipements?.libelle||e.type_equipement_code}</td>
+    <td>${e.marque||'—'}${e.modele?' / '+e.modele:''}</td>
+    <td>${e.numero_serie||'—'}</td>
+    <td><strong>${e.numero_lot||'—'}</strong></td>
+    <td>${e.clients?.raison_sociale?('Chez '+e.clients.raison_sociale):'🧯 En stock'}</td>
+    <td>${badgeSt(e.statut)}</td>
+    <td><span class="badge bg">${e.agences?.nom||'—'}</span></td>
+  </tr>`).join('')}</tbody></table>`;
 }
 window.stockSetAgence=function(btn,id){
   _stockAgFiltre=id;

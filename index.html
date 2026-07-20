@@ -514,9 +514,24 @@ tr:hover td{background:#fafafa}
           <button class="btn btn-s" onclick="document.getElementById('stock-file').click()">⬆ Import Excel</button>
           <input type="file" id="stock-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importStockExcel(this)">
           <button class="btn btn-s" onclick="exportStockXLS()">⬇ Excel</button>
+          <button class="btn btn-s" onclick="ouvrirMaterioVigilance()">🔍 Matériovigilance (n° de lot)</button>
           <button class="btn btn-p" onclick="openPieceModal()">+ Pièce</button>
         </div>
         <div class="card"><div id="tbl-stock"><div class="loading"><span class="spin"></span></div></div></div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-header"><h2>🧯 Extincteurs neufs en stock</h2>
+            <button class="btn btn-p btn-sm" onclick="openStockNeufModal()">+ Extincteur neuf</button>
+          </div>
+          <div class="search-bar" style="margin-bottom:0">
+            <label style="display:flex;gap:8px;align-items:center;font-weight:400;text-transform:none;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="f-stockneuf-location" style="width:16px;height:16px;margin:0" onchange="renderStockNeufs()">
+              🔄 Afficher uniquement ceux à privilégier en location (année de fabrication ≠ ${new Date().getFullYear()})
+            </label>
+          </div>
+          <div id="tbl-stock-neufs"><div class="t-empty">Chargement…</div></div>
+        </div>
+
         <div class="card" style="margin-top:16px">
           <div class="card-header"><h2>🔮 Besoin prévisionnel</h2>
             <select id="f-horizon-prev" onchange="renderPrevision()" style="max-width:160px"><option value="90">90 jours</option><option value="30">30 jours</option><option value="180">180 jours</option></select>
@@ -658,7 +673,8 @@ tr:hover td{background:#fafafa}
   <div class="modal"><div class="mh"><h3 id="mo-eq-t">Nouvel équipement</h3><button class="mclose" onclick="CM('mo-equip')">✕</button></div>
   <div class="mc"><input type="hidden" id="e-id">
     <div class="form-grid">
-      <div class="fg"><label>Client *</label><select id="e-client"></select></div>
+      <div class="fg"><label>Client</label><select id="e-client" onchange="onEquipClientChange()"></select></div>
+      <div class="fg" id="e-agence-stock-bloc" style="display:none"><label>Agence (stock) *</label><select id="e-agence-stock"></select></div>
       <div class="fg"><label>Technicien référent</label><select id="e-tech"><option value="">— Non affecté —</option></select></div>
       <div class="fg" style="grid-column:1/-1"><label>Type d'équipement *</label><select id="e-type" onchange="onEquipTypeChange()"></select></div>
       <div class="fg"><label>N° identification / QR code *</label><input type="text" id="e-num" placeholder="Ex: EXT-BRIEC-001"></div>
@@ -673,7 +689,7 @@ tr:hover td{background:#fafafa}
       <div id="e-champs-specifiques" style="grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:13px"></div>
       <div class="fg" style="grid-column:1/-1"><label>Localisation</label><input type="text" id="e-loc"></div>
       <div class="fg"><label>Étage / Zone</label><input type="text" id="e-zone"></div>
-      <div class="fg"><label>Statut</label><select id="e-statut"><option value="opérationnel">Opérationnel</option><option value="à remplacer">À remplacer</option><option value="en révision">En révision</option><option value="hors service">Hors service</option><option value="réformé">Réformé</option></select></div>
+      <div class="fg"><label>Statut</label><select id="e-statut"><option value="opérationnel">Opérationnel</option><option value="en stock">🧯 En stock (neuf, à installer)</option><option value="à remplacer">À remplacer</option><option value="en révision">En révision</option><option value="hors service">Hors service</option><option value="réformé">Réformé</option></select></div>
       <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="e-notes"></textarea></div>
     </div>
 
@@ -859,6 +875,19 @@ tr:hover td{background:#fafafa}
       </div>
     </div>
     <div class="fa"><button class="btn btn-s" onclick="CM('mo-piece')">Annuler</button><button class="btn btn-p" onclick="savePiece()">Enregistrer</button></div>
+  </div></div>
+</div>
+
+<!-- Matériovigilance : recherche d'un lot signalé défectueux -->
+<div class="mo" id="mo-materiovigilance">
+  <div class="modal" style="max-width:700px"><div class="mh"><h3>🔍 Matériovigilance — recherche par n° de lot</h3><button class="mclose" onclick="CM('mo-materiovigilance')">✕</button></div>
+  <div class="mc">
+    <div style="font-size:13px;color:var(--txt-l);margin-bottom:12px">Recherchez un n° de lot (fabricant) signalé défectueux ou rappelé : le résultat inclut aussi bien les équipements installés chez un client que les extincteurs neufs encore en stock.</div>
+    <div class="search-bar" style="margin-bottom:12px">
+      <input type="text" id="mv-lot" placeholder="N° de lot (ou une partie)" onkeydown="if(event.key==='Enter')rechercherLotVigilance()">
+      <button class="btn btn-p" onclick="rechercherLotVigilance()">Rechercher</button>
+    </div>
+    <div id="mv-resultats"><div class="t-empty">Saisissez un n° de lot pour lancer la recherche.</div></div>
   </div></div>
 </div>
 
