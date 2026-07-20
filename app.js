@@ -2021,9 +2021,13 @@ function compresserPhoto(file,maxDim=800){
     img.src=URL.createObjectURL(file);
   });
 }
+// Agents extincteurs (mêmes valeurs que le champ "Agent extincteur" de la fiche équipement)
+// utilisés pour les pièces génériques (panneaux, étiquettes…) compatibles avec un type
+// d'agent plutôt qu'avec une marque/modèle précis d'extincteur.
+const AGENTS_EXTINCTEUR_COMPAT=['CO2','BC','ABC','D','A','AB','ABF','A lith'];
 function initCompatSelectsPC(){
   const marques=marquesPour('extincteur');
-  $('pc-cp-marque').innerHTML='<option value="">— Marque —</option>'+marques.map(m=>`<option>${m}</option>`).join('')+'<option value="__autre__">Autre…</option>';
+  $('pc-cp-marque').innerHTML='<option value="">— Marque —</option><option value="Toute marque">🌐 Toute marque</option>'+marques.map(m=>`<option>${m}</option>`).join('')+'<option value="__autre__">Autre…</option>';
   $('pc-cp-modele').innerHTML='<option value="">— Modèle —</option>';
 }
 function majModelesPC(){
@@ -2031,7 +2035,8 @@ function majModelesPC(){
   if(m==='__autre__'){m=prompt('Marque :')||'';if(!m){$('pc-cp-marque').value='';return}
     const o=document.createElement('option');o.textContent=m;$('pc-cp-marque').appendChild(o);$('pc-cp-marque').value=m;}
   const modeles=modelesPour('extincteur',m);
-  $('pc-cp-modele').innerHTML='<option value="">Tous les modèles '+(m||'')+'</option>'+modeles.map(x=>`<option>${x}</option>`).join('')+'<option value="__autre__">Autre…</option>';
+  const optAgents='<optgroup label="Agent extincteur">'+AGENTS_EXTINCTEUR_COMPAT.map(a=>`<option>${a}</option>`).join('')+'<option>Tous les agents</option></optgroup>';
+  $('pc-cp-modele').innerHTML='<option value="">Tous les modèles '+(m||'')+'</option>'+(modeles.length?modeles.map(x=>`<option>${x}</option>`).join(''):'')+optAgents+'<option value="__autre__">Autre…</option>';
 }
 async function choisirPhotoPiece(input){
   const f=input.files[0];input.value='';
