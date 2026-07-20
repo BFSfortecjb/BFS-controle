@@ -857,15 +857,16 @@ tr:hover td{background:#fafafa}
       </div>
       <div class="fg" style="grid-column:1/-1"><label>Catégorie</label>
         <select id="pc-categorie" onchange="document.getElementById('pc-compat-bloc').style.display=this.value==='piece'?'block':'none'">
-          <option value="piece">Pièce détachée (liée aux extincteurs)</option>
+          <option value="piece">Pièce détachée (liée à un équipement)</option>
           <option value="accessoire">Accessoire (panneau… ajout manuel, facturé en plus)</option>
         </select></div>
       <div class="fg" style="grid-column:1/-1" id="pc-compat-bloc">
-        <label style="display:flex;gap:8px;align-items:center;text-transform:none;font-weight:400;cursor:pointer;margin-bottom:8px"><input type="checkbox" id="pc-tous" style="width:16px;height:16px;margin:0" onchange="document.getElementById('pc-compat-editeur').style.display=this.checked?'none':'block'"> Compatible avec TOUS les extincteurs (scellés, goupilles…)</label>
+        <label style="display:flex;gap:8px;align-items:center;text-transform:none;font-weight:400;cursor:pointer;margin-bottom:8px"><input type="checkbox" id="pc-tous" style="width:16px;height:16px;margin:0" onchange="document.getElementById('pc-compat-editeur').style.display=this.checked?'none':'block'"> Compatible avec TOUS les équipements (scellés, goupilles, étiquettes génériques…)</label>
         <div id="pc-compat-editeur">
           <label>Compatibilités</label>
           <div id="pc-compat-list" style="margin:6px 0"></div>
           <div style="display:flex;gap:8px">
+            <select id="pc-cp-type" style="flex:1" onchange="majMarquesPC()"></select>
             <select id="pc-cp-marque" style="flex:1" onchange="majModelesPC()"></select>
             <select id="pc-cp-modele" style="flex:1"></select>
             <button type="button" class="btn btn-s btn-sm" onclick="ajouterCompat()">+ Ajouter</button>

@@ -1969,10 +1969,10 @@ window.stockSetAgence=function(btn,id){
 
 function compatTxt(p){
   if(p.categorie==='accessoire')return '🏷 Accessoire';
-  if(p.compatible_tous)return '✅ Tous extincteurs';
+  if(p.compatible_tous)return '✅ Tous équipements';
   const comp=Array.isArray(p.compatibilites)?p.compatibilites:[];
   const base=[p.marque,p.modele].filter(Boolean).join(' ');
-  const all=[base,...comp.map(x=>x.marque+(x.modele?' '+x.modele:' (tous)'))].filter(Boolean);
+  const all=[base,...comp.map(x=>(x.type?libelleTypeEquip(x.type)+' ':'')+x.marque+(x.modele?' '+x.modele:' (tous)'))].filter(Boolean);
   return all.length?all.join(' · '):'—';
 }
 function renderStock(){
@@ -2026,16 +2026,23 @@ function compresserPhoto(file,maxDim=800){
 // d'agent plutôt qu'avec une marque/modèle précis d'extincteur.
 const AGENTS_EXTINCTEUR_COMPAT=['CO2','BC','ABC','D','A','AB','ABF','A lith'];
 function initCompatSelectsPC(){
-  const marques=marquesPour('extincteur');
+  $('pc-cp-type').innerHTML=typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('');
+  $('pc-cp-type').value='extincteur';
+  majMarquesPC();
+}
+function majMarquesPC(){
+  const type=$('pc-cp-type').value||'extincteur';
+  const marques=marquesPour(type);
   $('pc-cp-marque').innerHTML='<option value="">— Marque —</option><option value="Toute marque">🌐 Toute marque</option>'+marques.map(m=>`<option>${m}</option>`).join('')+'<option value="__autre__">Autre…</option>';
   $('pc-cp-modele').innerHTML='<option value="">— Modèle —</option>';
 }
 function majModelesPC(){
+  const type=$('pc-cp-type').value||'extincteur';
   let m=$('pc-cp-marque').value;
   if(m==='__autre__'){m=prompt('Marque :')||'';if(!m){$('pc-cp-marque').value='';return}
     const o=document.createElement('option');o.textContent=m;$('pc-cp-marque').appendChild(o);$('pc-cp-marque').value=m;}
-  const modeles=modelesPour('extincteur',m);
-  const optAgents='<optgroup label="Agent extincteur">'+AGENTS_EXTINCTEUR_COMPAT.map(a=>`<option>${a}</option>`).join('')+'<option>Tous les agents</option></optgroup>';
+  const modeles=modelesPour(type,m);
+  const optAgents=type==='extincteur'?'<optgroup label="Agent extincteur">'+AGENTS_EXTINCTEUR_COMPAT.map(a=>`<option>${a}</option>`).join('')+'<option>Tous les agents</option></optgroup>':'';
   $('pc-cp-modele').innerHTML='<option value="">Tous les modèles '+(m||'')+'</option>'+(modeles.length?modeles.map(x=>`<option>${x}</option>`).join(''):'')+optAgents+'<option value="__autre__">Autre…</option>';
 }
 async function choisirPhotoPiece(input){
@@ -2128,17 +2135,19 @@ function openPieceModal(prefill=null){
   renderCompatPiece();renderLotsPiece();
   OM('mo-piece');
 }
+function libelleTypeEquip(code){const t=(typesEquip||[]).find(t=>t.code===code);return t?(t.icone+' '+t.libelle):(code||'')}
 function renderCompatPiece(){
   const el=$('pc-compat-list');if(!el)return;
-  el.innerHTML=_compatPiece.length?_compatPiece.map((x,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg);border-radius:8px;padding:4px 8px;margin:0 6px 6px 0;font-size:12px">${x.marque}${x.modele?' '+x.modele:' (tous modèles)'}<button type="button" onclick="_compatPiece.splice(${i},1);renderCompatPiece()" style="background:none;border:none;color:#dc2626;cursor:pointer;padding:0">✕</button></span>`).join('')
+  el.innerHTML=_compatPiece.length?_compatPiece.map((x,i)=>`<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg);border-radius:8px;padding:4px 8px;margin:0 6px 6px 0;font-size:12px">${libelleTypeEquip(x.type||'extincteur')} — ${x.marque}${x.modele?' '+x.modele:' (tous modèles)'}<button type="button" onclick="_compatPiece.splice(${i},1);renderCompatPiece()" style="background:none;border:none;color:#dc2626;cursor:pointer;padding:0">✕</button></span>`).join('')
     :'<span style="font-size:12px;color:var(--txt-l)">Aucune autre compatibilité.</span>';
 }
 function ajouterCompat(){
+  const type=$('pc-cp-type').value||'extincteur';
   let m=$('pc-cp-marque').value;let mo=$('pc-cp-modele').value;
   if(!m||m==='__autre__'){toast('Choisis une marque','err');return}
   if(mo==='__autre__'){mo=prompt('Modèle :')||'';if(!mo)return}
-  if(_compatPiece.find(x=>x.marque===m&&(x.modele||'')===(mo||''))){toast('Déjà dans la liste','err');return}
-  _compatPiece.push({marque:m,modele:mo||''});
+  if(_compatPiece.find(x=>(x.type||'extincteur')===type&&x.marque===m&&(x.modele||'')===(mo||''))){toast('Déjà dans la liste','err');return}
+  _compatPiece.push({type,marque:m,modele:mo||''});
   renderCompatPiece();
 }
 function editPiece(id){openPieceModal(stockPieces.find(p=>p.id===id))}
@@ -2148,6 +2157,12 @@ async function savePiece(){
   if(!code||!des){toast('Code et désignation obligatoires','err');return}
   const gPer=$('pc-peremption').checked;
   const cat=$('pc-categorie').value;
+  // Si une marque/modèle est sélectionnée dans l'éditeur de compatibilité mais que
+  // l'utilisateur a oublié de cliquer sur "+ Ajouter", on l'ajoute automatiquement
+  // avant d'enregistrer (évite la perte silencieuse de la sélection).
+  if(cat==='piece'&&!$('pc-tous').checked&&$('pc-cp-marque').value&&$('pc-cp-marque').value!=='__autre__'){
+    ajouterCompat();
+  }
   const p={code,designation:des,marque:$('pc-marque').value.trim(),modele:$('pc-modele').value.trim(),seuil_alerte:parseFloat($('pc-seuil').value)||0,prix_vente:parseFloat($('pc-prix').value)||null,agence_id:$('pc-agence').value||null,
     categorie:cat,compatible_tous:cat==='piece'&&$('pc-tous').checked,conso_par_controle:cat==='piece'&&$('pc-conso').checked,
     compatibilites:cat==='piece'&&!$('pc-tous').checked?_compatPiece:[],gestion_peremption:gPer,lots:gPer?_lotsPiece:[],updated_at:new Date().toISOString()};
