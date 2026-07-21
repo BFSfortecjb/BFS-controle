@@ -96,6 +96,27 @@ async function doLogout(){
 // ============================================================
 // RESET PASSWORD
 // ============================================================
+async function demanderResetPassword(e){
+  if(e)e.preventDefault();
+  const email=($('login-email').value||'').trim()||prompt('Votre adresse email :')||'';
+  if(!email)return;
+  const redirectTo=window.location.href.split('#')[0].split('?')[0];
+  const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo});
+  const err=$('login-err');
+  if(error){err.textContent='Erreur : '+error.message;err.style.display='block';return}
+  err.style.display='none';
+  toast('Si un compte existe avec cet email, un lien de réinitialisation vient d\'être envoyé.');
+}
+// Utilisée depuis l'onglet Utilisateurs (admin/secrétariat) pour envoyer
+// le même email de réinitialisation à un utilisateur donné.
+async function envoyerResetPassword(email){
+  if(!email){toast('Cet utilisateur n\'a pas d\'email','err');return}
+  if(!confirm('Envoyer un email de réinitialisation de mot de passe à '+email+' ?'))return;
+  const redirectTo=window.location.href.split('#')[0].split('?')[0];
+  const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo});
+  if(error){toast('Erreur: '+error.message,'err');return}
+  toast('Email de réinitialisation envoyé à '+email);
+}
 async function doResetPassword(){
   const pwd1=$('reset-pwd1').value;
   const pwd2=$('reset-pwd2').value;
@@ -194,10 +215,10 @@ function buildNav(){
     html+=navA('bons','📝','Bons d\'intervention');
     html+=navA('stock','📦','Stock & commandes');
     html+=navA('tarifs','💶','Tarifs');
+    html+=navA('utilisateurs','👥','Utilisateurs');
   }
   if(role==='admin'){
     html+=`<div class="nav-sec">Administration</div>`;
-    html+=navA('utilisateurs','👥','Utilisateurs');
     html+=navA('audit','🔍','Journal d\'audit');
     html+=navA('config-points','⚙️','Points de contrôle');
     html+=navA('sauvegarde','💾','Sauvegarde');

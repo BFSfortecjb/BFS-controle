@@ -1517,6 +1517,7 @@ function showAuditDetail(idx){
 async function loadUsers(){
   const {data}=await db.from('profils').select('*,agences(nom)').order('nom');
   users=data||[];renderUsers();
+  const btnInv=$('btn-inviter-user');if(btnInv)btnInv.style.display=ME.role==='admin'?'inline-flex':'none';
 }
 function renderUsers(){
   const q=$('q-users').value.toLowerCase();
@@ -1529,7 +1530,10 @@ function renderUsers(){
     <td><span class="badge ${u.role==='admin'?'br':u.role==='secretariat'?'bvi':'bb'}">${rl[u.role]||u.role}</span></td>
     <td>${u.agences?.nom||'—'}</td><td>${u.role==='technicien'?vb[u.visibilite]||'—':'—'}</td>
     <td>${u.actif?'<span class="badge bv">Oui</span>':'<span class="badge bg">Non</span>'}</td>
-    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editUser('${u.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="toggleUser('${u.id}',${u.actif})">${u.actif?'⏸':'▶'}</button></div></td>
+    <td><div class="ia">
+      ${ME.role==='admin'?`<button class="btn btn-s btn-xs" onclick="editUser('${u.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="toggleUser('${u.id}',${u.actif})">${u.actif?'⏸':'▶'}</button>`:''}
+      <button class="btn btn-s btn-xs" title="Envoyer un email de réinitialisation de mot de passe" onclick="envoyerResetPassword('${(u.email||'').replace(/'/g,"\\'")}')">🔑</button>
+    </div></td>
   </tr>`).join('')}</tbody></table>`;
 }
 function openUserModal(prefill=null){

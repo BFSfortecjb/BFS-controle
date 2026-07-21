@@ -216,7 +216,20 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="fg"><label>Email</label><input type="email" id="l-email" placeholder="prenom.nom@bfs.fr" autocomplete="email"></div>
     <div class="fg"><label>Mot de passe</label><input type="password" id="l-pwd" autocomplete="current-password"></div>
     <button class="btn btn-p" onclick="doLogin()">Se connecter</button>
-    <a href="index.html" style="display:block;text-align:center;margin-top:14px;font-size:13px;color:var(--txt-l)">← Version bureau</a>
+    <p style="text-align:center;margin-top:12px"><a href="#" onclick="demanderResetPassword(event)" style="font-size:13px;color:var(--rouge)">Mot de passe oublié ?</a></p>
+    <a href="index.html" style="display:block;text-align:center;margin-top:10px;font-size:13px;color:var(--txt-l)">← Version bureau</a>
+  </div>
+</div>
+
+<!-- ===== RESET MOT DE PASSE ===== -->
+<div class="screen" id="s-reset">
+  <div class="login-box">
+    <div class="login-logo"><strong>🔥 BFS Terrain</strong><span>Module technicien</span></div>
+    <div class="login-err" id="reset-err"></div>
+    <div class="login-ok" id="reset-ok" style="display:none;color:#16a34a;font-size:13px;margin-bottom:10px"></div>
+    <div class="fg"><label>Nouveau mot de passe</label><input type="password" id="reset-pwd1" placeholder="Minimum 8 caractères"></div>
+    <div class="fg"><label>Confirmer le mot de passe</label><input type="password" id="reset-pwd2"></div>
+    <button class="btn btn-p" onclick="doResetPassword()">Enregistrer le mot de passe</button>
   </div>
 </div>
 
@@ -907,9 +920,12 @@ async function doLogin(){
   const email=$('l-email').value.trim();const pwd=$('l-pwd').value;
   const err=$('login-err');err.style.display='none';
   if(!email||!pwd){err.textContent='Email et mot de passe requis.';err.style.display='block';return}
-  const {data,error}=await db.auth.signInWithPassword({email,password:pwd});
-  if(error){err.textContent='Email ou mot de passe incorrect.';err.style.display='block';return}
-  await onLogin(data.user);
+  window.__loginEnCours=true;
+  try{
+    const {data,error}=await db.auth.signInWithPassword({email,password:pwd});
+    if(error){err.textContent='Email ou mot de passe incorrect.';err.style.display='block';return}
+    await onLogin(data.user);
+  }finally{window.__loginEnCours=false}
 }
 $('l-pwd').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 
@@ -928,6 +944,49 @@ async function doLogout(){
   await db.auth.signOut();ME=null;goTo('s-login');
 }
 
+// ============================================================
+// RESET MOT DE PASSE
+// ============================================================
+async function demanderResetPassword(e){
+  if(e)e.preventDefault();
+  const email=($('l-email').value||'').trim()||prompt('Votre adresse email :')||'';
+  if(!email)return;
+  const redirectTo=window.location.href.split('#')[0].split('?')[0];
+  const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo});
+  const err=$('login-err');
+  if(error){err.textContent='Erreur : '+error.message;err.style.display='block';return}
+  err.style.display='none';
+  toast('Si un compte existe avec cet email, un lien de réinitialisation vient d\'être envoyé.');
+}
+async function doResetPassword(){
+  const pwd1=$('reset-pwd1').value;const pwd2=$('reset-pwd2').value;
+  const err=$('reset-err');const ok=$('reset-ok');
+  err.style.display='none';ok.style.display='none';
+  if(pwd1.length<8){err.textContent='Minimum 8 caractères.';err.style.display='block';return}
+  if(pwd1!==pwd2){err.textContent='Les mots de passe ne correspondent pas.';err.style.display='block';return}
+  const {error}=await db.auth.updateUser({password:pwd1});
+  if(error){err.textContent='Erreur: '+error.message;err.style.display='block';return}
+  ok.textContent='✓ Mot de passe modifié ! Redirection…';ok.style.display='block';
+  setTimeout(()=>{goTo('s-login');},2000);
+}
+// ⚠️ RÈGLE SUPABASE : ne JAMAIS faire d'appel Supabase directement dans ce
+// callback → deadlock. Tout le corps est différé avec setTimeout.
+db.auth.onAuthStateChange((event,session)=>{
+  setTimeout(async()=>{
+    if(event==='PASSWORD_RECOVERY'){
+      goTo('s-reset');
+      return;
+    }
+    if(event==='SIGNED_IN'&&session){
+      if(document.getElementById('s-reset').classList.contains('active'))return;
+      if(!ME&&!window.__loginEnCours)await onLogin(session.user);
+    }
+    if(event==='SIGNED_OUT'){
+      ME=null;goTo('s-login');
+    }
+  },0);
+});
+
 // Précharger le logo BFS (filigrane PDF)
 fetch('https://bfsfortecjb.github.io/BFS-controle/icons/icon-512.png')
   .then(r=>r.blob()).then(blob=>{
@@ -936,7 +995,9 @@ fetch('https://bfsfortecjb.github.io/BFS-controle/icons/icon-512.png')
     reader.readAsDataURL(blob);
   }).catch(()=>{});
 
-db.auth.getSession().then(async({data:{session}})=>{if(session)await onLogin(session.user)});
+db.auth.getSession().then(async({data:{session}})=>{
+  if(session&&!window.location.hash.includes('type=recovery'))await onLogin(session.user);
+});
 
 // ============================================================
 // PARC CLIENT
