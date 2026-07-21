@@ -134,13 +134,21 @@ async function doResetPassword(){
 // ⚠️ RÈGLE SUPABASE : ne JAMAIS faire d'appel Supabase (db.from, db.auth…)
 // directement dans ce callback → deadlock (la connexion se fige sans erreur).
 // C'est pourquoi tout le corps est différé avec setTimeout.
+//
+// ⚠️ IMPORTANT : la détection "PASSWORD_RECOVERY" doit passer UNIQUEMENT par
+// cet évènement (émis par Supabase), jamais par un test sur window.location.hash
+// dans un getSession() séparé — le SDK Supabase nettoie ce hash dès son
+// initialisation, souvent AVANT que ce code ne s'exécute, ce qui rendait le test
+// toujours faux et provoquait une connexion automatique sans mot de passe au
+// clic sur un lien de réinitialisation. 'INITIAL_SESSION' couvre le cas d'une
+// session déjà valide au chargement (remplace l'ancien appel getSession() séparé).
 db.auth.onAuthStateChange((event,session)=>{
   setTimeout(async()=>{
     if(event==='PASSWORD_RECOVERY'){
       showScreen('screen-reset');
       return;
     }
-    if(event==='SIGNED_IN'&&session){
+    if((event==='SIGNED_IN'||event==='INITIAL_SESSION')&&session){
       if($('screen-reset').classList.contains('active'))return;
       if(!ME&&!window.__loginEnCours)await onLogin(session.user);
     }
@@ -148,13 +156,6 @@ db.auth.onAuthStateChange((event,session)=>{
       ME=null;showScreen('screen-login');
     }
   },0);
-});
-
-// Vérifier session existante au chargement
-db.auth.getSession().then(async({data:{session}})=>{
-  if(session&&!window.location.hash.includes('type=recovery')){
-    await onLogin(session.user);
-  }
 });
 
 // ============================================================

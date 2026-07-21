@@ -971,13 +971,20 @@ async function doResetPassword(){
 }
 // ⚠️ RÈGLE SUPABASE : ne JAMAIS faire d'appel Supabase directement dans ce
 // callback → deadlock. Tout le corps est différé avec setTimeout.
+//
+// ⚠️ IMPORTANT : la détection "PASSWORD_RECOVERY" doit passer UNIQUEMENT par
+// cet évènement, jamais par un test sur window.location.hash dans un getSession()
+// séparé — le SDK Supabase nettoie ce hash dès son initialisation, souvent AVANT
+// que ce code ne s'exécute, ce qui rend le test toujours faux et provoque une
+// connexion automatique sans mot de passe. 'INITIAL_SESSION' couvre le cas d'une
+// session déjà valide au chargement (remplace l'ancien appel getSession() séparé).
 db.auth.onAuthStateChange((event,session)=>{
   setTimeout(async()=>{
     if(event==='PASSWORD_RECOVERY'){
       goTo('s-reset');
       return;
     }
-    if(event==='SIGNED_IN'&&session){
+    if((event==='SIGNED_IN'||event==='INITIAL_SESSION')&&session){
       if(document.getElementById('s-reset').classList.contains('active'))return;
       if(!ME&&!window.__loginEnCours)await onLogin(session.user);
     }
@@ -994,10 +1001,6 @@ fetch('https://bfsfortecjb.github.io/BFS-controle/icons/icon-512.png')
     reader.onload=e=>{window._bfsLogoB64=e.target.result;};
     reader.readAsDataURL(blob);
   }).catch(()=>{});
-
-db.auth.getSession().then(async({data:{session}})=>{
-  if(session&&!window.location.hash.includes('type=recovery'))await onLogin(session.user);
-});
 
 // ============================================================
 // PARC CLIENT
