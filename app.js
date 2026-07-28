@@ -1216,7 +1216,7 @@ function ajouterLigneContrat(){
         <select id="lc-type" onchange="document.getElementById('lc-marque-modele').innerHTML=marqueModeleHTML(this.value,'lc-');document.getElementById('lc-champs').innerHTML=champsLigneHTML(this.value,'lc-')">${typesEquip.map(t=>`<option value="${t.code}">${t.icone} ${t.libelle}</option>`).join('')}</select></div>
       <div id="lc-marque-modele">${marqueModeleHTML(typesEquip[0]?.code,'lc-')}</div>
       <div id="lc-champs">${champsLigneHTML(typesEquip[0]?.code,'lc-')}</div>
-      <div class="fg" style="margin-bottom:12px"><label>Tarif de la base (remplit le prix)</label><select id="lc-tarif" onchange="const t=(typeof tarifs!=='undefined'?tarifs:[]).find(x=>x.id===this.value);if(t)document.getElementById('lc-pu').value=(+t.prix_ht).toFixed(2)"><option value=""></option>${(typeof tarifs!=='undefined'?tarifs:[]).filter(t=>t.actif!==false).map(t=>`<option value="${t.id}">${t.designation} — ${(+t.prix_ht).toFixed(2)} €</option>`).join('')}</select></div>
+      <div class="fg" style="margin-bottom:12px"><label>Tarif de la base (remplit le prix)</label><select id="lc-tarif" onchange="const t=(typeof tarifs!=='undefined'?tarifs:[]).find(x=>x.id===this.value);if(t&&t.prix_ht!=null)document.getElementById('lc-pu').value=(+t.prix_ht).toFixed(2)"><option value=""></option>${(typeof tarifs!=='undefined'?tarifs:[]).filter(t=>t.actif!==false).map(t=>`<option value="${t.id}">${t.designation}${t.prix_ht!=null?' — '+(+t.prix_ht).toFixed(2)+' €':' — prix à définir'}</option>`).join('')}</select></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="fg"><label>Quantité *</label><input type="number" id="lc-qte" min="1" value="1"></div>
         <div class="fg"><label>Prix unitaire HT (€) *</label><input type="number" id="lc-pu" step="0.01" min="0"></div>
@@ -1777,7 +1777,7 @@ function renderTarifs(){
     <td>${t.designation}</td>
     <td><span class="badge bg">${catTarif(t.categorie)}</span></td>
     <td>${t.unite||'unité'}</td>
-    <td style="text-align:right;font-weight:700">${(+t.prix_ht).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})}</td>
+    <td style="text-align:right;font-weight:700">${t.prix_ht!=null?(+t.prix_ht).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'<span style="font-weight:400;color:var(--txt-l)">à définir</span>'}</td>
     <td style="font-size:12px">${fmt(t.updated_at)}${t.profils?'<br><small style="color:var(--txt-l)">'+(t.profils.prenom||'')+' '+t.profils.nom+'</small>':''}</td>
     ${droit?`<td><div class="ia"><button class="btn btn-s btn-xs" onclick="editTarif('${t.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="deleteTarif('${t.id}')">🗑</button></div></td>`:''}
   </tr>`).join('')}</tbody></table>`;
@@ -1793,13 +1793,14 @@ function editTarif(id){openTarifModal(tarifs.find(t=>t.id===id))}
 async function saveTarif(){
   const id=$('tf-id').value;
   const code=$('tf-code').value.trim().toUpperCase();const des=$('tf-designation').value.trim();
-  const prix=parseFloat($('tf-prix').value);
-  if(!code||!des||isNaN(prix)){toast('Code, désignation et prix obligatoires','err');return}
+  const prixRaw=$('tf-prix').value;
+  const prix=prixRaw===''?null:parseFloat(prixRaw);
+  if(!code||!des||(prix!==null&&isNaN(prix))){toast('Code et désignation obligatoires (le prix peut rester vide pour l\'instant)','err');return}
   const p={code,designation:des,categorie:$('tf-cat').value,unite:$('tf-unite').value.trim()||'unité',prix_ht:prix,maj_par:ME.id,updated_at:new Date().toISOString()};
   const {data,error}=id?await db.from('tarifs').update(p).eq('id',id).select():await db.from('tarifs').insert(p).select();
   if(error){toast('Erreur : '+error.message,'err');return}
   if(!data||!data.length){toast('Modification refusée — droits « gestion des tarifs » requis','err');return}
-  await syncPrixStock(code,prix);
+  if(prix!==null)await syncPrixStock(code,prix);
   toast(id?'Tarif modifié':'Tarif créé');CM('mo-tarif');loadTarifs();
 }
 async function deleteTarif(id){
@@ -1820,11 +1821,14 @@ async function importTarifsExcel(input){
     const wb=XLSX.read(await file.arrayBuffer());
     const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
     const col=(r,...noms)=>{for(const n of noms){for(const k of Object.keys(r)){if(k.toLowerCase().trim()===n)return r[k]}}return ''};
-    let crees=0,maj=0,err=0;
+    let crees=0,maj=0,err=0,sansPrix=0;
     for(const r of rows){
       const code=String(col(r,'code')).trim().toUpperCase();
-      const prix=parseFloat(String(col(r,'prix ht','prix','prix_ht','tarif')).replace(',','.'));
-      if(!code||isNaN(prix)){err++;continue}
+      if(!code){err++;continue}
+      const prixStr=String(col(r,'prix ht','prix','prix_ht','tarif')).trim();
+      const prix=prixStr===''?null:parseFloat(prixStr.replace(',','.'));
+      if(prixStr!==''&&isNaN(prix)){err++;continue}
+      if(prix===null){sansPrix++;continue} // ligne sans prix : rien à mettre à jour, on l'ignore silencieusement
       const exist=tarifs.find(t=>t.code===code);
       const p={prix_ht:prix,maj_par:ME.id,updated_at:new Date().toISOString()};
       const des=String(col(r,'désignation','designation')).trim();if(des)p.designation=des;
@@ -1840,12 +1844,12 @@ async function importTarifsExcel(input){
       }
       await syncPrixStock(code,prix);
     }
-    toast(`Import tarifs : ${crees} créé(s), ${maj} mis à jour${err?', '+err+' ligne(s) ignorée(s)':''}`);
+    toast(`Import tarifs : ${crees} créé(s), ${maj} mis à jour${sansPrix?', '+sansPrix+' sans prix (ignorée(s))':''}${err?', '+err+' ligne(s) en erreur':''}`);
   }catch(e){toast('Fichier illisible : '+e.message,'err')}
   loadTarifs();
 }
 function exportTarifsXLS(){
-  const ws=XLSX.utils.json_to_sheet(tarifs.map(t=>({Code:t.code,'Désignation':t.designation,'Catégorie':t.categorie,'Unité':t.unite||'unité','Prix HT':+t.prix_ht,'Dernière maj':fmt(t.updated_at)})));
+  const ws=XLSX.utils.json_to_sheet(tarifs.map(t=>({Code:t.code,'Désignation':t.designation,'Catégorie':t.categorie,'Unité':t.unite||'unité','Prix HT':t.prix_ht!=null?+t.prix_ht:'','Dernière maj':fmt(t.updated_at)})));
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Tarifs');
   XLSX.writeFile(wb,'BFS_tarifs_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
@@ -1853,8 +1857,10 @@ function exportTarifsXLS(){
 async function augmentationTarifs(){
   if(!peutGererTarifs()){toast('Réservé aux gestionnaires des tarifs','err');return}
   const fc=$('f-cat-tarifs').value;const q=($('q-tarifs').value||'').toLowerCase();
-  const cibles=tarifs.filter(t=>(!fc||t.categorie===fc)&&(t.code+' '+t.designation).toLowerCase().includes(q));
-  if(!cibles.length){toast('Aucun tarif dans la sélection','err');return}
+  const tousCibles=tarifs.filter(t=>(!fc||t.categorie===fc)&&(t.code+' '+t.designation).toLowerCase().includes(q));
+  const cibles=tousCibles.filter(t=>t.prix_ht!=null);
+  const sansPrix=tousCibles.length-cibles.length;
+  if(!cibles.length){toast('Aucun tarif avec un prix dans la sélection','err');return}
   const p=parseFloat((prompt('Augmentation en % à appliquer aux '+cibles.length+' tarif(s) affichés\n(ex : 3 pour +3 %, -2 pour une baisse) :')||'').replace(',','.'));
   if(isNaN(p)||p===0)return;
   if(!confirm('Appliquer '+(p>0?'+':'')+p+' % à '+cibles.length+' tarif(s) ?'))return;
@@ -1864,7 +1870,7 @@ async function augmentationTarifs(){
     const {data,error}=await db.from('tarifs').update({prix_ht:nouveau,maj_par:ME.id,updated_at:new Date().toISOString()}).eq('id',t.id).select();
     if(!error&&data&&data.length){ok++;await syncPrixStock(t.code,nouveau)}
   }
-  toast(ok+' tarif(s) augmenté(s) de '+(p>0?'+':'')+p+' %');
+  toast(ok+' tarif(s) augmenté(s) de '+(p>0?'+':'')+p+' %'+(sansPrix?' ('+sansPrix+' sans prix ignoré(s))':''));
   loadTarifs();
 }
 
@@ -1912,6 +1918,7 @@ async function chargerStockNeufs(){
 function renderStockNeufs(){
   const el=$('tbl-stock-neufs');if(!el)return;
   const anneeCourante=new Date().getFullYear();
+  const spanAnnee=$('stockneuf-annee-courante');if(spanAnnee)spanAnnee.textContent=anneeCourante;
   const seulLocation=$('f-stockneuf-location')?.checked;
   const anneeDe=e=>e.date_fabrication?new Date(e.date_fabrication).getFullYear():null;
   let data=stockNeufs;

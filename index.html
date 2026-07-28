@@ -527,7 +527,7 @@ tr:hover td{background:#fafafa}
           <div class="search-bar" style="margin-bottom:0">
             <label style="display:flex;gap:8px;align-items:center;font-weight:400;text-transform:none;font-size:13px;cursor:pointer">
               <input type="checkbox" id="f-stockneuf-location" style="width:16px;height:16px;margin:0" onchange="renderStockNeufs()">
-              🔄 Afficher uniquement ceux à privilégier en location (année de fabrication ≠ ${new Date().getFullYear()})
+              🔄 Afficher uniquement ceux à privilégier en location (année de fabrication ≠ <span id="stockneuf-annee-courante"></span>)
             </label>
           </div>
           <div id="tbl-stock-neufs"><div class="t-empty">Chargement…</div></div>
@@ -820,7 +820,7 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Catégorie</label><select id="tf-cat"><option value="prestation">Prestation</option><option value="piece">Pièce</option><option value="equipement">Équipement neuf</option><option value="accessoire">Accessoire</option></select></div>
       <div class="fg" style="grid-column:1/-1"><label>Désignation *</label><input type="text" id="tf-designation" placeholder="Ex : Vérification annuelle extincteur"></div>
       <div class="fg"><label>Unité</label><input type="text" id="tf-unite" value="unité"></div>
-      <div class="fg"><label>Prix HT (€) *</label><input type="number" id="tf-prix" step="0.01" min="0"></div>
+      <div class="fg"><label>Prix HT (€)</label><input type="number" id="tf-prix" step="0.01" min="0" placeholder="Laisser vide si pas encore défini"></div>
     </div>
     <div class="fa"><button class="btn btn-s" onclick="CM('mo-tarif')">Annuler</button><button class="btn btn-p" onclick="saveTarif()">Enregistrer</button></div>
   </div></div>
