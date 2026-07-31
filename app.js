@@ -1773,8 +1773,8 @@ function renderTarifs(){
   if(!data.length){el.innerHTML='<div class="t-empty">Aucun tarif — importe ta base tarifaire (Excel : Code, Désignation, Catégorie, Unité, Prix HT).</div>';return}
   const droit=peutGererTarifs();
   el.innerHTML=`<table><thead><tr><th>Code</th><th>Désignation</th><th>Catégorie</th><th>Unité</th><th style="text-align:right">Prix HT</th><th>Dernière maj</th>${droit?'<th>Actions</th>':''}</tr></thead><tbody>${data.map(t=>`<tr${t.actif===false?' style="opacity:.5"':''}>
-    <td><strong>${t.code}</strong></td>
-    <td>${t.designation}</td>
+    <td><strong>${t.code||'—'}</strong></td>
+    <td>${t.designation||'—'}</td>
     <td><span class="badge bg">${catTarif(t.categorie)}</span></td>
     <td>${t.unite||'unité'}</td>
     <td style="text-align:right;font-weight:700">${t.prix_ht!=null?(+t.prix_ht).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'<span style="font-weight:400;color:var(--txt-l)">à définir</span>'}</td>
