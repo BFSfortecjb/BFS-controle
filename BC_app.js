@@ -1377,6 +1377,7 @@ async function loadBons(){
   const {data, error} = await q;
   if(error){console.error('Erreur bons:',error);}
   const bons = data || [];
+  await enrichirPdfBons(bons);
 
   const {data:allBons} = await db.from('bons_intervention').select('statut_facturation');
   const aFacturer = (allBons||[]).filter(b=>b.statut_facturation==='à_facturer').length;
@@ -1397,7 +1398,8 @@ async function loadBons(){
     if(f.name.startsWith('rapport_'))rapports[f.name.slice(8,44)]=f.name;
     if(f.name.startsWith('bulletin_'))bulletins[f.name.slice(9,45)]=f.name;
   });
-  const urlArch=n=>db.storage.from('bons-intervention').getPublicUrl(n).data.publicUrl;
+  const urlsArch=await urlsSigneesBatch('bons-intervention',[...Object.values(bulletins),...Object.values(rapports)]);
+  const urlArch=n=>urlsArch[n]||'#';
 
   const el = $('bons-list');
   if(!bons.length){el.innerHTML='<div class="t-empty">Aucun bon d\'intervention</div>';return}
@@ -1891,6 +1893,7 @@ async function loadStock(){
   ]);
   if(e1){$('tbl-stock').innerHTML='<div class="t-empty">Erreur : '+e1.message+'<br><small>Les tables de stock ont-elles été créées dans Supabase ?</small></div>';return}
   stockPieces=p||[];_stockInventaires=inv||[];_stockMouvements=mv||[];_stockAgences=ags||[];
+  await enrichirPhotosPieces(stockPieces);
   // Onglets agences
   const tabs=$('stock-ag-tabs');
   if(tabs)tabs.innerHTML=`<button class="ag-tab ${_stockAgFiltre===''?'active':''}" onclick="stockSetAgence(this,'')">🌍 Toutes</button>`+_stockAgences.map(a=>`<button class="ag-tab ${_stockAgFiltre===a.id?'active':''}" onclick="stockSetAgence(this,'${a.id}')">📍 ${a.nom}</button>`).join('');

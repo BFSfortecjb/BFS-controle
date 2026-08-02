@@ -866,6 +866,37 @@ const SURL='https://dqraobwozowtnrieitkp.supabase.co';
 const SKEY='sb_publishable_UhkImOyooXPnAqTCNMJ4wA_VVqscCmK';
 const db=supabase.createClient(SURL,SKEY,{db:{schema:'controle'}});
 
+// ---- URLS SIGNÉES (buckets Storage privés) ----
+// Mêmes helpers que côté bureau (core.js) — terrain.html est un fichier
+// autonome qui ne partage pas core.js, donc dupliqués ici.
+async function urlSignee(bucket,path,expiresIn=3600){
+  if(!path)return null;
+  try{
+    const {data,error}=await db.storage.from(bucket).createSignedUrl(path,expiresIn);
+    return error?null:data.signedUrl;
+  }catch(e){return null}
+}
+async function urlsSigneesBatch(bucket,paths,expiresIn=3600){
+  paths=[...new Set((paths||[]).filter(Boolean))];
+  if(!paths.length)return{};
+  try{
+    const {data,error}=await db.storage.from(bucket).createSignedUrls(paths,expiresIn);
+    const map={};
+    if(!error)(data||[]).forEach(d=>{if(d.signedUrl)map[d.path]=d.signedUrl});
+    return map;
+  }catch(e){return{}}
+}
+async function enrichirPhotosPieces(pieces){
+  const map=await urlsSigneesBatch('stock-photos',(pieces||[]).map(p=>p.photo_path));
+  (pieces||[]).forEach(p=>{p.photo_url=p.photo_path?(map[p.photo_path]||null):null});
+  return pieces;
+}
+async function enrichirPdfBons(bons){
+  const map=await urlsSigneesBatch('bons-intervention',(bons||[]).map(b=>b.pdf_path));
+  (bons||[]).forEach(b=>{if(b.pdf_path)b.pdf_url=map[b.pdf_path]||null});
+  return bons;
+}
+
 // ---- MODE HORS-LIGNE ----
 if('serviceWorker' in navigator){navigator.serviceWorker.register('BC_sw.js').catch(()=>{})}
 // Requête avec cache local de secours (l'appli reste consultable sans réseau)
@@ -2006,6 +2037,7 @@ async function chargerStockUsage(equip){
   const el=$('stock-usage');if(!el)return;
   if(pieces===null){el.innerHTML='<div style="font-size:12px;color:#dc2626">Stock indisponible (hors-ligne sans cache)</div>';_stockDispo=[];return}
   _stockDispo=(pieces||[]).filter(p=>pieceCompatible(p,equip));
+  if(navigator.onLine)try{await enrichirPhotosPieces(_stockDispo)}catch(e){}
   _usageParCatalogue={};
   // Reprise : re-lier silencieusement les pièces déjà cochées ✓
   currentPieces.filter(x=>x.piece_catalogue_id&&x.type_action==='changée').forEach(x=>{
@@ -2882,6 +2914,7 @@ async function ouvrirStock(){
   const [{data:inv,error},{data:pieces,error:ep}]=await Promise.all([qi,qp]);
   if(error||ep){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--txt-l)">Erreur : '+(error||ep).message+'</div>';$('stock-footer').style.display='none';return}
   _piecesAgence=pieces||[];
+  try{await enrichirPhotosPieces(_piecesAgence)}catch(e){}
   _inventaire=(inv&&inv[0])||null;
   if(_inventaire){
     const {data:mv}=await db.from('stock_mouvements').select('*,stock_pieces(code,designation)').eq('inventaire_id',_inventaire.id).order('created_at',{ascending:false});
@@ -2986,6 +3019,7 @@ async function traiterScanPiece(codePiece){
       _pieceEnCours=np;
     }else return;
   }else _pieceEnCours=p;
+  if(_pieceEnCours.photo_path)_pieceEnCours.photo_url=await urlSignee('stock-photos',_pieceEnCours.photo_path);
   const ph=$('sp-photo');
   if(_pieceEnCours.photo_url){ph.src=_pieceEnCours.photo_url;ph.style.display='block'}else ph.style.display='none';
   $('sp-designation').textContent=_pieceEnCours.designation;
@@ -3289,6 +3323,7 @@ async function chargerRapportsClient(clientId){
     .order('date_intervention',{ascending:false})
     .limit(5);
   if(error||!bons||!bons.length)return;
+  await enrichirPdfBons(bons);
   bloc.style.display='block';
   el.innerHTML=bons.map(b=>`<div class="card" style="margin-bottom:8px">
     <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;gap:10px">

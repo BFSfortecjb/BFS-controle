@@ -17,6 +17,44 @@ const db=supabase.createClient(SURL,SKEY,{db:{schema:'controle'}});
 console.log('BFS Index: Supabase OK');
 
 // ============================================================
+// URLS SIGNÉES (buckets Storage privés)
+// ============================================================
+// Les buckets ne sont plus publics : on ne fait plus confiance aux colonnes
+// photo_url/pdf_url stockées en base (elles peuvent être d'anciennes URLs
+// publiques périmées) — on régénère toujours une URL signée à la volée à
+// partir du chemin stocké (photo_path/pdf_path), avec une expiration courte.
+async function urlSignee(bucket,path,expiresIn=3600){
+  if(!path)return null;
+  try{
+    const {data,error}=await db.storage.from(bucket).createSignedUrl(path,expiresIn);
+    return error?null:data.signedUrl;
+  }catch(e){return null}
+}
+async function urlsSigneesBatch(bucket,paths,expiresIn=3600){
+  paths=[...new Set((paths||[]).filter(Boolean))];
+  if(!paths.length)return{};
+  try{
+    const {data,error}=await db.storage.from(bucket).createSignedUrls(paths,expiresIn);
+    const map={};
+    if(!error)(data||[]).forEach(d=>{if(d.signedUrl)map[d.path]=d.signedUrl});
+    return map;
+  }catch(e){return{}}
+}
+// Enrichit un tableau d'objets ayant un champ photo_path avec un photo_url
+// fraîchement signé (écrase l'ancienne valeur, ne touche pas la base).
+async function enrichirPhotosPieces(pieces){
+  const map=await urlsSigneesBatch('stock-photos',(pieces||[]).map(p=>p.photo_path));
+  (pieces||[]).forEach(p=>{p.photo_url=p.photo_path?(map[p.photo_path]||null):null});
+  return pieces;
+}
+// Idem pour les bons d'intervention (PDF signé d'origine).
+async function enrichirPdfBons(bons){
+  const map=await urlsSigneesBatch('bons-intervention',(bons||[]).map(b=>b.pdf_path));
+  (bons||[]).forEach(b=>{if(b.pdf_path)b.pdf_url=map[b.pdf_path]||null});
+  return bons;
+}
+
+// ============================================================
 // ÉTAT GLOBAL
 // ============================================================
 let ME=null;
