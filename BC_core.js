@@ -13,7 +13,7 @@ console.log('BFS Index: début du script');
 // ============================================================
 const SURL='https://dqraobwozowtnrieitkp.supabase.co';
 const SKEY='sb_publishable_UhkImOyooXPnAqTCNMJ4wA_VVqscCmK';
-const db=supabase.createClient(SURL,SKEY,{db:{schema:'controle'}});
+const db=supabase.createClient(SURL,SKEY,{db:{schema:'controle'},auth:{storageKey:'controle_auth'}});
 console.log('BFS Index: Supabase OK');
 
 // ============================================================

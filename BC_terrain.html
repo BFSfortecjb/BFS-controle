@@ -864,7 +864,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 // ============================================================
 const SURL='https://dqraobwozowtnrieitkp.supabase.co';
 const SKEY='sb_publishable_UhkImOyooXPnAqTCNMJ4wA_VVqscCmK';
-const db=supabase.createClient(SURL,SKEY,{db:{schema:'controle'}});
+const db=supabase.createClient(SURL,SKEY,{db:{schema:'controle'},auth:{storageKey:'controle_auth'}});
 
 // ---- URLS SIGNÉES (buckets Storage privés) ----
 // Mêmes helpers que côté bureau (core.js) — terrain.html est un fichier
@@ -898,19 +898,40 @@ async function enrichirPdfBons(bons){
 }
 
 // ---- MODE HORS-LIGNE ----
+// Migration one-shot des anciennes clés localStorage génériques (bfs_queue,
+// bfsc_<clé>) vers les nouvelles clés préfixées controle_ — évite de perdre
+// une file d'attente hors-ligne encore non synchronisée au moment du
+// déploiement de ce changement de nommage.
+(function migrerClesLocalStorage(){
+  try{
+    const ancienneQueue=localStorage.getItem('bfs_queue');
+    if(ancienneQueue!==null&&localStorage.getItem('controle_queue')===null){
+      localStorage.setItem('controle_queue',ancienneQueue);
+      localStorage.removeItem('bfs_queue');
+    }
+    for(let i=localStorage.length-1;i>=0;i--){
+      const k=localStorage.key(i);
+      if(k&&k.startsWith('bfsc_')){
+        const nouvelleCle='controle_cache_'+k.slice(5);
+        if(localStorage.getItem(nouvelleCle)===null)localStorage.setItem(nouvelleCle,localStorage.getItem(k));
+        localStorage.removeItem(k);
+      }
+    }
+  }catch(e){}
+})();
 if('serviceWorker' in navigator){navigator.serviceWorker.register('BC_sw.js').catch(()=>{})}
 // Requête avec cache local de secours (l'appli reste consultable sans réseau)
 async function reqCache(key,fn){
   let d=null;
   try{const r=await fn();if(!r.error)d=r.data}catch(e){}
-  if(d!==null){try{localStorage.setItem('bfsc_'+key,JSON.stringify(d))}catch(e){}}
-  else{const s=localStorage.getItem('bfsc_'+key);if(s)d=JSON.parse(s)}
+  if(d!==null){try{localStorage.setItem('controle_cache_'+key,JSON.stringify(d))}catch(e){}}
+  else{const s=localStorage.getItem('controle_cache_'+key);if(s)d=JSON.parse(s)}
   return d;
 }
 function blobVersDataUrl(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(blob)})}
 function dataUrlVersBlob(du){const [h,b64]=du.split(',');const mime=h.match(/:(.*?);/)[1];const bin=atob(b64);const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);return new Blob([arr],{type:mime})}
 function majBadgeSync(){
-  const n=JSON.parse(localStorage.getItem('bfs_queue')||'[]').length;
+  const n=JSON.parse(localStorage.getItem('controle_queue')||'[]').length;
   let b=document.getElementById('sync-banner');
   if(!n){if(b)b.remove();return}
   if(!b){b=document.createElement('div');b.id='sync-banner';b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:500;background:#b45309;color:#fff;padding:8px 14px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:10px';document.body.appendChild(b)}
@@ -2145,10 +2166,10 @@ async function enregistrerVerifHorsLigne(verifPayload,points,obs,echeance){
     equipement_id:currentEquipId,session_id:currentSession?.id||null,
     stockUsage:{..._stockUsage},photos,ts:Date.now()
   };
-  const queue=JSON.parse(localStorage.getItem('bfs_queue')||'[]');
+  const queue=JSON.parse(localStorage.getItem('controle_queue')||'[]');
   queue.push(item);
-  try{localStorage.setItem('bfs_queue',JSON.stringify(queue))}
-  catch(e){item.photos=[];queue[queue.length-1]=item;localStorage.setItem('bfs_queue',JSON.stringify(queue));toast('Photos non conservées (stockage local plein)','err')}
+  try{localStorage.setItem('controle_queue',JSON.stringify(queue))}
+  catch(e){item.photos=[];queue[queue.length-1]=item;localStorage.setItem('controle_queue',JSON.stringify(queue));toast('Photos non conservées (stockage local plein)','err')}
   sessionVerifs[currentEquipId]={points,pieces:currentPieces,resultat:currentStatut,obs,echeance,verifId:null,horsLigne:true};
   sauvegarderSessionLocale();
   majBadgeSync();
@@ -2160,7 +2181,7 @@ async function enregistrerVerifHorsLigne(verifPayload,points,obs,echeance){
 let _syncEnCours=false;
 async function syncVerifsHorsLigne(){
   if(_syncEnCours||!navigator.onLine)return;
-  let queue=JSON.parse(localStorage.getItem('bfs_queue')||'[]');
+  let queue=JSON.parse(localStorage.getItem('controle_queue')||'[]');
   if(!queue.length){majBadgeSync();return}
   _syncEnCours=true;
   toast('📤 Synchronisation de '+queue.length+' vérification(s)…');
@@ -2206,7 +2227,7 @@ async function syncVerifsHorsLigne(){
       }
     }catch(e){restantes.push(item)}
   }
-  localStorage.setItem('bfs_queue',JSON.stringify(restantes));
+  localStorage.setItem('controle_queue',JSON.stringify(restantes));
   _syncEnCours=false;
   majBadgeSync();
   toast(restantes.length?('⚠ '+restantes.length+' vérification(s) restent en attente'):'✓ Synchronisation terminée');

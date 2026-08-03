@@ -380,7 +380,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 // ============================================================
 const SURL='https://dqraobwozowtnrieitkp.supabase.co';
 const SKEY='sb_publishable_UhkImOyooXPnAqTCNMJ4wA_VVqscCmK';
-const db=supabase.createClient(SURL,SKEY,{db:{schema:'controle'}});
+const db=supabase.createClient(SURL,SKEY,{db:{schema:'controle'},auth:{storageKey:'controle_auth'}});
 
 const $=id=>document.getElementById(id);
 const fmt=d=>d?new Date(d).toLocaleDateString('fr-FR'):'—';
