@@ -1542,7 +1542,7 @@ function openUserModal(prefill=null){
   setTimeout(()=>{const cb=$('u-tarifs');if(cb)cb.checked=!!(prefill&&prefill.gestion_tarifs)},0);
   ['u-id','u-prenom','u-nom','u-email'].forEach(id=>$(id).value='');
   $('u-role').value='technicien';$('u-agence').value='';$('u-visibilite').value='perso';
-  $('mo-u-t').textContent='Inviter un utilisateur';$('btn-save-user').textContent='Inviter';
+  $('mo-u-t').textContent='Rattacher un utilisateur';$('btn-save-user').textContent='Rattacher';
   toggleVisibilite();if(prefill){$('u-id').value=prefill.id;$('u-prenom').value=prefill.prenom||'';$('u-nom').value=prefill.nom||'';$('u-email').value=prefill.email||'';$('u-role').value=prefill.role;$('u-agence').value=prefill.agence_id||'';$('u-visibilite').value=prefill.visibilite||'perso';$('mo-u-t').textContent='Modifier l\'utilisateur';$('btn-save-user').textContent='Enregistrer';toggleVisibilite();}
   OM('mo-user');
 }
@@ -1550,11 +1550,25 @@ function editUser(id){openUserModal(users.find(u=>u.id===id))}
 function toggleVisibilite(){$('fg-visibilite').style.display=$('u-role').value==='technicien'?'flex':'none'}
 async function saveUser(){
   const id=$('u-id').value;const nom=$('u-nom').value.trim();
+  const email=$('u-email').value.trim();
   if(!nom){toast('Nom obligatoire','err');return}
-  const p={nom,prenom:$('u-prenom').value.trim(),role:$('u-role').value,agence_id:$('u-agence').value||null,visibilite:$('u-visibilite').value,gestion_tarifs:$('u-tarifs').checked,updated_at:new Date().toISOString()};
-  const {error}=await db.from('profils').update(p).eq('id',id);
-  if(error){toast('Erreur: '+error.message,'err');return}
-  toast('Utilisateur modifié');CM('mo-user');loadUsers();
+  if(id){
+    const p={nom,prenom:$('u-prenom').value.trim(),role:$('u-role').value,agence_id:$('u-agence').value||null,visibilite:$('u-visibilite').value,gestion_tarifs:$('u-tarifs').checked,updated_at:new Date().toISOString()};
+    const {error}=await db.from('profils').update(p).eq('id',id);
+    if(error){toast('Erreur: '+error.message,'err');return}
+    toast('Utilisateur modifié');CM('mo-user');loadUsers();
+  }else{
+    if(!email){toast('Email obligatoire','err');return}
+    const {data,error}=await db.rpc('rattacher_profil_par_email',{
+      p_email:email,p_nom:nom,p_prenom:$('u-prenom').value.trim()||null,
+      p_role:$('u-role').value,p_agence_id:$('u-agence').value||null,
+      p_visibilite:$('u-visibilite').value,p_gestion_tarifs:$('u-tarifs').checked
+    });
+    if(error){toast('Erreur : '+error.message,'err');return}
+    const dejaExistant=data&&data[0]&&data[0].deja_existant;
+    toast(dejaExistant?'Ce compte avait déjà accès — rien changé':'Utilisateur rattaché ✓');
+    CM('mo-user');loadUsers();
+  }
 }
 async function toggleUser(id,actif){await db.from('profils').update({actif:!actif}).eq('id',id);toast(actif?'Désactivé':'Activé');loadUsers()}
 

@@ -481,7 +481,7 @@ tr:hover td{background:#fafafa}
       <div class="page" id="page-utilisateurs">
         <div class="search-bar">
           <input type="text" id="q-users" placeholder="Rechercher…" oninput="renderUsers()">
-          <button class="btn btn-p" id="btn-inviter-user" onclick="openUserModal()">+ Inviter</button>
+          <button class="btn btn-p" id="btn-inviter-user" onclick="openUserModal()">+ Rattacher</button>
         </div>
         <div class="card"><div id="tbl-users"><div class="loading"><span class="spin"></span></div></div></div>
       </div>
@@ -773,12 +773,14 @@ tr:hover td{background:#fafafa}
 
 <!-- Utilisateur -->
 <div class="mo" id="mo-user">
-  <div class="modal" style="max-width:480px"><div class="mh"><h3 id="mo-u-t">Inviter un utilisateur</h3><button class="mclose" onclick="CM('mo-user')">✕</button></div>
+  <div class="modal" style="max-width:480px"><div class="mh"><h3 id="mo-u-t">Rattacher un utilisateur</h3><button class="mclose" onclick="CM('mo-user')">✕</button></div>
   <div class="mc"><input type="hidden" id="u-id">
     <div class="form-grid">
       <div class="fg"><label>Prénom</label><input type="text" id="u-prenom"></div>
       <div class="fg"><label>Nom *</label><input type="text" id="u-nom"></div>
-      <div class="fg" style="grid-column:1/-1"><label>Email *</label><input type="email" id="u-email"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Email *</label><input type="email" id="u-email">
+        <div id="u-email-aide" style="font-size:11px;color:var(--txt-l);margin-top:4px">Le compte doit déjà exister (créé via le Portail Univers BFS) — cet écran le rattache à BFS Contrôle, il ne le crée pas.</div>
+      </div>
       <div class="fg"><label>Rôle *</label><select id="u-role" onchange="toggleVisibilite()"><option value="technicien">Technicien</option><option value="secretariat">Secrétariat</option><option value="admin">Admin</option></select></div>
       <div class="fg"><label>Agence</label><select id="u-agence"><option value="">— Toutes —</option></select></div>
       <div class="fg" id="fg-visibilite"><label>Visibilité tableau de bord</label>
@@ -786,7 +788,7 @@ tr:hover td{background:#fafafa}
       </div>
       <div class="fg" style="grid-column:1/-1"><label style="display:flex;gap:8px;align-items:center;text-transform:none;font-weight:400;cursor:pointer"><input type="checkbox" id="u-tarifs" style="width:16px;height:16px;margin:0"> 💶 Gestion des tarifs (création, import, augmentation)</label></div>
     </div>
-    <div class="fa"><button class="btn btn-s" onclick="CM('mo-user')">Annuler</button><button class="btn btn-p" id="btn-save-user" onclick="saveUser()">Inviter</button></div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-user')">Annuler</button><button class="btn btn-p" id="btn-save-user" onclick="saveUser()">Rattacher</button></div>
   </div></div>
 </div>
 
