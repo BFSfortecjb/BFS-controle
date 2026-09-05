@@ -1786,23 +1786,24 @@ function renderTarifs(){
   const fc=$('f-cat-tarifs').value;
   const data=tarifs.filter(t=>(!fc||t.categorie===fc)&&(t.code+' '+t.designation).toLowerCase().includes(q));
   const el=$('tbl-tarifs');
-  if(!data.length){el.innerHTML='<div class="t-empty">Aucun tarif — importe ta base tarifaire (Excel : Code, Désignation, Catégorie, Unité, Prix HT).</div>';return}
+  if(!data.length){el.innerHTML='<div class="t-empty">Aucun tarif — importe ta base tarifaire (Excel : Code, Désignation, Catégorie, Unité, Prix HT, Code Galaxy).</div>';return}
   const droit=peutGererTarifs();
-  el.innerHTML=`<table><thead><tr><th>Code</th><th>Désignation</th><th>Catégorie</th><th>Unité</th><th style="text-align:right">Prix HT</th><th>Dernière maj</th>${droit?'<th>Actions</th>':''}</tr></thead><tbody>${data.map(t=>`<tr${t.actif===false?' style="opacity:.5"':''}>
+  el.innerHTML=`<table><thead><tr><th>Code</th><th>Désignation</th><th>Catégorie</th><th>Unité</th><th style="text-align:right">Prix HT</th><th>Code Galaxy</th><th>Dernière maj</th>${droit?'<th>Actions</th>':''}</tr></thead><tbody>${data.map(t=>`<tr${t.actif===false?' style="opacity:.5"':''}>
     <td><strong>${t.code||'—'}</strong></td>
     <td>${t.designation||'—'}</td>
     <td><span class="badge bg">${catTarif(t.categorie)}</span></td>
     <td>${t.unite||'unité'}</td>
     <td style="text-align:right;font-weight:700">${t.prix_ht!=null?(+t.prix_ht).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'<span style="font-weight:400;color:var(--txt-l)">à définir</span>'}</td>
+    <td style="font-size:12px">${t.code_galaxy?t.code_galaxy:'<span style="color:var(--txt-l)">—</span>'}</td>
     <td style="font-size:12px">${fmt(t.updated_at)}${t.profils?'<br><small style="color:var(--txt-l)">'+(t.profils.prenom||'')+' '+t.profils.nom+'</small>':''}</td>
     ${droit?`<td><div class="ia"><button class="btn btn-s btn-xs" onclick="editTarif('${t.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="deleteTarif('${t.id}')">🗑</button></div></td>`:''}
   </tr>`).join('')}</tbody></table>`;
 }
 function openTarifModal(prefill=null){
   if(!peutGererTarifs()){toast('Réservé aux gestionnaires des tarifs','err');return}
-  ['tf-id','tf-code','tf-designation','tf-prix'].forEach(id=>$(id).value='');
+  ['tf-id','tf-code','tf-designation','tf-prix','tf-code-galaxy'].forEach(id=>$(id).value='');
   $('tf-unite').value='unité';$('tf-cat').value='prestation';$('mo-tf-t').textContent='Nouveau tarif';
-  if(prefill){$('tf-id').value=prefill.id;$('tf-code').value=prefill.code;$('tf-designation').value=prefill.designation;$('tf-cat').value=prefill.categorie||'prestation';$('tf-unite').value=prefill.unite||'unité';$('tf-prix').value=prefill.prix_ht;$('mo-tf-t').textContent='Modifier le tarif';}
+  if(prefill){$('tf-id').value=prefill.id;$('tf-code').value=prefill.code;$('tf-designation').value=prefill.designation;$('tf-cat').value=prefill.categorie||'prestation';$('tf-unite').value=prefill.unite||'unité';$('tf-prix').value=prefill.prix_ht;$('tf-code-galaxy').value=prefill.code_galaxy||'';$('mo-tf-t').textContent='Modifier le tarif';}
   OM('mo-tarif');
 }
 function editTarif(id){openTarifModal(tarifs.find(t=>t.id===id))}
@@ -1812,7 +1813,8 @@ async function saveTarif(){
   const prixRaw=$('tf-prix').value;
   const prix=prixRaw===''?null:parseFloat(prixRaw);
   if(!code||!des||(prix!==null&&isNaN(prix))){toast('Code et désignation obligatoires (le prix peut rester vide pour l\'instant)','err');return}
-  const p={code,designation:des,categorie:$('tf-cat').value,unite:$('tf-unite').value.trim()||'unité',prix_ht:prix,maj_par:ME.id,updated_at:new Date().toISOString()};
+  const codeGalaxy=$('tf-code-galaxy').value.trim();
+  const p={code,designation:des,categorie:$('tf-cat').value,unite:$('tf-unite').value.trim()||'unité',prix_ht:prix,code_galaxy:codeGalaxy||null,maj_par:ME.id,updated_at:new Date().toISOString()};
   const {data,error}=id?await db.from('tarifs').update(p).eq('id',id).select():await db.from('tarifs').insert(p).select();
   if(error){toast('Erreur : '+error.message,'err');return}
   if(!data||!data.length){toast('Modification refusée — droits « gestion des tarifs » requis','err');return}
@@ -1850,6 +1852,7 @@ async function importTarifsExcel(input){
       const des=String(col(r,'désignation','designation')).trim();if(des)p.designation=des;
       const cat=String(col(r,'catégorie','categorie','type')).trim().toLowerCase();if(cat)p.categorie=cat;
       const un=String(col(r,'unité','unite')).trim();if(un)p.unite=un;
+      const cg=String(col(r,'code galaxy','code_galaxy','galaxy')).trim();if(cg)p.code_galaxy=cg;
       if(exist){
         const {error}=await db.from('tarifs').update(p).eq('id',exist.id);
         if(error){err++;continue}maj++;
@@ -1865,7 +1868,7 @@ async function importTarifsExcel(input){
   loadTarifs();
 }
 function exportTarifsXLS(){
-  const ws=XLSX.utils.json_to_sheet(tarifs.map(t=>({Code:t.code,'Désignation':t.designation,'Catégorie':t.categorie,'Unité':t.unite||'unité','Prix HT':t.prix_ht!=null?+t.prix_ht:'','Dernière maj':fmt(t.updated_at)})));
+  const ws=XLSX.utils.json_to_sheet(tarifs.map(t=>({Code:t.code,'Désignation':t.designation,'Catégorie':t.categorie,'Unité':t.unite||'unité','Prix HT':t.prix_ht!=null?+t.prix_ht:'','Code Galaxy':t.code_galaxy||'','Dernière maj':fmt(t.updated_at)})));
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Tarifs');
   XLSX.writeFile(wb,'BFS_tarifs_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
