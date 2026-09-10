@@ -2174,11 +2174,13 @@ window.confirmerEchangeStandard=async function(){
     {unite_id:nouvelleUnite.id, emplacement_id:equip.id, type:'echange_standard_pose', verification_id:vData.id, technicien_id:ME.id, agence_id:currentClient.agence_id}
   ]);
 
-  // 3. Ancienne unité repart en atelier pour révision
-  await db.from('extincteurs_unites').update({statut:'en_atelier_a_reviser', emplacement_actuel_id:null, updated_at:new Date().toISOString()}).eq('id',ancienneUnite.id);
+  // 3. Ancienne unité repart en atelier pour révision — elle sert désormais de stock
+  // tampon (échange standard / location), plus jamais comptée comme "neuf".
+  await db.from('extincteurs_unites').update({statut:'en_atelier_a_reviser', emplacement_actuel_id:null, usage_stock:'echange_location', updated_at:new Date().toISOString()}).eq('id',ancienneUnite.id);
 
-  // 4. Nouvelle unité prend la place, statut en service
-  await db.from('extincteurs_unites').update({statut:'en_service', emplacement_actuel_id:equip.id, updated_at:new Date().toISOString()}).eq('id',nouvelleUnite.id);
+  // 4. Nouvelle unité prend la place, statut en service — si elle était "neuf" (dépannage
+  // faute de stock tampon disponible), elle bascule définitivement en tampon elle aussi.
+  await db.from('extincteurs_unites').update({statut:'en_service', emplacement_actuel_id:equip.id, usage_stock:'echange_location', updated_at:new Date().toISOString()}).eq('id',nouvelleUnite.id);
 
   // 5. L'emplacement pointe vers la nouvelle unité + champs d'affichage synchronisés (rapports/PDF lisent equipements directement)
   const perso=(equip.donnees_specifiques?._perso||[]).filter(p=>p.label!=='Mode pressurisation');

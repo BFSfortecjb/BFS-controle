@@ -342,6 +342,19 @@ tr:hover td{background:#fafafa}
         </div>
         <div class="card">
           <div class="card-header">
+            <h2>💰 Ventes & vérifications</h2>
+            <select id="f-periode-ca" onchange="loadCaMarge()" style="max-width:160px">
+              <option value="mois">Ce mois</option>
+              <option value="annee">Cette année</option>
+              <option value="tout">Depuis le début</option>
+            </select>
+          </div>
+          <div style="font-size:12px;color:var(--txt-l);padding:0 14px 10px">Estimation au tarif actuel (Base tarifaire) appliqué aux vérifications réalisées et aux pièces/accessoires posés — pas une facturation réelle si les tarifs ont changé depuis.</div>
+          <div class="stats-grid" id="ca-stats" style="padding:0 14px 14px"></div>
+          <div id="ca-detail" style="padding:0 14px 14px"></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
             <h2>⚠️ Toutes les échéances</h2>
             <button class="btn btn-s btn-sm" onclick="exportEcheancesXLS('admin')">⬇ Excel</button>
           </div>
@@ -546,6 +559,11 @@ tr:hover td{background:#fafafa}
               <option value="en_atelier_revise">Révisé — prêt</option>
               <option value="en_service">En service (client)</option>
               <option value="reforme">Réformé</option>
+            </select>
+            <select id="f-pool-unites" onchange="renderUnitesExtincteurs()" style="max-width:220px">
+              <option value="">Neuf + Tampon</option>
+              <option value="neuf">🆕 Neuf uniquement</option>
+              <option value="echange_location">🔁 Tampon (échange/location) uniquement</option>
             </select>
             <input type="text" id="q-unites" placeholder="Rechercher identification…" oninput="renderUnitesExtincteurs()">
           </div>
@@ -899,7 +917,9 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Catégorie</label><select id="tf-cat"><option value="prestation">Prestation</option><option value="piece">Pièce</option><option value="equipement">Équipement neuf</option><option value="accessoire">Accessoire</option></select></div>
       <div class="fg" style="grid-column:1/-1"><label>Désignation *</label><input type="text" id="tf-designation" placeholder="Ex : Vérification annuelle extincteur"></div>
       <div class="fg"><label>Unité</label><input type="text" id="tf-unite" value="unité"></div>
-      <div class="fg"><label>Prix HT (€)</label><input type="number" id="tf-prix" step="0.01" min="0" placeholder="Laisser vide si pas encore défini"></div>
+      <div class="fg" id="tf-achat-bloc"><label>Prix d'achat HT (€)</label><input type="number" id="tf-prix-achat" step="0.01" min="0" placeholder="Coût fournisseur (pièces/accessoires)"></div>
+      <div class="fg"><label>Prix de vente HT (€)</label><input type="number" id="tf-prix" step="0.01" min="0" placeholder="Laisser vide si pas encore défini" oninput="majMargeTarif()"></div>
+      <div class="fg" id="tf-marge-bloc" style="grid-column:1/-1;font-size:12px;color:var(--txt-l)"></div>
       <div class="fg"><label>Code Galaxy</label><input type="text" id="tf-code-galaxy" placeholder="Ex : 163 (réf. article Galaxy)"></div>
     </div>
     <div class="fa"><button class="btn btn-s" onclick="CM('mo-tarif')">Annuler</button><button class="btn btn-p" onclick="saveTarif()">Enregistrer</button></div>
@@ -917,7 +937,7 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Modèle</label><input type="text" id="pc-modele"></div>
       <div class="fg"><label>Quantité</label><input type="number" id="pc-qte" min="0" value="0"></div>
       <div class="fg"><label>Seuil d'alerte</label><input type="number" id="pc-seuil" min="0" value="0"></div>
-      <div class="fg"><label>Prix de vente HT (€)</label><input type="number" id="pc-prix" step="0.01" min="0" placeholder="Pour la facturation"></div>
+      <div class="fg" style="grid-column:1/-1;font-size:12px;color:var(--txt-l);background:#fafafa;border-radius:8px;padding:8px 10px">💶 Le prix d'achat et le prix de vente de cette pièce se règlent dans <strong>Base tarifaire</strong> (même code) — ce module ne suit que les quantités.</div>
       <div class="fg" style="grid-column:1/-1"><label>Agence</label><select id="pc-agence"></select></div>
       <div class="fg" style="grid-column:1/-1"><label>Photo de la pièce</label>
         <div style="display:flex;gap:12px;align-items:center;margin-top:6px">

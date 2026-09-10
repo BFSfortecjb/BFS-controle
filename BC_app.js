@@ -157,11 +157,97 @@ async function loadDashAdmin(){
   }
 
   renderEcheancesTable(e.filter(x=>x.statut_echeance!=='ok'),$('admin-echeances'));
+  loadCaMarge();
 }
 window.adminSetAgence=function(btn,ag){
   document.querySelectorAll('#admin-tabs .ag-tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');adminAgenceFilter=ag;loadDashAdmin();
 };
+
+// ============================================================
+// CA / MARGE ESTIMÉS (tableau de bord admin)
+// Estimation au tarif ACTUEL (Base tarifaire) — pas une facturation réelle historique,
+// l'appli ne conserve pas le prix appliqué au moment de chaque vente/vérification.
+// ============================================================
+// Détermine le code tarif "prestation" correspondant à une vérification (agent extincteur
+// + palier). Renvoie null si aucun tarif ne correspond (RIA, désenfumage… pas encore tarifés).
+function codeTarifVerification(v){
+  const type=v.type_equipement_code;
+  if(type==='baes')return 'BAES-VERIF';
+  if(type==='alarme')return 'MAINT-ALARME-T4';
+  if(type==='extincteur'){
+    const agentRaw=(v.equipements?.donnees_specifiques?.['e-agent']||'').toLowerCase();
+    let agent=null;
+    if(agentRaw.includes('co2'))agent='CO2';
+    else if(agentRaw.includes('poudre'))agent='POUDRE';
+    else if(agentRaw.includes('eau')||agentRaw.includes('additif'))agent='EAU';
+    if(!agent)return null;
+    return (v.palier_code==='approfondie'?'MAA-':'VAP-')+agent;
+  }
+  return null;
+}
+async function loadCaMarge(){
+  const el=$('ca-stats');if(!el)return;
+  el.innerHTML='<div class="loading"><span class="spin"></span></div>';
+  const periode=$('f-periode-ca')?.value||'mois';
+  const auj=new Date();
+  let debut=null;
+  if(periode==='mois')debut=new Date(auj.getFullYear(),auj.getMonth(),1);
+  else if(periode==='annee')debut=new Date(auj.getFullYear(),0,1);
+  const debutStr=debut?dateLocale(debut):null;
+
+  let q=db.from('verifications').select('type_equipement_code,palier_code,pieces_utilisees,agence_id,agences(code),equipements(donnees_specifiques)');
+  if(debutStr)q=q.gte('date_verification',debutStr);
+  if(adminAgenceFilter)q=q.eq('agences.code',adminAgenceFilter);
+  const [{data:verifsRaw,error},{data:tarifsPU}]=await Promise.all([
+    q,
+    db.from('tarifs').select('code,prix_ht,prix_achat')
+  ]);
+  // eq() sur une table jointe peut renvoyer la ligne avec agences=null au lieu de l'exclure
+  // selon la relation — filtre de sécurité côté client.
+  const verifs=adminAgenceFilter?(verifsRaw||[]).filter(v=>v.agences?.code===adminAgenceFilter):verifsRaw;
+  if(error){el.innerHTML='<div class="t-empty">Erreur : '+error.message+'</div>';return}
+  const tarifParCode={};(tarifsPU||[]).forEach(t=>{if(t.code)tarifParCode[t.code]=t});
+
+  // CA vérifications
+  let caVerif=0,nbVerif=0,nbVerifNonTarife=0;
+  const detailVerif={};
+  (verifs||[]).forEach(v=>{
+    nbVerif++;
+    const code=codeTarifVerification(v);
+    const t=code?tarifParCode[code]:null;
+    if(!t||t.prix_ht==null){nbVerifNonTarife++;return}
+    caVerif+=+t.prix_ht;
+    detailVerif[code]=(detailVerif[code]||{n:0,ca:0});
+    detailVerif[code].n++;detailVerif[code].ca+=+t.prix_ht;
+  });
+
+  // CA + marge pièces/accessoires posés (verifications.pieces_utilisees)
+  let caPieces=0,margePieces=0,qtePieces=0,nbPiecesNonTarifees=0;
+  const codesNonTarifes=new Set();
+  (verifs||[]).forEach(v=>{
+    (Array.isArray(v.pieces_utilisees)?v.pieces_utilisees:[]).forEach(u=>{
+      const t=tarifParCode[u.code];
+      qtePieces+=+u.quantite||0;
+      if(!t||t.prix_ht==null){nbPiecesNonTarifees++;codesNonTarifes.add(u.code);return}
+      caPieces+=(+t.prix_ht)*(+u.quantite);
+      if(t.prix_achat!=null)margePieces+=((+t.prix_ht)-(+t.prix_achat))*(+u.quantite);
+    });
+  });
+
+  const caTotal=caVerif+caPieces;
+  const labelPeriode={mois:'ce mois',annee:'cette année',tout:'depuis le début'}[periode];
+  el.innerHTML=`
+    <div class="stat-card vert"><div class="val">${caTotal.toLocaleString('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0})}</div><div class="lab">CA estimé — ${labelPeriode}</div></div>
+    <div class="stat-card bleu"><div class="val">${caVerif.toLocaleString('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0})}</div><div class="lab">dont vérifications (${nbVerif})</div></div>
+    <div class="stat-card bleu"><div class="val">${caPieces.toLocaleString('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0})}</div><div class="lab">dont pièces/accessoires (${qtePieces})</div></div>
+    <div class="stat-card violet"><div class="val">${margePieces.toLocaleString('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0})}</div><div class="lab">Marge pièces/accessoires</div></div>`;
+
+  const alertes=[];
+  if(nbVerifNonTarife)alertes.push(nbVerifNonTarife+' vérification(s) sans tarif correspondant (type/agent non couvert par la Base tarifaire)');
+  if(nbPiecesNonTarifees)alertes.push(nbPiecesNonTarifees+' pose(s) de pièce sans prix de vente défini : '+[...codesNonTarifes].join(', '));
+  $('ca-detail').innerHTML=alertes.length?`<div style="font-size:12px;color:#d97706">⚠ ${alertes.join(' · ')}</div>`:'';
+}
 
 // ============================================================
 // DASHBOARD SECRÉTARIAT
@@ -1533,19 +1619,24 @@ async function exportFacturationXLS(){
       .select('session_id,pieces_utilisees,equipements(numero_identification)')
       .in('session_id',sessIds).not('pieces_utilisees','is',null);
     const bonParSession={};(bons||[]).forEach(b=>{if(b.session_id)bonParSession[b.session_id]=b});
-    const {data:sp}=await db.from('stock_pieces').select('id,prix_vente');
-    const prix={};(sp||[]).forEach(x=>prix[x.id]=parseFloat(x.prix_vente)||null);
+    // Prix de vente client = tarifs.prix_ht (par code) — PAS stock_pieces.prix_achat qui
+    // est le coût fournisseur. Les deux sont désormais des notions distinctes.
+    const {data:tf}=await db.from('tarifs').select('code,prix_ht').in('categorie',['piece','accessoire']);
+    const {data:sp}=await db.from('stock_pieces').select('code,prix_achat');
+    const prixVente={};(tf||[]).forEach(x=>{if(x.code)prixVente[x.code]=parseFloat(x.prix_ht)});
+    const cout={};(sp||[]).forEach(x=>{if(x.code&&!(x.code in cout))cout[x.code]=parseFloat(x.prix_achat)});
     (verifs||[]).forEach(v=>{
       const bon=bonParSession[v.session_id];if(!bon)return;
       (Array.isArray(v.pieces_utilisees)?v.pieces_utilisees:[]).forEach(u=>{
-        const pu=prix[u.piece_id];
+        const pu=prixVente[u.code];const pa=cout[u.code];
         lignesPieces.push({
           'N° bon':bon.numero_session||'','Client':bon.clients?.raison_sociale||'',
           'Équipement':v.equipements?.numero_identification||'',
           'Code pièce':u.code,'Désignation':u.designation,
           'Type':u.accessoire?'Accessoire (facturé en +)':'Pièce détachée',
           'Quantité':u.quantite,'PU vente HT':pu??'à renseigner',
-          'Total HT':pu!=null?+(pu*u.quantite).toFixed(2):''
+          'Total HT':pu!=null?+(pu*u.quantite).toFixed(2):'',
+          'Marge HT':(pu!=null&&pa!=null)?+((pu-pa)*u.quantite).toFixed(2):''
         });
       });
     });
@@ -1876,6 +1967,7 @@ async function loadTarifs(){
   renderTarifs();
 }
 const catTarif=c=>({prestation:'🛠 Prestation',piece:'🔩 Pièce',equipement:'🧯 Équipement neuf',accessoire:'🏷 Accessoire'}[c]||c);
+const eur=v=>v!=null?(+v).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'<span style="font-weight:400;color:var(--txt-l)">—</span>';
 function renderTarifs(){
   const q=($('q-tarifs').value||'').toLowerCase();
   const fc=$('f-cat-tarifs').value;
@@ -1883,22 +1975,34 @@ function renderTarifs(){
   const el=$('tbl-tarifs');
   if(!data.length){el.innerHTML='<div class="t-empty">Aucun tarif — importe ta base tarifaire (Excel : Code, Désignation, Catégorie, Unité, Prix HT, Code Galaxy).</div>';return}
   const droit=peutGererTarifs();
-  el.innerHTML=`<table><thead><tr><th>Code</th><th>Désignation</th><th>Catégorie</th><th>Unité</th><th style="text-align:right">Prix HT</th><th>Code Galaxy</th><th>Dernière maj</th>${droit?'<th>Actions</th>':''}</tr></thead><tbody>${data.map(t=>`<tr${t.actif===false?' style="opacity:.5"':''}>
+  el.innerHTML=`<table><thead><tr><th>Code</th><th>Désignation</th><th>Catégorie</th><th>Unité</th><th style="text-align:right">Prix d'achat</th><th style="text-align:right">Prix de vente</th><th style="text-align:right">Marge</th><th>Code Galaxy</th><th>Dernière maj</th>${droit?'<th>Actions</th>':''}</tr></thead><tbody>${data.map(t=>{
+    const marge=(t.prix_achat!=null&&t.prix_ht!=null)?(+t.prix_ht-+t.prix_achat):null;
+    const margePct=(marge!=null&&+t.prix_achat>0)?Math.round(marge/(+t.prix_achat)*100):null;
+    return `<tr${t.actif===false?' style="opacity:.5"':''}>
     <td><strong>${t.code||'—'}</strong></td>
     <td>${t.designation||'—'}</td>
     <td><span class="badge bg">${catTarif(t.categorie)}</span></td>
     <td>${t.unite||'unité'}</td>
-    <td style="text-align:right;font-weight:700">${t.prix_ht!=null?(+t.prix_ht).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'<span style="font-weight:400;color:var(--txt-l)">à définir</span>'}</td>
+    <td style="text-align:right">${eur(t.prix_achat)}</td>
+    <td style="text-align:right;font-weight:700">${t.prix_ht!=null?eur(t.prix_ht):'<span style="font-weight:400;color:var(--txt-l)">à définir</span>'}</td>
+    <td style="text-align:right;${marge!=null?(marge<0?'color:#dc2626':'color:#16a34a'):''}">${marge!=null?eur(marge)+(margePct!=null?' <small>('+margePct+'%)</small>':''):'—'}</td>
     <td style="font-size:12px">${t.code_galaxy?t.code_galaxy:'<span style="color:var(--txt-l)">—</span>'}</td>
     <td style="font-size:12px">${fmt(t.updated_at)}${t.profils?'<br><small style="color:var(--txt-l)">'+(t.profils.prenom||'')+' '+t.profils.nom+'</small>':''}</td>
     ${droit?`<td><div class="ia"><button class="btn btn-s btn-xs" onclick="editTarif('${t.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="deleteTarif('${t.id}')">🗑</button></div></td>`:''}
-  </tr>`).join('')}</tbody></table>`;
+  </tr>`}).join('')}</tbody></table>`;
+}
+function majMargeTarif(){
+  const achat=parseFloat($('tf-prix-achat').value);const vente=parseFloat($('tf-prix').value);
+  const el=$('tf-marge-bloc');if(!el)return;
+  if(isNaN(achat)||isNaN(vente)){el.textContent='';return}
+  const marge=vente-achat;const pct=achat>0?Math.round(marge/achat*100):null;
+  el.innerHTML=`Marge : <strong style="color:${marge<0?'#dc2626':'#16a34a'}">${marge.toFixed(2)} € HT${pct!=null?' ('+pct+'%)':''}</strong>`;
 }
 function openTarifModal(prefill=null){
   if(!peutGererTarifs()){toast('Réservé aux gestionnaires des tarifs','err');return}
-  ['tf-id','tf-code','tf-designation','tf-prix','tf-code-galaxy'].forEach(id=>$(id).value='');
-  $('tf-unite').value='unité';$('tf-cat').value='prestation';$('mo-tf-t').textContent='Nouveau tarif';
-  if(prefill){$('tf-id').value=prefill.id;$('tf-code').value=prefill.code;$('tf-designation').value=prefill.designation;$('tf-cat').value=prefill.categorie||'prestation';$('tf-unite').value=prefill.unite||'unité';$('tf-prix').value=prefill.prix_ht;$('tf-code-galaxy').value=prefill.code_galaxy||'';$('mo-tf-t').textContent='Modifier le tarif';}
+  ['tf-id','tf-code','tf-designation','tf-prix','tf-prix-achat','tf-code-galaxy'].forEach(id=>$(id).value='');
+  $('tf-unite').value='unité';$('tf-cat').value='prestation';$('mo-tf-t').textContent='Nouveau tarif';$('tf-marge-bloc').textContent='';
+  if(prefill){$('tf-id').value=prefill.id;$('tf-code').value=prefill.code;$('tf-designation').value=prefill.designation;$('tf-cat').value=prefill.categorie||'prestation';$('tf-unite').value=prefill.unite||'unité';$('tf-prix').value=prefill.prix_ht;$('tf-prix-achat').value=prefill.prix_achat!=null?prefill.prix_achat:'';$('tf-code-galaxy').value=prefill.code_galaxy||'';$('mo-tf-t').textContent='Modifier le tarif';majMargeTarif();}
   OM('mo-tarif');
 }
 function editTarif(id){openTarifModal(tarifs.find(t=>t.id===id))}
@@ -1907,13 +2011,15 @@ async function saveTarif(){
   const code=$('tf-code').value.trim().toUpperCase();const des=$('tf-designation').value.trim();
   const prixRaw=$('tf-prix').value;
   const prix=prixRaw===''?null:parseFloat(prixRaw);
-  if(!code||!des||(prix!==null&&isNaN(prix))){toast('Code et désignation obligatoires (le prix peut rester vide pour l\'instant)','err');return}
+  const prixAchatRaw=$('tf-prix-achat').value;
+  const prixAchat=prixAchatRaw===''?null:parseFloat(prixAchatRaw);
+  if(!code||!des||(prix!==null&&isNaN(prix))||(prixAchat!==null&&isNaN(prixAchat))){toast('Code et désignation obligatoires (les prix peuvent rester vides pour l\'instant)','err');return}
   const codeGalaxy=$('tf-code-galaxy').value.trim();
-  const p={code,designation:des,categorie:$('tf-cat').value,unite:$('tf-unite').value.trim()||'unité',prix_ht:prix,code_galaxy:codeGalaxy||null,maj_par:ME.id,updated_at:new Date().toISOString()};
+  const p={code,designation:des,categorie:$('tf-cat').value,unite:$('tf-unite').value.trim()||'unité',prix_ht:prix,prix_achat:prixAchat,code_galaxy:codeGalaxy||null,maj_par:ME.id,updated_at:new Date().toISOString()};
   const {data,error}=id?await db.from('tarifs').update(p).eq('id',id).select():await db.from('tarifs').insert(p).select();
   if(error){toast('Erreur : '+error.message,'err');return}
   if(!data||!data.length){toast('Modification refusée — droits « gestion des tarifs » requis','err');return}
-  if(prix!==null)await syncPrixStock(code,prix);
+  await syncTarifVersStock(p);
   toast(id?'Tarif modifié':'Tarif créé');CM('mo-tarif');loadTarifs();
 }
 async function deleteTarif(id){
@@ -1922,9 +2028,38 @@ async function deleteTarif(id){
   if(error||!data||!data.length){toast(error?('Erreur : '+error.message):'Suppression refusée (droits)','err');return}
   toast('Supprimé');loadTarifs();
 }
-// Si le code correspond à une pièce de stock, aligner son prix de vente
-async function syncPrixStock(code,prix){
-  await db.from('stock_pieces').update({prix_vente:prix,updated_at:new Date().toISOString()}).ilike('code',code);
+// Prix d'achat (stock, coût fournisseur) et prix de vente (tarifs, avec marge) sont deux
+// notions distinctes désormais — on ne synchronise plus JAMAIS un prix entre les deux
+// tables, seulement l'EXISTENCE de la ligne (pour qu'une pièce visible en Stock soit
+// aussi visible en Base tarifaire, et inversement).
+// Un tarif "pièce"/"accessoire" nouvellement créé doit aussi exister côté Stock
+// (quantité 0 par agence, prix d'achat à définir) pour éviter d'avoir un prix de vente
+// sans ligne de stock associée. Ne fait rien si des lignes existent déjà pour ce code.
+async function syncTarifVersStock(t){
+  if(!['piece','accessoire'].includes(t.categorie)||!t.code)return;
+  const {data:existants}=await db.from('stock_pieces').select('id').ilike('code',t.code).limit(1);
+  if(existants&&existants.length)return;
+  const {data:agences}=await db.from('agences').select('id');
+  if(!agences||!agences.length)return;
+  const lignes=agences.map(a=>({code:t.code,designation:t.designation,categorie:t.categorie,prix_achat:null,quantite:0,seuil_alerte:0,compatible_tous:false,compatibilites:[],agence_id:a.id,updated_at:new Date().toISOString()}));
+  const {error}=await db.from('stock_pieces').insert(lignes);
+  if(!error){toast('Pièce également créée dans le Stock (quantité 0, prix d\'achat à définir) sur '+lignes.length+' agence(s)');if(typeof loadStock==='function')loadStock().catch(()=>{})}
+}
+// Sens inverse : une pièce/accessoire créée ou modifiée côté Stock doit exister côté
+// Base tarifaire (prix de vente laissé à définir/inchangé), sinon elle est invisible en
+// devis/contrat.
+async function syncPieceVersTarifs(p){
+  if(!['piece','accessoire'].includes(p.categorie)||!p.code)return;
+  const {data:exist}=await db.from('tarifs').select('id,designation').eq('code',p.code).maybeSingle();
+  if(exist){
+    if(exist.designation!==p.designation){
+      await db.from('tarifs').update({designation:p.designation,updated_at:new Date().toISOString()}).eq('id',exist.id);
+      if(typeof loadTarifs==='function')loadTarifs().catch(()=>{});
+    }
+  }else{
+    const {error}=await db.from('tarifs').insert({code:p.code,designation:p.designation,categorie:p.categorie,unite:'unité',prix_ht:null,maj_par:ME?.id||null,updated_at:new Date().toISOString()});
+    if(!error){toast('Pièce également ajoutée à la Base tarifaire (prix de vente à définir)');if(typeof loadTarifs==='function')loadTarifs().catch(()=>{})}
+  }
 }
 async function importTarifsExcel(input){
   const file=input.files[0];if(!file)return;input.value='';
@@ -1938,12 +2073,17 @@ async function importTarifsExcel(input){
     for(const r of rows){
       const code=String(col(r,'code')).trim().toUpperCase();
       if(!code){err++;continue}
-      const prixStr=String(col(r,'prix ht','prix','prix_ht','tarif')).trim();
+      const prixStr=String(col(r,'prix ht','prix','prix_ht','prix de vente','tarif')).trim();
       const prix=prixStr===''?null:parseFloat(prixStr.replace(',','.'));
       if(prixStr!==''&&isNaN(prix)){err++;continue}
-      if(prix===null){sansPrix++;continue} // ligne sans prix : rien à mettre à jour, on l'ignore silencieusement
+      const prixAchatStr=String(col(r,'prix achat','prix_achat',"prix d'achat")).trim();
+      const prixAchat=prixAchatStr===''?null:parseFloat(prixAchatStr.replace(',','.'));
+      if(prixAchatStr!==''&&isNaN(prixAchat)){err++;continue}
+      if(prix===null&&prixAchat===null){sansPrix++;continue} // ligne sans aucun prix : rien à mettre à jour
       const exist=tarifs.find(t=>t.code===code);
-      const p={prix_ht:prix,maj_par:ME.id,updated_at:new Date().toISOString()};
+      const p={maj_par:ME.id,updated_at:new Date().toISOString()};
+      if(prix!==null)p.prix_ht=prix;
+      if(prixAchat!==null)p.prix_achat=prixAchat;
       const des=String(col(r,'désignation','designation')).trim();if(des)p.designation=des;
       const cat=String(col(r,'catégorie','categorie','type')).trim().toLowerCase();if(cat)p.categorie=cat;
       const un=String(col(r,'unité','unite')).trim();if(un)p.unite=un;
@@ -1956,14 +2096,14 @@ async function importTarifsExcel(input){
         const {error}=await db.from('tarifs').insert(p);
         if(error){err++;continue}crees++;
       }
-      await syncPrixStock(code,prix);
+      await syncTarifVersStock({code,categorie:(exist?.categorie||p.categorie),designation:p.designation||exist?.designation||code});
     }
     toast(`Import tarifs : ${crees} créé(s), ${maj} mis à jour${sansPrix?', '+sansPrix+' sans prix (ignorée(s))':''}${err?', '+err+' ligne(s) en erreur':''}`);
   }catch(e){toast('Fichier illisible : '+e.message,'err')}
   loadTarifs();
 }
 function exportTarifsXLS(){
-  const ws=XLSX.utils.json_to_sheet(tarifs.map(t=>({Code:t.code,'Désignation':t.designation,'Catégorie':t.categorie,'Unité':t.unite||'unité','Prix HT':t.prix_ht!=null?+t.prix_ht:'','Code Galaxy':t.code_galaxy||'','Dernière maj':fmt(t.updated_at)})));
+  const ws=XLSX.utils.json_to_sheet(tarifs.map(t=>({Code:t.code,'Désignation':t.designation,'Catégorie':t.categorie,'Unité':t.unite||'unité',"Prix d'achat":t.prix_achat!=null?+t.prix_achat:'','Prix de vente':t.prix_ht!=null?+t.prix_ht:'',Marge:(t.prix_achat!=null&&t.prix_ht!=null)?+(t.prix_ht-t.prix_achat).toFixed(2):'','Code Galaxy':t.code_galaxy||'','Dernière maj':fmt(t.updated_at)})));
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Tarifs');
   XLSX.writeFile(wb,'BFS_tarifs_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
@@ -2072,27 +2212,52 @@ async function chargerUnitesExtincteurs(){
   renderUnitesExtincteurs();
 }
 const statutUnite=s=>({en_service:'🟢 En service (client)',en_atelier_a_reviser:'🟠 À réviser',en_atelier_revise:'🔵 Révisé — prêt',reforme:'⚫ Réformé'}[s]||s);
+// Catégorie commerciale du stock atelier (neuf vs tampon échange/location).
+// N'a de sens que pour une unité qui est en stock atelier (pas en_service/reforme).
+// Un "neuf" bascule automatiquement en tampon 1 an après sa fabrication (calculé à
+// l'affichage, rien n'est écrit en base tant que personne n'y touche manuellement) —
+// sauf s'il a déjà servi à un échange standard, auquel cas usage_stock est déjà forcé
+// à 'echange_location' en base (bascule définitive, voir confirmerEchangeStandard()).
+function poolUnite(u){
+  if(u.statut!=='en_atelier_a_reviser'&&u.statut!=='en_atelier_revise')return null;
+  if(u.usage_stock==='echange_location')return 'echange_location';
+  if(u.date_fabrication){
+    const unAnApres=new Date(u.date_fabrication);unAnApres.setFullYear(unAnApres.getFullYear()+1);
+    if(new Date()>=unAnApres)return 'echange_location';
+  }
+  return 'neuf';
+}
+const poolLabel=p=>({neuf:'🆕 Neuf',echange_location:'🔁 Tampon (échange/location)'}[p]||'');
 function renderUnitesExtincteurs(){
   const el=$('tbl-unites-extincteurs');if(!el)return;
   const fs=$('f-statut-unites')?.value||'';
+  const fp=$('f-pool-unites')?.value||'';
   const q=($('q-unites')?.value||'').toLowerCase();
-  const data=uniteExtincteurs.filter(u=>(!fs||u.statut===fs)&&u.identification.toLowerCase().includes(q));
+  const data=uniteExtincteurs.filter(u=>(!fs||u.statut===fs)&&(!fp||poolUnite(u)===fp)&&u.identification.toLowerCase().includes(q));
   if(!data.length){el.innerHTML='<div class="t-empty">Aucune unité d\'extincteur pour ce filtre.</div>';return}
-  el.innerHTML=`<table><thead><tr><th>Identification</th><th>Mode</th><th>Capacité</th><th>Statut</th><th>Emplacement / Agence</th><th>Dernière révision</th><th>Actions</th></tr></thead><tbody>${data.map(u=>`<tr>
+  el.innerHTML=`<table><thead><tr><th>Identification</th><th>Mode</th><th>Capacité</th><th>Statut</th><th>Stock</th><th>Emplacement / Agence</th><th>Dernière révision</th><th>Actions</th></tr></thead><tbody>${data.map(u=>{const pool=poolUnite(u);return `<tr>
     <td><strong>${u.identification}</strong>${u.marque?'<br><small style="color:var(--txt-l)">'+u.marque+(u.modele?' '+u.modele:'')+'</small>':''}</td>
     <td>${u.mode_pressurisation}</td>
     <td>${u.capacite_valeur||'?'}${u.capacite_unite||''} · ${u.agent_code}</td>
     <td>${statutUnite(u.statut)}</td>
+    <td>${pool?`<span class="badge bg">${poolLabel(pool)}</span>`:'<span style="color:var(--txt-l)">—</span>'}</td>
     <td style="font-size:12px">${u.equipements?(u.equipements.clients?.raison_sociale||'')+' — '+(u.equipements.numero_identification||''):(u.agences?.nom||'—')}</td>
     <td style="font-size:12px">${fmt(u.date_derniere_revision_atelier)}</td>
     <td><div class="ia">
       ${u.statut==='en_atelier_a_reviser'?`<button class="btn btn-s btn-xs" onclick="marquerUniteRevisee('${u.id}')">✅ Révisé</button>`:''}
+      ${pool==='neuf'?`<button class="btn btn-s btn-xs" onclick="basculerUniteTampon('${u.id}')" title="Retirer manuellement du stock neuf, avant l'échéance d'un an">↪ Vers tampon</button>`:''}
       ${u.statut!=='reforme'&&u.statut!=='en_service'?`<button class="btn btn-s btn-xs" onclick="reformerUnite('${u.id}')">⚫ Réformer</button>`:''}
       <button class="btn btn-s btn-xs" onclick="showQR('${u.id}','${u.identification}','${u.agent_code} ${u.capacite_valeur||''}${u.capacite_unite||''}','Extincteur (unité physique)')" title="QR à coller sur l'extincteur (échange standard)">QR</button>
       <button class="btn btn-s btn-xs" onclick="voirHistoriqueUnite('${u.id}')" title="Historique complet d'entretien">🕘</button>
       <button class="btn btn-s btn-xs" onclick="openUniteExtincteurModal(uniteExtincteurs.find(x=>x.id==='${u.id}'))">✏️</button>
     </div></td>
-  </tr>`).join('')}</tbody></table>`;
+  </tr>`}).join('')}</tbody></table>`;
+}
+async function basculerUniteTampon(id){
+  if(!confirm('Basculer cette unité du stock neuf vers le stock tampon (échange standard / location) ?'))return;
+  const {error}=await db.from('extincteurs_unites').update({usage_stock:'echange_location',updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  toast('Unité basculée en stock tampon');chargerUnitesExtincteurs();
 }
 
 const typeMvtLabel=t=>({installation_initiale:'📍 Installation initiale',echange_standard_pose:'🔄 Posé (échange)',echange_standard_depose:'🔄 Déposé (échange)',retour_atelier:'🏭 Retour atelier',revision_atelier:'✅ Révisé en atelier',remise_en_stock:'📦 Remise en stock',mise_au_rebut:'⚫ Réformé'}[t]||t);
@@ -2449,7 +2614,7 @@ function ajouterLot(){
 
 function openPieceModal(prefill=null){
   ['pc-id','pc-code','pc-designation','pc-marque','pc-modele'].forEach(id=>$(id).value='');
-  $('pc-qte').value='0';$('pc-seuil').value='0';$('pc-prix').value='';$('mo-pc-t').textContent='Nouvelle pièce';
+  $('pc-qte').value='0';$('pc-seuil').value='0';$('mo-pc-t').textContent='Nouvelle pièce';
   $('pc-qte').disabled=false;
   $('pc-agence').value=_stockAgFiltre||'';
   _compatPiece=[];_lotsPiece=[];
@@ -2459,7 +2624,7 @@ function openPieceModal(prefill=null){
   $('pc-categorie').value='piece';$('pc-tous').checked=false;$('pc-conso').checked=false;
   $('pc-compat-bloc').style.display='block';$('pc-compat-editeur').style.display='block';
   initCompatSelectsPC();
-  if(prefill){$('pc-id').value=prefill.id;$('pc-code').value=prefill.code;$('pc-designation').value=prefill.designation;$('pc-marque').value=prefill.marque||'';$('pc-modele').value=prefill.modele||'';$('pc-qte').value=prefill.quantite;$('pc-qte').disabled=true;$('pc-seuil').value=prefill.seuil_alerte||0;$('pc-prix').value=prefill.prix_vente||'';$('pc-agence').value=prefill.agence_id||'';_compatPiece=Array.isArray(prefill.compatibilites)?[...prefill.compatibilites]:[];
+  if(prefill){$('pc-id').value=prefill.id;$('pc-code').value=prefill.code;$('pc-designation').value=prefill.designation;$('pc-marque').value=prefill.marque||'';$('pc-modele').value=prefill.modele||'';$('pc-qte').value=prefill.quantite;$('pc-qte').disabled=true;$('pc-seuil').value=prefill.seuil_alerte||0;$('pc-agence').value=prefill.agence_id||'';_compatPiece=Array.isArray(prefill.compatibilites)?[...prefill.compatibilites]:[];
     _lotsPiece=Array.isArray(prefill.lots)?prefill.lots.map(l=>({...l})):[];
     $('pc-peremption').checked=!!prefill.gestion_peremption;
     $('pc-lots-bloc').style.display=prefill.gestion_peremption?'block':'none';
@@ -2502,7 +2667,9 @@ async function savePiece(){
   if(cat==='piece'&&!$('pc-tous').checked&&$('pc-cp-marque').value&&$('pc-cp-marque').value!=='__autre__'){
     ajouterCompat();
   }
-  const p={code,designation:des,marque:$('pc-marque').value.trim(),modele:$('pc-modele').value.trim(),seuil_alerte:parseFloat($('pc-seuil').value)||0,prix_vente:parseFloat($('pc-prix').value)||null,agence_id:$('pc-agence').value||null,
+  // Pas de prix ici : le prix d'achat et le prix de vente vivent uniquement dans
+  // controle.tarifs (même code) — le Stock ne suit que les quantités/logistique.
+  const p={code,designation:des,marque:$('pc-marque').value.trim(),modele:$('pc-modele').value.trim(),seuil_alerte:parseFloat($('pc-seuil').value)||0,agence_id:$('pc-agence').value||null,
     categorie:cat,compatible_tous:cat==='piece'&&$('pc-tous').checked,conso_par_controle:cat==='piece'&&$('pc-conso').checked,
     compatibilites:cat==='piece'&&!$('pc-tous').checked?_compatPiece:[],gestion_peremption:gPer,lots:gPer?_lotsPiece:[],updated_at:new Date().toISOString()};
   const avantP=id?stockPieces.find(x=>x.id===id):null;
@@ -2510,7 +2677,7 @@ async function savePiece(){
   else if(_photoPieceSupprimee&&avantP?.photo_path){await db.storage.from('stock-photos').remove([avantP.photo_path]);p.photo_url=null;p.photo_path=null}
   // Champs communs au produit (partagés entre toutes les agences) : tout sauf
   // ce qui décrit un stock physique local (quantité/lots/agence/horodatage/id).
-  const champsPartages=(obj)=>({designation:obj.designation,marque:obj.marque,modele:obj.modele,seuil_alerte:obj.seuil_alerte,prix_vente:obj.prix_vente,categorie:obj.categorie,compatible_tous:obj.compatible_tous,conso_par_controle:obj.conso_par_controle,compatibilites:obj.compatibilites,gestion_peremption:obj.gestion_peremption,photo_url:obj.photo_url,photo_path:obj.photo_path,updated_at:obj.updated_at});
+  const champsPartages=(obj)=>({designation:obj.designation,marque:obj.marque,modele:obj.modele,seuil_alerte:obj.seuil_alerte,categorie:obj.categorie,compatible_tous:obj.compatible_tous,conso_par_controle:obj.conso_par_controle,compatibilites:obj.compatibilites,gestion_peremption:obj.gestion_peremption,photo_url:obj.photo_url,photo_path:obj.photo_path,updated_at:obj.updated_at});
   if(id){
     const avant=stockPieces.find(x=>x.id===id);
     if(gPer)p.quantite=_lotsPiece.reduce((s,l)=>s+(+l.quantite||0),0);
@@ -2522,6 +2689,7 @@ async function savePiece(){
     // Répercute les champs communs sur les autres lignes de la même pièce (autres agences),
     // pour que la fiche produit reste identique partout — seule la quantité est locale.
     await db.from('stock_pieces').update(champsPartages(p)).eq('code',code).neq('id',id);
+    await syncPieceVersTarifs(p);
     toast('Pièce modifiée');
   }else{
     p.quantite=parseFloat($('pc-qte').value)||0;
@@ -2539,6 +2707,7 @@ async function savePiece(){
         if(eClone)toast('Pièce créée, mais synchro autres agences échouée : '+eClone.message,'err');
       }
     }
+    await syncPieceVersTarifs(p);
     toast('Pièce créée');
   }
   CM('mo-piece');loadStock();
@@ -2638,25 +2807,23 @@ async function importStockExcel(input){
       if(!code){err++;continue}
       const agNom=String(col(r,'agence')).trim().toLowerCase();
       const agId=agNom?((_stockAgences.find(a=>a.nom.toLowerCase()===agNom||a.code===agNom)||{}).id||null):(_stockAgFiltre||null);
-      // Prix : colonne optionnelle. Si absente/vide sur la ligne, on NE TOUCHE PAS
-      // au prix déjà en base (évite d'écraser un prix saisi manuellement par un
-      // import qui ne visait qu'à ajuster des quantités).
-      const prixRaw=col(r,'prix','prix vente','prix_vente','prix ht','prix ht (€)','prix (€)');
-      const prix=prixRaw!==''&&prixRaw!=null?parseFloat(String(prixRaw).replace(',','.')):null;
+      // Pas de prix ici : ce module ne gère que les quantités. Le prix d'achat/vente
+      // se règle dans Base tarifaire (même code).
       const exist=stockPieces.find(p=>p.code.toLowerCase()===code.toLowerCase()&&(p.agence_id||null)===(agId||null));
       if(exist){
         const apres=(+exist.quantite)+qte;
         const maj={quantite:apres,updated_at:new Date().toISOString()};
-        if(prix!=null&&!isNaN(prix))maj.prix_vente=prix;
         await db.from('stock_pieces').update(maj).eq('id',exist.id);
         await db.from('stock_mouvements').insert({piece_id:exist.id,type:'import',quantite_avant:exist.quantite,quantite_apres:apres,delta:qte,motif:'Import '+file.name,par:ME.id,agence_id:exist.agence_id});
         inc++;
       }else{
         const compRaw=String(col(r,'compatibilités','compatibilites','compatible'));
         const comp=compRaw?compRaw.split(';').map(s=>{const t=s.trim().split(/\s+/);return{marque:t[0]||'',modele:t.slice(1).join(' ')}}).filter(x=>x.marque):[];
-        const {data:np,error}=await db.from('stock_pieces').insert({code,designation:String(col(r,'désignation','designation'))||code,marque:String(col(r,'marque')),modele:String(col(r,'modèle','modele')),quantite:qte,seuil_alerte:parseFloat(col(r,'seuil','seuil d\'alerte'))||0,prix_vente:(prix!=null&&!isNaN(prix))?prix:null,agence_id:agId,compatibilites:comp}).select().single();
+        const designation=String(col(r,'désignation','designation'))||code;
+        const {data:np,error}=await db.from('stock_pieces').insert({code,designation,marque:String(col(r,'marque')),modele:String(col(r,'modèle','modele')),quantite:qte,seuil_alerte:parseFloat(col(r,'seuil','seuil d\'alerte'))||0,agence_id:agId,compatibilites:comp}).select().single();
         if(error){err++;continue}
         await db.from('stock_mouvements').insert({piece_id:np.id,type:'import',quantite_avant:0,quantite_apres:qte,delta:qte,motif:'Import '+file.name,par:ME.id,agence_id:agId});
+        await syncPieceVersTarifs({code,designation,categorie:'piece'});
         crees++;
       }
     }
