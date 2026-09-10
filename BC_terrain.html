@@ -3604,7 +3604,7 @@ function voirContratTerrain(i){
 // ============================================================
 const CHAMPS_TYPE_TERRAIN = {
   extincteur: [
-    {id:'ef-mode-press',label:'Mode de pressurisation',type:'select',opts:['PP','PA']},
+    {id:'ef-mode-press',label:'Mode de pressurisation',type:'radio',opts:[['PP','PP — Pression permanente'],['PA','PA — Pression auxiliaire']]},
     {id:'ef-agent',label:'Agent extincteur',type:'select',opts:['CO2','BC','ABC','D','A','AB','ABF','A lith','Autre']},
     {id:'ef-cap',label:'Capacité',type:'number',placeholder:'6',step:'0.5'},
     {id:'ef-unite',label:'Unité',type:'select',opts:['kg','L']},
@@ -3696,6 +3696,14 @@ function onEFTypeChange(){
     let input = '';
     if(c.type === 'select'){
       input = '<select id="'+c.id+'"><option value="">— Sélectionner —</option>'+(c.opts||[]).map(o=>'<option value="'+o+'">'+o+'</option>').join('')+'</select>';
+    } else if(c.type === 'radio'){
+      // Ronds à sélectionner (une valeur parmi c.opts, [valeur,libellé]) plutôt qu'un menu déroulant.
+      input = '<input type="hidden" id="'+c.id+'">'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+        +(c.opts||[]).map(o=>{const [v,lbl]=Array.isArray(o)?o:[o,o];
+          return '<button type="button" id="'+c.id+'-opt-'+v+'" onclick="selectRadioEF(\''+c.id+'\',\''+v+'\')" style="flex:1;min-width:120px;padding:12px 10px;border:1.5px solid #e5e7eb;border-radius:12px;background:#fff;font-size:13px;font-weight:600;color:var(--txt);cursor:pointer;display:flex;align-items:center;gap:8px"><span style="width:18px;height:18px;border-radius:50%;border:2px solid #cbd5e1;flex-shrink:0;display:inline-block"></span>'+lbl+'</button>';
+        }).join('')
+        +'</div>';
     } else {
       input = '<input type="'+c.type+'" id="'+c.id+'" placeholder="'+(c.placeholder||'')+'" '+(c.step?'step="'+c.step+'"':'')+'>';
     }
@@ -3711,10 +3719,23 @@ function onEFTypeChange(){
   if(_efRestoreData){
     const ids=['ef-mode-press','ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
     ids.forEach(id=>{const el=document.getElementById(id);if(el&&_efRestoreData[id])el.value=_efRestoreData[id];});
+    if(_efRestoreData['ef-mode-press'])selectRadioEF('ef-mode-press',_efRestoreData['ef-mode-press']);
   }
   if(_efRestoreData['_perso']){
     try{(_efRestoreData['_perso']||[]).forEach(p=>ajouterChampPersoEF(p.label,p.value));}catch(e){}
   }
+}
+
+function selectRadioEF(id,value){
+  const hidden=document.getElementById(id);if(hidden)hidden.value=value;
+  document.querySelectorAll('[id^="'+id+'-opt-"]').forEach(btn=>{
+    const on=btn.id===(id+'-opt-'+value);
+    btn.style.borderColor=on?'var(--rouge)':'#e5e7eb';
+    btn.style.background=on?'var(--rouge-l)':'#fff';
+    btn.style.color=on?'var(--rouge)':'var(--txt)';
+    const dot=btn.querySelector('span');
+    if(dot){dot.style.borderColor=on?'var(--rouge)':'#cbd5e1';dot.style.background=on?'var(--rouge)':'transparent'}
+  });
 }
 
 function ajouterChampPersoEF(label, value){
