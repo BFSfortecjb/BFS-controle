@@ -856,6 +856,32 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
 </div>
 
+<div class="mo" id="mo-echange">
+  <div class="mo-box">
+    <div class="mo-handle"></div>
+    <h3>🔄 Échange standard</h3>
+    <p style="font-size:13px;color:var(--txt-l);margin-bottom:14px" id="echange-desc">Scanne le QR de l'extincteur qui sort, puis celui de l'extincteur révisé qui le remplace.</p>
+
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+      <div id="echange-etape-sortant" style="border:1.5px solid #e5e7eb;border-radius:10px;padding:12px">
+        <div style="font-size:12px;color:var(--txt-l);margin-bottom:6px">1. Extincteur qui SORT</div>
+        <div id="echange-sortant-statut" style="font-size:13px;font-weight:600">Non scanné</div>
+        <button class="btn btn-s btn-xs" style="margin-top:6px" onclick="scannerPourEchange('sortant')">📷 Scanner</button>
+      </div>
+      <div id="echange-etape-entrant" style="border:1.5px solid #e5e7eb;border-radius:10px;padding:12px">
+        <div style="font-size:12px;color:var(--txt-l);margin-bottom:6px">2. Extincteur qui ENTRE (révisé atelier)</div>
+        <div id="echange-entrant-statut" style="font-size:13px;font-weight:600">Non scanné</div>
+        <button class="btn btn-s btn-xs" style="margin-top:6px" onclick="scannerPourEchange('entrant')">📷 Scanner</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-s" style="flex:1" onclick="closeMoEchange()">Annuler</button>
+      <button class="btn btn-p" style="flex:1" id="btn-confirmer-echange" onclick="confirmerEchangeStandard()" disabled>Confirmer l'échange</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -1276,7 +1302,7 @@ async function demarrerSessionType(typeCode){
   // hors-ligne (reqCache) et peut être périmé si un équipement vient
   // d'être ajouté, faisant croire à tort qu'il n'y en a aucun de ce type.
   const {data:equipsDuTypeData,error:errEquips}=await db.from('equipements')
-    .select('*,types_equipements(libelle,icone,code)')
+    .select('*,types_equipements(libelle,icone,code),extincteurs_unites!equipements_unite_extincteur_actuelle_id_fkey(*)')
     .eq('client_id',currentClient.id)
     .eq('type_equipement_code',typeCode)
     .neq('statut','réformé');
@@ -1321,7 +1347,7 @@ async function demarrerSession(){
   
   // Charger équipements complets
   const {data:equips}=await db.from('equipements')
-    .select('*,types_equipements(libelle,icone,code)')
+    .select('*,types_equipements(libelle,icone,code),extincteurs_unites!equipements_unite_extincteur_actuelle_id_fkey(*)')
     .eq('client_id',currentClient.id)
     .neq('statut','réformé')
     .order('type_equipement_code');
@@ -1415,7 +1441,7 @@ async function reprendreSession(sessionId){
 
   // Recharger les équipements du client
   const {data:equips}=await db.from('equipements')
-    .select('*,types_equipements(libelle,icone,code)')
+    .select('*,types_equipements(libelle,icone,code),extincteurs_unites!equipements_unite_extincteur_actuelle_id_fkey(*)')
     .eq('client_id',currentClient.id)
     .neq('statut','réformé')
     .order('type_equipement_code');
@@ -1525,8 +1551,8 @@ function confirmQuitSession(){
 // SCAN QR
 // ============================================================
 let _scanMode='equip';
-async function ouvrirScanner(){
-  _scanMode='equip';
+async function ouvrirScanner(mode){
+  _scanMode=mode||'equip';
   goTo('s-scanner');
   try{
     scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
@@ -1549,19 +1575,26 @@ async function ouvrirScanner(){
           numeroId=code.data.split('BFS-EXT:')[1].split('|')[0];
         }
         if(_scanMode==='stock')traiterScanPiece(numeroId);
+        else if(_scanMode==='echange-sortant'||_scanMode==='echange-entrant')traiterScanUniteEchange(numeroId,_scanMode);
         else traiterScanEquip(numeroId);
       }
     },200);
   }catch(e){
     toast('Caméra non disponible','err');
-    goTo(_scanMode==='stock'?'s-stock':'s-session');
+    goTo(_ecranRetourScan());
   }
+}
+
+function _ecranRetourScan(){
+  if(_scanMode==='stock')return 's-stock';
+  if(_scanMode==='echange-sortant'||_scanMode==='echange-entrant')return 's-verif';
+  return 's-session';
 }
 
 function stopScanner(){
   clearInterval(scanInterval);scanInterval=null;
   if(scanStream){scanStream.getTracks().forEach(t=>t.stop());scanStream=null}
-  if($('s-scanner').classList.contains('active'))goTo(_scanMode==='stock'?'s-stock':'s-session');
+  if($('s-scanner').classList.contains('active'))goTo(_ecranRetourScan());
 }
 
 async function traiterScanEquip(numeroId){
@@ -1570,13 +1603,13 @@ async function traiterScanEquip(numeroId){
   if(!equip){
     // Chercher en base par numero_identification
     const {data}=await db.from('equipements')
-      .select('*,types_equipements(libelle,icone)')
+      .select('*,types_equipements(libelle,icone),extincteurs_unites!equipements_unite_extincteur_actuelle_id_fkey(*)')
       .eq('numero_identification',numeroId)
       .single();
     if(!data){
       // Essayer par UUID au cas où
       const {data:data2}=await db.from('equipements')
-        .select('*,types_equipements(libelle,icone)')
+        .select('*,types_equipements(libelle,icone),extincteurs_unites!equipements_unite_extincteur_actuelle_id_fkey(*)')
         .eq('id',numeroId).single();
       if(!data2){toast('Équipement non trouvé : '+numeroId,'err');return}
       equip=data2;
@@ -1626,6 +1659,10 @@ async function ouvrirVerif(equipId){
   // [quinquennal] dans son libellé, typiquement les RIA)
   const {data:paliers}=await db.from('paliers_maintenance').select('*').eq('type_equipement_code',equip.type_equipement_code).eq('actif',true).order('ordre');
   const palierSuggere = calculerPalierSuggere(equip, paliers||[]);
+  // Mémorisé pour ouvrirEchangeStandard()/confirmerEchangeStandard() (fonctions hors de cette closure)
+  window._palierApprofondieCourant = (paliers||[]).find(p=>p.code==='approfondie')||null;
+  window._equipEchangeCourant = equip;
+  window._estPPEchangeCourant = estPP;
 
   const points=(pts||[]).filter(p=>{
     // Filtre marque/modèle standard
@@ -1688,6 +1725,14 @@ async function ouvrirVerif(equipId){
         ${(paliers||[]).map(p=>`<option value="${p.id}" data-code="${p.code}" data-reinit="${p.reinitialise_compteur}" ${p.id===palierSuggere.id?'selected':''}>${p.libelle}${p.id===palierSuggere.id?(palierSuggere.enRetard?' (EN RETARD)':' (suggéré)'):''}</option>`).join('')}
       </select>
       ${palierSuggere.reference_normative ? `<div style="font-size:11px;color:var(--txt-l);margin-top:4px">📋 ${palierSuggere.reference_normative}</div>` : ''}
+    </div>
+    ` : ''}
+
+    ${(equip.type_equipement_code==='extincteur' && estPP && palierSuggere?.code==='approfondie') ? `
+    <div style="background:#fff5f4;border:1.5px solid var(--rouge);border-radius:10px;padding:14px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:6px">🔄 Échange standard requis</div>
+      <div style="font-size:12px;color:var(--txt-l);margin-bottom:10px">Cet extincteur est à pression permanente : la maintenance approfondie (5 ans) se fait désormais par échange avec un extincteur révisé en atelier, plus sur place.${equip.extincteurs_unites?.identification?` Unité actuelle : <strong>${equip.extincteurs_unites.identification}</strong>.`:''}</div>
+      <button class="btn btn-p" style="width:100%" onclick="ouvrirEchangeStandard('${equip.id}')">Faire l'échange standard</button>
     </div>
     ` : ''}
 
@@ -1975,6 +2020,142 @@ window.confirmerHS=function(){
   sessionVerifs[currentEquipId].motifHS=motifFinal;
   setStatut('hors service');
   $('verif-obs').value=`HORS SERVICE : ${motifFinal}\n${$('verif-obs').value}`;
+};
+
+// ============================================================
+// ÉCHANGE STANDARD (extincteurs à pression permanente, palier 5 ans)
+// ============================================================
+window.ouvrirEchangeStandard=function(equipId){
+  const equip=currentEquipements.find(e=>e.id===equipId)||window._equipEchangeCourant;
+  if(!equip){toast('Équipement introuvable','err');return}
+  const ancienneUnite=equip.extincteurs_unites;
+  if(!ancienneUnite){toast('Aucune unité physique liée à cet emplacement — impossible de proposer un échange. Contacter le bureau.','err');return}
+  window._ancienneUniteEchange=ancienneUnite;
+  window._equipEchangeCourant=equip;
+  window._nouvelleUniteEchange=null;
+
+  $('echange-desc').textContent=`Unité attendue en sortie : ${ancienneUnite.identification} (${ancienneUnite.agent_code}, ${ancienneUnite.capacite_valeur||'?'}${ancienneUnite.capacite_unite||''}).`;
+  $('echange-sortant-statut').textContent='Non scanné';$('echange-sortant-statut').style.color='';
+  $('echange-entrant-statut').textContent='Non scanné';$('echange-entrant-statut').style.color='';
+  $('btn-confirmer-echange').disabled=true;
+  OM('mo-echange');
+};
+
+window.closeMoEchange=function(){CM('mo-echange')};
+
+window.scannerPourEchange=function(role){
+  CM('mo-echange');
+  ouvrirScanner(role==='sortant'?'echange-sortant':'echange-entrant');
+};
+
+window.traiterScanUniteEchange=async function(identification,scanMode){
+  const equip=window._equipEchangeCourant;
+  const ancienneUnite=window._ancienneUniteEchange;
+  if(!equip||!ancienneUnite){toast('Contexte d\'échange perdu, relance-le depuis la fiche','err');goTo('s-session');return}
+
+  if(scanMode==='echange-sortant'){
+    if(identification!==ancienneUnite.identification){
+      toast(`QR scanné (${identification}) ≠ unité attendue (${ancienneUnite.identification}). Vérifie que tu scannes bien l'extincteur en place à cet emplacement.`,'err');
+    } else {
+      $('echange-sortant-statut').textContent='✓ '+identification;$('echange-sortant-statut').style.color='#16a34a';
+      toast('Extincteur sortant confirmé ✓');
+    }
+    OM('mo-echange');
+    return;
+  }
+
+  // scanMode === 'echange-entrant'
+  const {data:nouvelleUnite,error}=await db.from('extincteurs_unites').select('*').eq('identification',identification).single();
+  if(error||!nouvelleUnite){
+    toast(`Extincteur inconnu : ${identification}`,'err');OM('mo-echange');return;
+  }
+  if(nouvelleUnite.id===ancienneUnite.id){
+    toast('C\'est le même extincteur que celui qui sort — scanne l\'extincteur de remplacement.','err');OM('mo-echange');return;
+  }
+  if(nouvelleUnite.statut!=='en_atelier_revise'){
+    toast(`${identification} n'est pas au statut "révisé — prêt" (statut actuel : ${nouvelleUnite.statut}). Contacter le bureau.`,'err');OM('mo-echange');return;
+  }
+  if(nouvelleUnite.mode_pressurisation!=='PP'||nouvelleUnite.agent_code!==ancienneUnite.agent_code||+nouvelleUnite.capacite_valeur!==+ancienneUnite.capacite_valeur){
+    toast(`${identification} ne correspond pas au format attendu (${ancienneUnite.agent_code}, ${ancienneUnite.capacite_valeur}${ancienneUnite.capacite_unite||''}, PP).`,'err');OM('mo-echange');return;
+  }
+  window._nouvelleUniteEchange=nouvelleUnite;
+  $('echange-entrant-statut').textContent='✓ '+identification;$('echange-entrant-statut').style.color='#16a34a';
+  toast('Extincteur entrant validé ✓');
+  OM('mo-echange');
+  if($('echange-sortant-statut').textContent.startsWith('✓')&&$('echange-entrant-statut').textContent.startsWith('✓')){
+    $('btn-confirmer-echange').disabled=false;
+  }
+};
+
+window.confirmerEchangeStandard=async function(){
+  const equip=window._equipEchangeCourant;
+  const ancienneUnite=window._ancienneUniteEchange;
+  const nouvelleUnite=window._nouvelleUniteEchange;
+  if(!equip||!ancienneUnite||!nouvelleUnite){toast('Scanne d\'abord les deux extincteurs (sortant et entrant)','err');return}
+
+  toast('Échange en cours…');
+  const aujourdhui=new Date().toISOString().slice(0,10);
+  const palier=window._palierApprofondieCourant;
+
+  // 1. Vérification (constate l'échange, réinitialise le compteur du palier 5 ans)
+  const {data:vData,error:ve}=await db.from('verifications').insert({
+    equipement_id:equip.id, client_id:currentClient.id, agence_id:currentClient.agence_id, technicien_id:ME.id,
+    type_equipement_code:equip.type_equipement_code,
+    date_verification:aujourdhui, date_prochaine_echeance:getDefaultEcheance(),
+    technicien:`${ME.prenom||''} ${ME.nom}`.trim(),
+    resultat:'conforme',
+    observations:`Échange standard : ${ancienneUnite.identification} déposé → ${nouvelleUnite.identification} posé (extincteur révisé en atelier).`,
+    session_id:currentSession?.id,
+    palier_id:palier?.id||null, palier_code:'approfondie', reinitialise_compteur:true,
+    // Historique attaché à l'unité DÉPOSÉE : c'est son entretien 5 ans qui est ainsi constaté.
+    unite_extincteur_id:ancienneUnite.id
+  }).select().single();
+  if(ve){toast('Erreur enregistrement vérification : '+ve.message,'err');return}
+
+  // 2. Mouvements (dépose ancienne unité, pose nouvelle unité)
+  await db.from('extincteurs_mouvements').insert([
+    {unite_id:ancienneUnite.id, emplacement_id:equip.id, type:'echange_standard_depose', verification_id:vData.id, technicien_id:ME.id, agence_id:currentClient.agence_id},
+    {unite_id:nouvelleUnite.id, emplacement_id:equip.id, type:'echange_standard_pose', verification_id:vData.id, technicien_id:ME.id, agence_id:currentClient.agence_id}
+  ]);
+
+  // 3. Ancienne unité repart en atelier pour révision
+  await db.from('extincteurs_unites').update({statut:'en_atelier_a_reviser', emplacement_actuel_id:null, updated_at:new Date().toISOString()}).eq('id',ancienneUnite.id);
+
+  // 4. Nouvelle unité prend la place, statut en service
+  await db.from('extincteurs_unites').update({statut:'en_service', emplacement_actuel_id:equip.id, updated_at:new Date().toISOString()}).eq('id',nouvelleUnite.id);
+
+  // 5. L'emplacement pointe vers la nouvelle unité + champs d'affichage synchronisés (rapports/PDF lisent equipements directement)
+  const perso=(equip.donnees_specifiques?._perso||[]).filter(p=>p.label!=='Mode pressurisation');
+  perso.push({label:'Mode pressurisation',value:nouvelleUnite.mode_pressurisation});
+  const donneesMaj={...(equip.donnees_specifiques||{}), 'e-agent':{'CO2':'CO2','AB':'Eau + additif','ABC':'Poudre ABC'}[nouvelleUnite.agent_code]||nouvelleUnite.agent_code, _perso:perso};
+  await db.from('equipements').update({
+    unite_extincteur_actuelle_id:nouvelleUnite.id,
+    marque:nouvelleUnite.marque, modele:nouvelleUnite.modele,
+    capacite_valeur:nouvelleUnite.capacite_valeur, capacite_unite:nouvelleUnite.capacite_unite,
+    date_mise_en_service:nouvelleUnite.date_mise_en_service,
+    date_derniere_reinitialisation:aujourdhui,
+    donnees_specifiques:donneesMaj,
+    updated_at:new Date().toISOString()
+  }).eq('id',equip.id);
+
+  // Mise à jour locale (équipement courant dans la session)
+  Object.assign(equip,{unite_extincteur_actuelle_id:nouvelleUnite.id, marque:nouvelleUnite.marque, modele:nouvelleUnite.modele, capacite_valeur:nouvelleUnite.capacite_valeur, capacite_unite:nouvelleUnite.capacite_unite, extincteurs_unites:nouvelleUnite});
+
+  sessionVerifs[equip.id]={points:{},pieces:[],resultat:'conforme',obs:`Échange standard : ${ancienneUnite.identification} → ${nouvelleUnite.identification}`,echeance:getDefaultEcheance(),verifId:vData.id};
+  if(currentSession){
+    const done=Object.keys(sessionVerifs).length;
+    const nc=Object.values(sessionVerifs).filter(v=>v.resultat==='non conforme').length;
+    const hs=Object.values(sessionVerifs).filter(v=>v.resultat==='hors service').length;
+    await db.from('sessions_controle').update({nb_equip_verifies:done,nb_non_conformes:nc,nb_hs:hs}).eq('id',currentSession.id);
+  }
+  await autoValiderRdvDuJour();
+  sauvegarderSessionLocale();
+
+  CM('mo-echange');
+  toast(`Échange effectué ✓ (${nouvelleUnite.identification} posé)`,'ok');
+  updateSessionProgress();
+  renderSessionEquipList();
+  goTo('s-session');
 };
 
 // Valider vérification
@@ -2288,6 +2469,9 @@ async function _validerVerifInterne(equip){
     session_id:currentSession?.id,
     palier_id:palierId||null, palier_code:palierCode||null,
     reinitialise_compteur:reinitialise,
+    // Traçabilité historique par extincteur physique (indépendant de l'emplacement) :
+    // l'unité actuellement en place à cet emplacement au moment du contrôle.
+    unite_extincteur_id:equip.unite_extincteur_actuelle_id||null,
     updated_at:new Date().toISOString()
   };
 

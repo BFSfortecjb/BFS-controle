@@ -1921,6 +1921,7 @@ async function loadStock(){
   renderStock();renderInventaires();renderMouvements();
   chargerPrevision();
   chargerStockNeufs();
+  chargerUnitesExtincteurs();
 }
 
 // ---- Extincteurs neufs en stock (à installer) ----
@@ -1959,6 +1960,112 @@ function renderStockNeufs(){
       <button class="btn btn-s btn-xs" title="Supprimer" onclick="deleteEquip('${e.id}')">🗑</button>
     </div></td>
   </tr>`}).join('')}</tbody></table>`;
+}
+
+// ---- Atelier : unités d'extincteurs (échange standard PP) ----
+let uniteExtincteurs=[],agentsExtincteurs=[];
+async function chargerUnitesExtincteurs(){
+  const el=$('tbl-unites-extincteurs');if(!el)return;
+  const [{data,error},{data:agents}]=await Promise.all([
+    db.from('extincteurs_unites').select('*,agences(nom,code),equipements!extincteurs_unites_emplacement_actuel_id_fkey(numero_identification,client_id,clients(raison_sociale))').order('created_at',{ascending:false}),
+    db.from('agents_extincteurs').select('*').eq('actif',true).order('libelle')
+  ]);
+  if(error){el.innerHTML='<div class="t-empty">Erreur : '+error.message+'</div>';return}
+  uniteExtincteurs=data||[];agentsExtincteurs=agents||[];
+  const selAgent=$('ue-agent');if(selAgent)selAgent.innerHTML=agentsExtincteurs.map(a=>`<option value="${a.code}">${a.libelle}</option>`).join('');
+  const selAgence=$('ue-agence');if(selAgence)selAgence.innerHTML=(_stockAgences||[]).map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
+  renderUnitesExtincteurs();
+}
+const statutUnite=s=>({en_service:'🟢 En service (client)',en_atelier_a_reviser:'🟠 À réviser',en_atelier_revise:'🔵 Révisé — prêt',reforme:'⚫ Réformé'}[s]||s);
+function renderUnitesExtincteurs(){
+  const el=$('tbl-unites-extincteurs');if(!el)return;
+  const fs=$('f-statut-unites')?.value||'';
+  const q=($('q-unites')?.value||'').toLowerCase();
+  const data=uniteExtincteurs.filter(u=>(!fs||u.statut===fs)&&u.identification.toLowerCase().includes(q));
+  if(!data.length){el.innerHTML='<div class="t-empty">Aucune unité d\'extincteur pour ce filtre.</div>';return}
+  el.innerHTML=`<table><thead><tr><th>Identification</th><th>Mode</th><th>Capacité</th><th>Statut</th><th>Emplacement / Agence</th><th>Dernière révision</th><th>Actions</th></tr></thead><tbody>${data.map(u=>`<tr>
+    <td><strong>${u.identification}</strong>${u.marque?'<br><small style="color:var(--txt-l)">'+u.marque+(u.modele?' '+u.modele:'')+'</small>':''}</td>
+    <td>${u.mode_pressurisation}</td>
+    <td>${u.capacite_valeur||'?'}${u.capacite_unite||''} · ${u.agent_code}</td>
+    <td>${statutUnite(u.statut)}</td>
+    <td style="font-size:12px">${u.equipements?(u.equipements.clients?.raison_sociale||'')+' — '+(u.equipements.numero_identification||''):(u.agences?.nom||'—')}</td>
+    <td style="font-size:12px">${fmt(u.date_derniere_revision_atelier)}</td>
+    <td><div class="ia">
+      ${u.statut==='en_atelier_a_reviser'?`<button class="btn btn-s btn-xs" onclick="marquerUniteRevisee('${u.id}')">✅ Révisé</button>`:''}
+      ${u.statut!=='reforme'&&u.statut!=='en_service'?`<button class="btn btn-s btn-xs" onclick="reformerUnite('${u.id}')">⚫ Réformer</button>`:''}
+      <button class="btn btn-s btn-xs" onclick="showQR('${u.id}','${u.identification}','${u.agent_code} ${u.capacite_valeur||''}${u.capacite_unite||''}','Extincteur (unité physique)')" title="QR à coller sur l'extincteur (échange standard)">QR</button>
+      <button class="btn btn-s btn-xs" onclick="voirHistoriqueUnite('${u.id}')" title="Historique complet d'entretien">🕘</button>
+      <button class="btn btn-s btn-xs" onclick="openUniteExtincteurModal(uniteExtincteurs.find(x=>x.id==='${u.id}'))">✏️</button>
+    </div></td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+async function voirHistoriqueUnite(id){
+  const u=uniteExtincteurs.find(x=>x.id===id);if(!u)return;
+  const [{data:verifs},{data:mvts}]=await Promise.all([
+    db.from('verifications').select('date_verification,resultat,palier_code,observations,equipement_id,equipements(numero_identification,clients(raison_sociale))').eq('unite_extincteur_id',id).order('date_verification',{ascending:false}),
+    db.from('extincteurs_mouvements').select('type,date_mouvement,notes,equipements(numero_identification,clients(raison_sociale))').eq('unite_id',id).order('date_mouvement',{ascending:false})
+  ]);
+  const typeMvt=t=>({installation_initiale:'📍 Installation initiale',echange_standard_pose:'🔄 Posé (échange)',echange_standard_depose:'🔄 Déposé (échange)',retour_atelier:'🏭 Retour atelier',revision_atelier:'✅ Révisé en atelier',remise_en_stock:'📦 Remise en stock',mise_au_rebut:'⚫ Réformé'}[t]||t);
+  const lignes=[
+    ...(verifs||[]).map(v=>({date:v.date_verification,libelle:`🧾 Vérification — ${v.resultat||'?'}${v.palier_code?' ('+v.palier_code+')':''}`,detail:[v.equipements?.clients?.raison_sociale,v.equipements?.numero_identification,v.observations].filter(Boolean).join(' · ')})),
+    ...(mvts||[]).map(m=>({date:(m.date_mouvement||'').slice(0,10),libelle:typeMvt(m.type),detail:[m.equipements?.clients?.raison_sociale,m.equipements?.numero_identification,m.notes].filter(Boolean).join(' · ')}))
+  ].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const html=lignes.length?`<table><thead><tr><th>Date</th><th>Événement</th><th>Détail</th></tr></thead><tbody>${lignes.map(l=>`<tr><td style="white-space:nowrap">${fmt(l.date)}</td><td>${l.libelle}</td><td style="font-size:12px;color:var(--txt-l)">${l.detail||'—'}</td></tr>`).join('')}</tbody></table>`:'<div class="t-empty">Aucun historique</div>';
+  $('mo-hist-unite-titre').textContent=`Historique — ${u.identification}`;
+  $('mo-hist-unite-corps').innerHTML=html;
+  OM('mo-hist-unite');
+}
+async function marquerUniteRevisee(id){
+  const {error}=await db.from('extincteurs_unites').update({statut:'en_atelier_revise',date_derniere_revision_atelier:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  await db.from('extincteurs_mouvements').insert({unite_id:id,type:'revision_atelier',technicien_id:ME.id});
+  toast('Unité marquée révisée ✓');chargerUnitesExtincteurs();
+}
+async function reformerUnite(id){
+  if(!confirm('Réformer définitivement cette unité ? Elle ne pourra plus être proposée en échange standard.'))return;
+  const {error}=await db.from('extincteurs_unites').update({statut:'reforme',updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  await db.from('extincteurs_mouvements').insert({unite_id:id,type:'mise_au_rebut',technicien_id:ME.id});
+  toast('Unité réformée');chargerUnitesExtincteurs();
+}
+function openUniteExtincteurModal(prefill=null){
+  ['ue-id','ue-marque','ue-modele','ue-serie','ue-notes'].forEach(id=>{if($(id))$(id).value=''});
+  $('ue-mode').value='PP';$('ue-capacite-unite').value='L';$('ue-annee').value=new Date().getFullYear();$('ue-statut').value='en_atelier_revise';
+  $('mo-ue-t').textContent="Nouvelle unité d'extincteur";$('ue-id-generee').textContent='';
+  if(prefill){
+    $('ue-id').value=prefill.id;$('ue-mode').value=prefill.mode_pressurisation;$('ue-agent').value=prefill.agent_code||'';
+    $('ue-capacite').value=prefill.capacite_valeur||'';$('ue-capacite-unite').value=prefill.capacite_unite||'L';
+    $('ue-annee').value=prefill.date_mise_en_service?new Date(prefill.date_mise_en_service).getFullYear():new Date().getFullYear();
+    $('ue-agence').value=prefill.agence_id||'';$('ue-marque').value=prefill.marque||'';$('ue-modele').value=prefill.modele||'';
+    $('ue-serie').value=prefill.numero_serie||'';$('ue-statut').value=prefill.statut;$('ue-notes').value=prefill.notes||'';
+    $('mo-ue-t').textContent='Modifier l\'unité';$('ue-id-generee').textContent='Identification : '+prefill.identification+' (non modifiable)';
+  }
+  OM('mo-unite-ext');
+}
+async function saveUniteExtincteur(){
+  const id=$('ue-id').value;
+  const mode=$('ue-mode').value,agent=$('ue-agent').value,capacite=parseFloat($('ue-capacite').value);
+  const annee=parseInt($('ue-annee').value),agenceId=$('ue-agence').value;
+  if(!agent||isNaN(capacite)||!annee||!agenceId){toast('Agent, capacité, année et agence sont obligatoires','err');return}
+  const p={mode_pressurisation:mode,agent_code:agent,capacite_valeur:capacite,capacite_unite:$('ue-capacite-unite').value,
+    marque:$('ue-marque').value.trim()||null,modele:$('ue-modele').value.trim()||null,numero_serie:$('ue-serie').value.trim()||null,
+    agence_id:agenceId,statut:$('ue-statut').value,notes:$('ue-notes').value.trim()||null,updated_at:new Date().toISOString()};
+  if(id){
+    const {error}=await db.from('extincteurs_unites').update(p).eq('id',id);
+    if(error){toast('Erreur : '+error.message,'err');return}
+    toast('Unité modifiée');
+  }else{
+    const {data:idGen,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:mode,p_agent_code:agent,p_capacite:capacite,p_annee_mise_en_service:annee});
+    if(eg){toast('Erreur génération identification : '+eg.message,'err');return}
+    p.identification=idGen;p.date_mise_en_service=annee+'-01-01';
+    if(p.statut==='en_atelier_revise')p.date_derniere_revision_atelier=new Date().toISOString().slice(0,10);
+    const {data:nu,error}=await db.from('extincteurs_unites').insert(p).select().single();
+    if(error){toast('Erreur : '+error.message,'err');return}
+    await db.from('extincteurs_mouvements').insert({unite_id:nu.id,type:'remise_en_stock',technicien_id:ME.id,agence_id:agenceId,notes:'Création manuelle atelier'});
+    toast('Unité créée : '+idGen);
+  }
+  CM('mo-unite-ext');chargerUnitesExtincteurs();
 }
 
 // ---- Matériovigilance : recherche d'un n° de lot signalé défectueux ----
