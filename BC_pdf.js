@@ -57,8 +57,10 @@ async function exportVerifPDF(verifId){
 // ============================================================
 // PDF — CONTRAT
 // ============================================================
-async function exportContratPDF(id){
-  const {data:c}=await db.from('contrats').select('*,clients(*),agences(nom,code)').eq('id',id).single();if(!c){toast('Contrat introuvable','err');return}
+// Construit le PDF du contrat sans le sauvegarder — réutilisé par
+// exportContratPDF() (téléchargement) et envoyerContratMail() (upload + lien).
+async function construireContratPDF(id){
+  const {data:c}=await db.from('contrats').select('*,clients(*),agences(nom,code)').eq('id',id).single();if(!c)return null;
   const {jsPDF}=window.jspdf;const doc=new jsPDF();const cl=c.clients;
   const raisonSoc=c.agences?.code==='sevremont'?'Bocage Formation Sécurité':'Bretagne Formation Sécurité';
   // Filigrane flamme (sous le contenu)
@@ -132,7 +134,40 @@ async function exportContratPDF(id){
   }
   doc.setFontSize(7);doc.setTextColor(150);
   doc.text('Généré le '+new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),105,290,{align:'center'});
+  return {c,doc};
+}
+
+async function exportContratPDF(id){
+  const res=await construireContratPDF(id);
+  if(!res){toast('Contrat introuvable','err');return}
+  const {c,doc}=res;
   doc.save(`BFS_contrat_${c.numero_contrat||id}${c.signature_data?'_signe':''}.pdf`);toast('Contrat PDF généré');
+}
+
+// Génère le PDF, l'archive dans le bucket privé "contrats" (jusqu'ici le
+// contrat n'était que téléchargé, jamais stocké — utile en secours/traçabilité),
+// puis ouvre la modale d'envoi mail avec le PDF en pièce jointe (v2 de
+// envoyer-mail) et le lien archivé en complément.
+async function envoyerContratMail(id){
+  toast('Préparation du PDF…');
+  const res=await construireContratPDF(id);
+  if(!res){toast('Contrat introuvable','err');return}
+  const {c,doc}=res;
+  const cl=c.clients;
+  const fileName=`contrat_${id}_${Date.now()}.pdf`;
+  const arrayBuffer=doc.output('arraybuffer');
+  const {error:upErr}=await db.storage.from('contrats').upload(fileName,arrayBuffer,{contentType:'application/pdf'});
+  if(upErr){toast('Erreur archivage PDF : '+upErr.message,'err');return}
+  const {data:signedData}=await db.storage.from('contrats').createSignedUrl(fileName,60*60*24*30);
+  const nomPJ=`Contrat_${(c.numero_contrat||id).replace(/[^\w.-]+/g,'_')}.pdf`;
+  ouvrirEnvoiMail({
+    type:'contrat', referenceId:id, clientId:c.client_id,
+    destinataireDefaut:cl?.contact_email||'',
+    sujet:`BFS — Contrat de maintenance ${c.numero_contrat||''} — ${cl?.raison_sociale||''}`,
+    message:`Bonjour,\n\nVeuillez trouver ci-joint votre contrat de maintenance BFS n°${c.numero_contrat||''}.\n\nCordialement,\nL'équipe BFS`,
+    libelleDocument:'Contrat de maintenance PDF', url:signedData?.signedUrl||null,
+    pieceJointe:{nom:nomPJ,base64:arrayBufferVersBase64(arrayBuffer)}
+  });
 }
 
 // ============================================================
@@ -519,6 +554,46 @@ async function rapportInventairePDF(invId){
   for(let p=1;p<=nb;p++){doc.setPage(p);doc.setFontSize(7);doc.setTextColor(150);
     doc.text(`${raisonSoc} — Inventaire du ${new Date(inv.demarre_le).toLocaleDateString('fr-FR')} — Page ${p}/${nb}`,105,292,{align:'center'});doc.setTextColor(30);}
   doc.save(`BFS_inventaire_${new Date(inv.demarre_le).toISOString().slice(0,10)}.pdf`);toast('Rapport généré');
+}
+
+// ============================================================
+// PDF — HISTORIQUE D'ENTRETIEN D'UN EXTINCTEUR (unité physique)
+// ============================================================
+function historiqueUnitePDF(){
+  const ctx=window._histUniteCourante;
+  if(!ctx){toast('Ouvre d\'abord l\'historique d\'une unité','err');return}
+  const {unite:u,lignes}=ctx;
+  const raisonSoc='Bretagne Formation Sécurité';
+  const {jsPDF}=window.jspdf;const doc=new jsPDF();
+  try{doc.saveGraphicsState();doc.setGState(new doc.GState({opacity:0.05}));doc.addImage(LOGO_BFS,'PNG',50,93,110,110);doc.restoreGraphicsState();}catch(e){}
+  try{doc.addImage(LOGO_BFS,'PNG',12,5,16,16)}catch(e){}
+  doc.setFontSize(20);doc.setFont('helvetica','bold');doc.setTextColor(50,50,50);doc.text('BFS',29,15);
+  doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');doc.text(raisonSoc,29,19.5);
+  doc.setFillColor(230,100,40);doc.rect(65,8,130,10,'F');
+  doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
+  doc.text('HISTORIQUE D\'ENTRETIEN — EXTINCTEUR',130,15,{align:'center'});
+  doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
+  const capLib=`${u.capacite_valeur||'?'}${u.capacite_unite||''}`;
+  doc.text(`Identification : ${u.identification}  —  ${u.mode_pressurisation} · ${u.agent_code} · ${capLib}`,14,26);
+  doc.text(`Marque/Modèle : ${[u.marque,u.modele].filter(Boolean).join(' ')||'—'}   N° série : ${u.numero_serie||'—'}`,14,31);
+  doc.text(`Mise en service : ${fmt(u.date_mise_en_service)}   Statut actuel : ${statutUnite(u.statut).replace(/^[^\s]+\s/,'')}`,14,36);
+  let y=43;
+  if(!lignes.length){
+    doc.setFontSize(11);doc.text('Aucun historique enregistré pour cet extincteur.',14,y+6);
+  }else{
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('ÉVÉNEMENTS (du plus récent au plus ancien)',14,y);y+=3;
+    doc.autoTable({startY:y,margin:{left:14,right:14},
+      head:[['Date','Événement','Détail']],
+      body:lignes.map(l=>[fmt(l.date),l.libelle.replace(/^[^\s]+\s/,''),l.detail||'—']),
+      styles:{fontSize:8.5,cellPadding:1.5},headStyles:{fillColor:[230,100,40]},
+      columnStyles:{0:{cellWidth:24},1:{cellWidth:55}}
+    });
+  }
+  const nb=doc.getNumberOfPages();
+  for(let p=1;p<=nb;p++){doc.setPage(p);doc.setFontSize(7);doc.setTextColor(150);
+    doc.text(`${raisonSoc} — Historique ${u.identification} — édité le ${new Date().toLocaleDateString('fr-FR')} — Page ${p}/${nb}`,105,292,{align:'center'});doc.setTextColor(30);}
+  doc.save(`BFS_historique_${u.identification}.pdf`);
+  toast('Historique exporté');
 }
 
 console.log('✓ pdf.js chargé');

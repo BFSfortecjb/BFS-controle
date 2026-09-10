@@ -831,10 +831,35 @@ tr:hover td{background:#fafafa}
 
 
 
+<!-- Modal envoi mail (bons d'intervention / contrats) -->
+<div class="mo" id="mo-envoi-mail">
+  <div class="modal" style="max-width:520px"><div class="mh"><h3>✉️ Envoyer par mail</h3><button class="mclose" onclick="CM('mo-envoi-mail')">✕</button></div>
+  <div class="mc">
+    <div class="form-grid">
+      <div class="fg" style="grid-column:1/-1"><label>Destinataire (client) *</label><input type="email" id="em-destinataire" placeholder="client@exemple.fr"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Sujet</label><input type="text" id="em-sujet"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Message</label><textarea id="em-message" rows="6"></textarea></div>
+    </div>
+    <div id="em-doc-info" style="font-size:12px;color:var(--txt-l);margin-top:4px"></div>
+    <div id="em-copie-info" style="font-size:12px;color:var(--txt-l);margin-bottom:8px"></div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-envoi-mail')">Annuler</button><button class="btn btn-p" onclick="confirmerEnvoiMail()">Envoyer</button></div>
+  </div></div>
+</div>
+
+<!-- Modal historique extincteurs d'un client -->
+<div class="mo" id="mo-hist-client">
+  <div class="modal" style="max-width:720px"><div class="mh"><h3 id="mo-hist-client-titre">Historique extincteurs</h3><button class="mclose" onclick="CM('mo-hist-client')">✕</button></div>
+  <div class="mc"><div id="mo-hist-client-corps"></div></div>
+  </div>
+</div>
+
 <!-- Modal historique d'une unité d'extincteur -->
 <div class="mo" id="mo-hist-unite">
   <div class="modal" style="max-width:640px"><div class="mh"><h3 id="mo-hist-unite-titre">Historique</h3><button class="mclose" onclick="CM('mo-hist-unite')">✕</button></div>
-  <div class="mc"><div id="mo-hist-unite-corps"></div></div>
+  <div class="mc">
+    <div id="mo-hist-unite-corps"></div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-hist-unite')">Fermer</button><button class="btn btn-p" onclick="historiqueUnitePDF()">📄 Exporter en PDF</button></div>
+  </div>
   </div>
 </div>
 

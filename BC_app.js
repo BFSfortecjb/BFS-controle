@@ -363,7 +363,7 @@ function renderClients(){
   el.innerHTML=`<table><thead><tr><th>Raison sociale</th><th>Agence</th><th>Ville</th><th>Contact</th><th>Téléphone</th><th>Actions</th></tr></thead><tbody>${data.map(c=>`<tr>
     <td><strong>${c.raison_sociale}</strong></td><td><span class="badge bg">${c.agences?.nom||'—'}</span></td>
     <td>${c.ville||'—'}</td><td>${c.contact_nom||'—'}</td><td>${c.contact_telephone||'—'}</td>
-    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editClient('${c.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="voirContratsClient('${c.raison_sociale.replace(/'/g,"\\'")}')" title="Voir les contrats de ce client">📋</button><button class="btn btn-s btn-xs" onclick="deleteClient('${c.id}')">🗑</button></div></td>
+    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editClient('${c.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="voirContratsClient('${c.raison_sociale.replace(/'/g,"\\'")}')" title="Voir les contrats de ce client">📋</button><button class="btn btn-s btn-xs" onclick="voirHistoriqueExtincteursClient('${c.id}')" title="Tous les extincteurs passés chez ce client">🧯</button><button class="btn btn-s btn-xs" onclick="deleteClient('${c.id}')">🗑</button></div></td>
   </tr>`).join('')}</tbody></table>`;
 }
 async function openClientModal(prefill=null){
@@ -1037,7 +1037,7 @@ async function deleteVerif(id){if(!confirm('Supprimer ?'))return;await db.from('
 // ============================================================
 async function loadContrats(){
   if(!clients.length)await loadClients();
-  const {data}=await db.from('contrats').select('*,clients(raison_sociale),agences(nom)').order('date_debut',{ascending:false});
+  const {data}=await db.from('contrats').select('*,clients(raison_sociale,contact_email),agences(nom)').order('date_debut',{ascending:false});
   contrats=data||[];renderContrats();
 }
 function renderContrats(){
@@ -1052,7 +1052,7 @@ function renderContrats(){
     <td class="${ecClass(c.date_fin)}">${fmt(c.date_fin)}</td>
     <td>${c.tarif_annuel?c.tarif_annuel.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'—'}</td>
     <td>${badgeSt(c.statut)}${c.signature_data?` <span class="badge bv" title="Signé le ${fmt(c.signe_le)}">✍</span>`:''}${Array.isArray(c.avenants)&&c.avenants.length?` <span class="badge bb" title="${c.avenants.length} avenant(s)">+${c.avenants.length}</span>`:''}</td>
-    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editContrat('${c.id}')">✏️</button>${!c.signature_data?`<button class="btn btn-s btn-xs" onclick="openSignContrat('${c.id}')" title="Faire signer le client">✍ Signer</button>`:''}<button class="btn btn-s btn-xs" onclick="exportContratPDF('${c.id}')" title="Télécharger le contrat PDF">📄</button><button class="btn btn-s btn-xs" onclick="deleteContrat('${c.id}')">🗑</button></div></td>
+    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editContrat('${c.id}')">✏️</button>${!c.signature_data?`<button class="btn btn-s btn-xs" onclick="openSignContrat('${c.id}')" title="Faire signer le client">✍ Signer</button>`:''}<button class="btn btn-s btn-xs" onclick="exportContratPDF('${c.id}')" title="Télécharger le contrat PDF">📄</button><button class="btn btn-s btn-xs" onclick="envoyerContratMail('${c.id}')" title="Envoyer par mail au client">✉️</button><button class="btn btn-s btn-xs" onclick="deleteContrat('${c.id}')">🗑</button></div></td>
   </tr>`).join('')}</tbody></table>`;
 }
 async function openContratModal(prefill=null){
@@ -1368,6 +1368,66 @@ async function exportCommandesXLS(){
 }
 
 // ============================================================
+// ENVOI MAIL DE DOCUMENTS (bons d'intervention, contrats)
+// ============================================================
+// Copie systématique : l'Edge Function "envoyer-mail" n'a pas de paramètre
+// Cc dédié (un seul champ "a", qui accepte un tableau) — on ajoute donc
+// l'adresse interne directement à la liste des destinataires principaux.
+const EMAIL_COPIE_INTERNE='contact@bfs-prevention.fr';
+
+// ArrayBuffer -> base64, par blocs pour ne pas dépasser la limite d'arguments
+// de String.fromCharCode sur les gros fichiers.
+function arrayBufferVersBase64(buffer){
+  const bytes=new Uint8Array(buffer);
+  let binaire='';const taille=0x8000;
+  for(let i=0;i<bytes.length;i+=taille){
+    binaire+=String.fromCharCode.apply(null,bytes.subarray(i,i+taille));
+  }
+  return btoa(binaire);
+}
+
+// pieceJointe: {nom, base64} optionnel — si absent, le mail contient un lien
+// vers le document (ex : fichier trop volumineux, ou non disponible en base64).
+function ouvrirEnvoiMail({type,referenceId,clientId,destinataireDefaut,sujet,message,libelleDocument,url,pieceJointe}){
+  if(!url&&!pieceJointe){toast('Aucun document disponible à envoyer pour le moment','err');return}
+  window._envoiMailContexte={type,referenceId,clientId,url,libelleDocument,pieceJointe};
+  $('em-destinataire').value=destinataireDefaut||'';
+  $('em-sujet').value=sujet||'';
+  $('em-message').value=message||'';
+  $('em-doc-info').textContent=pieceJointe?`Pièce jointe : ${pieceJointe.nom}`:`Document : ${libelleDocument} (lien valable 30 jours)`;
+  $('em-copie-info').textContent=`Une copie sera automatiquement envoyée à ${EMAIL_COPIE_INTERNE}`;
+  OM('mo-envoi-mail');
+}
+
+async function confirmerEnvoiMail(){
+  const ctx=window._envoiMailContexte;if(!ctx)return;
+  const destinataire=$('em-destinataire').value.trim();
+  if(!destinataire){toast('Indique l\'adresse email du client','err');return}
+  const sujet=$('em-sujet').value.trim();
+  const message=$('em-message').value.trim();
+  const destinataires=[...new Set([destinataire,EMAIL_COPIE_INTERNE])];
+  const body={a:destinataires,sujet,texte:message};
+  if(ctx.pieceJointe){
+    body.pieces_jointes=[{nom:ctx.pieceJointe.nom,base64:ctx.pieceJointe.base64}];
+    if(ctx.url)body.texte+=`\n\n(Document également disponible en ligne : ${ctx.url})`;
+  }else if(ctx.url){
+    body.html=`<p>${message.replace(/\n/g,'<br>')}</p><p><a href="${ctx.url}">${ctx.libelleDocument}</a></p><p style="font-size:12px;color:#888">Ce lien est valable 30 jours.</p>`;
+    body.texte+=`\n\n${ctx.libelleDocument} : ${ctx.url}\n\n(Ce lien est valable 30 jours.)`;
+  }
+  toast('Envoi en cours…');
+  const {data,error}=await db.functions.invoke('envoyer-mail',{body});
+  const succes=!error&&data?.envoye;
+  await db.from('envois_documents').insert({
+    type:ctx.type,reference_id:ctx.referenceId,client_id:ctx.clientId||null,
+    destinataires,sujet,url_document:ctx.url||null,envoye_par:ME.id,
+    succes:!!succes,erreur:error?(error.message||'Erreur inconnue'):null
+  });
+  if(!succes){toast('Erreur envoi : '+(error?.message||'échec inconnu'),'err');return}
+  toast('Mail envoyé ✓ (copie à '+EMAIL_COPIE_INTERNE+')');
+  CM('mo-envoi-mail');
+}
+
+// ============================================================
 // BONS D'INTERVENTION
 // ============================================================
 async function loadBons(){
@@ -1403,6 +1463,16 @@ async function loadBons(){
 
   const el = $('bons-list');
   if(!bons.length){el.innerHTML='<div class="t-empty">Aucun bon d\'intervention</div>';return}
+  // Mémorisés pour l'envoi mail (préférence : rapport détaillé > bulletin > PDF signé d'origine)
+  window._bonsEnvoiInfo={};
+  bons.forEach(b=>{
+    let url=null,label=null;
+    if(rapports[b.id]){url=urlArch(rapports[b.id]);label='Rapport détaillé'}
+    else if(bulletins[b.id]){url=urlArch(bulletins[b.id]);label='Bulletin'}
+    else if(b.pdf_url&&b.pdf_url.includes('bon_regen_')){url=b.pdf_url;label='Bulletin'}
+    else if(b.pdf_url){url=b.pdf_url;label='Bon d\'intervention signé'}
+    window._bonsEnvoiInfo[b.id]={url,label,clientId:b.client_id,contactEmail:b.contact_email,raisonSociale:b.raison_sociale,numeroSession:b.numero_session};
+  });
   el.innerHTML = `<table><thead><tr><th>N° Session</th><th>Date</th><th>Client</th><th>Agence</th><th>Technicien</th><th>Équip.</th><th>Signataire</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${bons.map(b=>`<tr>
     <td style="font-weight:700;color:var(--rouge);white-space:nowrap">${b.numero_session||'—'}</td>
     <td>${fmt(b.date_intervention)}</td>
@@ -1417,9 +1487,34 @@ async function loadBons(){
       ${bulletins[b.id]?`<a class="btn btn-s btn-xs" href="${urlArch(bulletins[b.id])}" target="_blank">📄 Bulletin</a>`:(b.pdf_url&&b.pdf_url.includes('bon_regen_')?`<a class="btn btn-s btn-xs" href="${b.pdf_url}" target="_blank">📄 Bulletin</a>`:'')}
       ${rapports[b.id]?`<a class="btn btn-s btn-xs" href="${urlArch(rapports[b.id])}" target="_blank">📋 Détaillé</a>`:''}
       <button class="btn btn-s btn-xs" onclick="actualiserBon('${b.id}')" title="(Re)générer le bulletin simple ET le bulletin détaillé — ne touche pas au PDF signé">🔄</button>
+      ${window._bonsEnvoiInfo[b.id].url?`<button class="btn btn-s btn-xs" onclick="envoyerBonMail('${b.id}')" title="Envoyer par mail au client">✉️</button>`:''}
       ${b.statut_facturation==='à_facturer'?`<button class="btn btn-s btn-xs" onclick="marquerFacture('${b.id}')">✓ Facturé</button>`:''}
     </div></td>
   </tr>`).join('')}</tbody></table>`;
+}
+
+const LIMITE_PIECE_JOINTE_OCTETS=15*1024*1024; // marge sous les ~20 Mo côté Edge Function
+
+async function envoyerBonMail(bonId){
+  const info=window._bonsEnvoiInfo?.[bonId];if(!info)return;
+  let pieceJointe=null;
+  try{
+    toast('Préparation du document…');
+    const rep=await fetch(info.url);
+    if(rep.ok){
+      const buffer=await rep.arrayBuffer();
+      if(buffer.byteLength<=LIMITE_PIECE_JOINTE_OCTETS){
+        pieceJointe={nom:`${info.label||'document'}_${info.numeroSession||bonId}.pdf`.replace(/[^\w.-]+/g,'_'),base64:arrayBufferVersBase64(buffer)};
+      }
+    }
+  }catch(e){/* échec silencieux : on retombera sur le lien */}
+  ouvrirEnvoiMail({
+    type:'bon_intervention', referenceId:bonId, clientId:info.clientId,
+    destinataireDefaut:info.contactEmail||'',
+    sujet:`BFS — Bon d'intervention${info.numeroSession?' '+info.numeroSession:''} — ${info.raisonSociale}`,
+    message:`Bonjour,\n\nVeuillez trouver ci-joint le compte-rendu de notre intervention du ${info.numeroSession?'('+info.numeroSession+')':''} chez ${info.raisonSociale}.\n\nCordialement,\nL'équipe BFS`,
+    libelleDocument:info.label||'Document', url:info.url, pieceJointe
+  });
 }
 
 
@@ -2000,21 +2095,79 @@ function renderUnitesExtincteurs(){
   </tr>`).join('')}</tbody></table>`;
 }
 
+const typeMvtLabel=t=>({installation_initiale:'📍 Installation initiale',echange_standard_pose:'🔄 Posé (échange)',echange_standard_depose:'🔄 Déposé (échange)',retour_atelier:'🏭 Retour atelier',revision_atelier:'✅ Révisé en atelier',remise_en_stock:'📦 Remise en stock',mise_au_rebut:'⚫ Réformé'}[t]||t);
+
+// Regroupe des mouvements de pose/dépose en périodes d'occupation (unité ↔ emplacement).
+// clé = unite_id+'|'+emplacement_id ; renvoie {unite_id, emplacement_id, pose, depose, info} triés du plus récent au plus ancien.
+function calculerPeriodesOccupation(mouvements){
+  const groupes={};
+  (mouvements||[]).forEach(m=>{
+    if(!m.emplacement_id||!m.unite_id)return;
+    const key=m.unite_id+'|'+m.emplacement_id;
+    if(!groupes[key])groupes[key]={unite_id:m.unite_id,emplacement_id:m.emplacement_id,pose:null,depose:null,info:m};
+    const g=groupes[key];
+    const d=(m.date_mouvement||'').slice(0,10);
+    if(m.type==='installation_initiale'||m.type==='echange_standard_pose'){
+      if(!g.pose||d<g.pose){g.pose=d;g.info=m}
+    }
+    if(m.type==='echange_standard_depose'){
+      if(!g.depose||d>g.depose)g.depose=d;
+    }
+  });
+  return Object.values(groupes).sort((a,b)=>(b.pose||'').localeCompare(a.pose||''));
+}
+
 async function voirHistoriqueUnite(id){
   const u=uniteExtincteurs.find(x=>x.id===id);if(!u)return;
   const [{data:verifs},{data:mvts}]=await Promise.all([
     db.from('verifications').select('date_verification,resultat,palier_code,observations,equipement_id,equipements(numero_identification,clients(raison_sociale))').eq('unite_extincteur_id',id).order('date_verification',{ascending:false}),
-    db.from('extincteurs_mouvements').select('type,date_mouvement,notes,equipements(numero_identification,clients(raison_sociale))').eq('unite_id',id).order('date_mouvement',{ascending:false})
+    db.from('extincteurs_mouvements').select('unite_id,emplacement_id,type,date_mouvement,notes,equipements(numero_identification,clients(raison_sociale))').eq('unite_id',id).order('date_mouvement',{ascending:false})
   ]);
-  const typeMvt=t=>({installation_initiale:'📍 Installation initiale',echange_standard_pose:'🔄 Posé (échange)',echange_standard_depose:'🔄 Déposé (échange)',retour_atelier:'🏭 Retour atelier',revision_atelier:'✅ Révisé en atelier',remise_en_stock:'📦 Remise en stock',mise_au_rebut:'⚫ Réformé'}[t]||t);
+  // Postes occupés : tous les clients chez qui cet extincteur a été posé, avec le numéro d'emplacement
+  const periodes=calculerPeriodesOccupation(mvts);
+  const htmlPostes=periodes.length?`<table><thead><tr><th>Client</th><th>N° emplacement</th><th>Posé le</th><th>Déposé le</th></tr></thead><tbody>${periodes.map(p=>`<tr>
+    <td>${p.info.equipements?.clients?.raison_sociale||'—'}</td>
+    <td><strong>${p.info.equipements?.numero_identification||'—'}</strong></td>
+    <td>${fmt(p.pose)}</td>
+    <td>${p.depose?fmt(p.depose):'<span style="color:#16a34a;font-weight:600">en place</span>'}</td>
+  </tr>`).join('')}</tbody></table>`:'<div class="t-empty">Aucun poste enregistré</div>';
+
   const lignes=[
     ...(verifs||[]).map(v=>({date:v.date_verification,libelle:`🧾 Vérification — ${v.resultat||'?'}${v.palier_code?' ('+v.palier_code+')':''}`,detail:[v.equipements?.clients?.raison_sociale,v.equipements?.numero_identification,v.observations].filter(Boolean).join(' · ')})),
-    ...(mvts||[]).map(m=>({date:(m.date_mouvement||'').slice(0,10),libelle:typeMvt(m.type),detail:[m.equipements?.clients?.raison_sociale,m.equipements?.numero_identification,m.notes].filter(Boolean).join(' · ')}))
+    ...(mvts||[]).map(m=>({date:(m.date_mouvement||'').slice(0,10),libelle:typeMvtLabel(m.type),detail:[m.equipements?.clients?.raison_sociale,m.equipements?.numero_identification,m.notes].filter(Boolean).join(' · ')}))
   ].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const html=lignes.length?`<table><thead><tr><th>Date</th><th>Événement</th><th>Détail</th></tr></thead><tbody>${lignes.map(l=>`<tr><td style="white-space:nowrap">${fmt(l.date)}</td><td>${l.libelle}</td><td style="font-size:12px;color:var(--txt-l)">${l.detail||'—'}</td></tr>`).join('')}</tbody></table>`:'<div class="t-empty">Aucun historique</div>';
+  const htmlEvenements=lignes.length?`<table><thead><tr><th>Date</th><th>Événement</th><th>Détail</th></tr></thead><tbody>${lignes.map(l=>`<tr><td style="white-space:nowrap">${fmt(l.date)}</td><td>${l.libelle}</td><td style="font-size:12px;color:var(--txt-l)">${l.detail||'—'}</td></tr>`).join('')}</tbody></table>`:'<div class="t-empty">Aucun historique</div>';
+
+  window._histUniteCourante={unite:u,lignes};
   $('mo-hist-unite-titre').textContent=`Historique — ${u.identification}`;
-  $('mo-hist-unite-corps').innerHTML=html;
+  $('mo-hist-unite-corps').innerHTML=`<div class="sec">Chez quels clients</div>${htmlPostes}<div class="sec" style="margin-top:14px">Tous les événements</div>${htmlEvenements}`;
   OM('mo-hist-unite');
+}
+
+// Historique côté client : tous les extincteurs (unités physiques) qui sont
+// passés par un de ses emplacements, avec le n° d'emplacement et la période.
+async function voirHistoriqueExtincteursClient(clientId){
+  const client=clients.find(c=>c.id===clientId);
+  const {data:equipsClient}=await db.from('equipements').select('id').eq('client_id',clientId).eq('type_equipement_code','extincteur');
+  const equipIds=(equipsClient||[]).map(e=>e.id);
+  if(!equipIds.length){
+    $('mo-hist-client-titre').textContent=`Historique extincteurs — ${client?.raison_sociale||''}`;
+    $('mo-hist-client-corps').innerHTML='<div class="t-empty">Aucun extincteur pour ce client</div>';
+    OM('mo-hist-client');return;
+  }
+  const {data:mvts}=await db.from('extincteurs_mouvements').select('unite_id,emplacement_id,type,date_mouvement,extincteurs_unites(identification,agent_code,capacite_valeur,capacite_unite,statut),equipements(numero_identification)').in('emplacement_id',equipIds).order('date_mouvement',{ascending:false});
+  const periodes=calculerPeriodesOccupation(mvts);
+  const html=periodes.length?`<table><thead><tr><th>Identification</th><th>Agent / Capacité</th><th>N° emplacement</th><th>Posé le</th><th>Déposé le</th><th>Statut actuel</th></tr></thead><tbody>${periodes.map(p=>`<tr>
+    <td><strong>${p.info.extincteurs_unites?.identification||'—'}</strong></td>
+    <td>${p.info.extincteurs_unites?.agent_code||''} ${p.info.extincteurs_unites?.capacite_valeur||''}${p.info.extincteurs_unites?.capacite_unite||''}</td>
+    <td>${p.info.equipements?.numero_identification||'—'}</td>
+    <td>${fmt(p.pose)}</td>
+    <td>${p.depose?fmt(p.depose):'<span style="color:#16a34a;font-weight:600">en place</span>'}</td>
+    <td>${p.info.extincteurs_unites?statutUnite(p.info.extincteurs_unites.statut):'—'}</td>
+  </tr>`).join('')}</tbody></table>`:'<div class="t-empty">Aucun mouvement enregistré pour ce client</div>';
+  $('mo-hist-client-titre').textContent=`Historique extincteurs — ${client?.raison_sociale||''}`;
+  $('mo-hist-client-corps').innerHTML=html;
+  OM('mo-hist-client');
 }
 async function marquerUniteRevisee(id){
   const {error}=await db.from('extincteurs_unites').update({statut:'en_atelier_revise',date_derniere_revision_atelier:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);
