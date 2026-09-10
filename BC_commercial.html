@@ -275,7 +275,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="fg" style="margin-bottom:12px"><label>Périodicité</label><select id="nk-period"><option value="annuelle">Annuelle</option><option value="semestrielle">Semestrielle</option><option value="trimestrielle">Trimestrielle</option><option value="mensuelle">Mensuelle</option></select></div>
     <div class="sec">Chiffrage — équipements</div>
     <div id="nk-lignes"></div>
-    <button type="button" class="btn btn-s btn-sm" onclick="ouvrirLigneContrat()" style="margin:8px 0">+ Ajouter un équipement</button>
+    <div class="btn-row" style="gap:8px;margin:8px 0">
+      <button type="button" class="btn btn-s btn-sm" style="flex:1" onclick="ouvrirChoixEquipExistant('contrat')">🔎 Équipement existant</button>
+      <button type="button" class="btn btn-s btn-sm" style="flex:1" onclick="ouvrirLigneContrat()">+ Nouvel équipement</button>
+    </div>
     <div id="nk-total" style="text-align:right;font-weight:700;font-size:16px;margin-bottom:12px;color:var(--rouge)"></div>
     <div class="fg" style="margin-bottom:12px"><label>Notes / conditions</label><textarea id="nk-notes" rows="2"></textarea></div>
   </div>
@@ -324,7 +327,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="sec">Modifications</div>
     <div id="av-lignes"></div>
     <div class="btn-row" style="gap:8px;margin:8px 0">
-      <button type="button" class="btn btn-s btn-sm" style="flex:1;color:#16a34a" onclick="ouvrirLigneAvenant('ajout')">➕ Ajouter</button>
+      <button type="button" class="btn btn-s btn-sm" style="flex:1;color:#16a34a" onclick="ouvrirChoixEquipExistant('avenant')">🔎 Existant</button>
+      <button type="button" class="btn btn-s btn-sm" style="flex:1;color:#16a34a" onclick="ouvrirLigneAvenant('ajout')">➕ Nouveau</button>
       <button type="button" class="btn btn-s btn-sm" style="flex:1;color:#dc2626" onclick="ouvrirLigneAvenant('retrait')">➖ Retirer</button>
     </div>
     <div id="av-total" style="text-align:right;font-weight:700;font-size:16px;margin-bottom:12px;color:var(--rouge)"></div>
@@ -344,6 +348,18 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <div class="content">
     <div style="font-size:13px;color:var(--txt-l);margin-bottom:12px">Touche l'équipement à retirer du contrat — il sera réformé à la signature de l'avenant.</div>
     <div id="retrait-list"><div class="loading"><div class="spin spin-dark"></div></div></div>
+  </div>
+</div>
+
+<!-- ===== ÉQUIPEMENT EXISTANT (reprise dans un contrat/avenant) ===== -->
+<div class="screen" id="s-choix-equip">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo(_choixCible==='avenant'?'s-avenant':'s-new-contrat')">←</button>
+    <h1>Équipement existant</h1>
+  </div>
+  <div class="content">
+    <div style="font-size:13px;color:var(--txt-l);margin-bottom:12px">Touche l'équipement déjà enregistré chez ce client pour l'ajouter au chiffrage, sans le recréer en double.</div>
+    <div id="choix-equip-list"><div class="loading"><div class="spin spin-dark"></div></div></div>
   </div>
 </div>
 
@@ -388,6 +404,7 @@ function toast(msg,type='ok'){const t=$('toast');t.textContent=msg;t.className='
 function goTo(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active')}
 
 let ME=null,typesEquip=[],clientsList=[],_lignes=[],_contratASigner=null,_tarifsCom=[];
+let _choixCible='contrat',_equipsExistants=[];
 
 // ---- AUTH ----
 async function doLogin(){
@@ -489,8 +506,59 @@ function resumeCaract(type,caract){
   });
   return out.join(' · ');
 }
+// ---- Reprise d'un équipement déjà existant chez le client (évite les doublons) ----
+async function ouvrirChoixEquipExistant(cible){
+  _choixCible=cible;
+  const clientId=cible==='avenant'?_avContrat?.client_id:$('nk-client').value;
+  if(!clientId){toast('Choisis d\'abord un client','err');return}
+  goTo('s-choix-equip');
+  const el=$('choix-equip-list');
+  el.innerHTML='<div class="loading"><div class="spin spin-dark"></div></div>';
+  const {data:eqs,error}=await db.from('equipements')
+    .select('*,types_equipements(libelle,icone)')
+    .eq('client_id',clientId).neq('statut','réformé')
+    .order('type_equipement_code');
+  if(error){el.innerHTML='<div style="padding:16px;color:var(--txt-l)">Erreur : '+error.message+'</div>';return}
+  const cibleLignes=cible==='avenant'?_avLignes:_lignes;
+  _equipsExistants=(eqs||[]).filter(e=>!cibleLignes.find(l=>l.equipement_id===e.id));
+  if(!_equipsExistants.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--txt-l);font-size:13px">Aucun équipement existant disponible chez ce client (ou déjà tous ajoutés).</div>';return}
+  el.innerHTML=_equipsExistants.map((e,i)=>`<div style="display:flex;align-items:center;gap:12px;background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px" onclick="choisirEquipExistant(${i})">
+    <div style="font-size:22px">${e.types_equipements?.icone||'🔧'}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600">${e.numero_identification||'—'}</div>
+      <div style="font-size:12px;color:var(--txt-l)">${e.types_equipements?.libelle||e.type_equipement_code} · ${[e.marque,e.modele].filter(Boolean).join(' ')||'—'}${e.localisation?' · '+e.localisation:''}</div>
+    </div>
+    <div style="font-size:18px;color:#16a34a">➕</div>
+  </div>`).join('');
+}
+function choisirEquipExistant(i){
+  const e=_equipsExistants[i];if(!e)return;
+  const tarif=_tarifsCom.find(t=>t.code===e.type_equipement_code);
+  const puDef=tarif?(+tarif.prix_ht).toFixed(2):'0';
+  const saisie=prompt('Montant annuel HT pour '+(e.numero_identification||'cet équipement')+' :',puDef);
+  if(saisie===null)return;
+  const pu=parseFloat(saisie.replace(',','.'));
+  if(isNaN(pu)||pu<0){toast('Montant invalide','err');return}
+  const ligne={type:e.type_equipement_code,marque:e.marque||'',modele:e.modele||'',
+    quantite:1,pu,equipement_id:e.id,resume:e.numero_identification||''};
+  if(_choixCible==='avenant'){
+    ligne.sens='ajout';
+    _avLignes.push(ligne);
+    renderAvLignes();
+    toast('Équipement repris dans l\'avenant');
+    goTo('s-avenant');
+  }else{
+    _lignes.push(ligne);
+    renderLignes();
+    toast('Équipement repris dans le contrat');
+    goTo('s-new-contrat');
+  }
+}
 // ---- Création des équipements du client depuis les lignes du contrat ----
-async function creerEquipementsDepuisContrat(contrat,lignes,clientId){
+// Ne crée QUE les lignes sans equipement_id (équipement déjà existant repris via
+// ouvrirChoixEquipExistant() → pas de nouvelle fiche, on garde la fiche d'origine).
+async function creerEquipementsDepuisContrat(contrat,lignesToutes,clientId){
+  const lignes=(lignesToutes||[]).filter(l=>!l.equipement_id);
   const rows=[];const lignePourRow=[];
   const dateTag=new Date().toISOString().slice(2,10).replace(/-/g,'');
   lignes.forEach(l=>{
@@ -630,8 +698,8 @@ async function ouvrirNouveauContrat(clientId){
 function renderLignes(){
   const el=$('nk-lignes');
   const lib=code=>{const t=typesEquip.find(t=>t.code===code);return t?t.icone+' '+t.libelle:code};
-  el.innerHTML=_lignes.length?_lignes.map((l,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:6px">
-    <div><div style="font-weight:600;font-size:14px">${lib(l.type)}</div>
+  el.innerHTML=_lignes.length?_lignes.map((l,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:6px${l.equipement_id?';border-left:4px solid #16a34a':''}">
+    <div><div style="font-weight:600;font-size:14px">${lib(l.type)}${l.equipement_id?' <span style="font-size:11px;font-weight:400;color:#16a34a">· déjà existant</span>':''}</div>
     <div style="font-size:12px;color:var(--txt-l)">${[l.marque,l.modele].filter(Boolean).join(' ')||'—'}${l.resume?' · '+l.resume:''} · ${l.quantite} × ${(+l.pu).toFixed(2)} €</div></div>
     <div style="display:flex;align-items:center;gap:10px">
       <div style="font-weight:700">${((+l.quantite)*(+l.pu)).toFixed(2)} €</div>
@@ -766,7 +834,7 @@ function renderAvLignes(){
   const el=$('av-lignes');
   const lib=code=>{const t=typesEquip.find(t=>t.code===code);return t?t.icone+' '+t.libelle:code};
   el.innerHTML=_avLignes.length?_avLignes.map((l,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:6px;border-left:4px solid ${l.sens==='retrait'?'#dc2626':'#16a34a'}">
-    <div><div style="font-weight:600;font-size:14px">${l.sens==='retrait'?'➖':'➕'} ${lib(l.type)}</div>
+    <div><div style="font-weight:600;font-size:14px">${l.sens==='retrait'?'➖':'➕'} ${lib(l.type)}${l.equipement_id&&l.sens!=='retrait'?' <span style="font-size:11px;font-weight:400;color:#16a34a">· repris</span>':''}</div>
     <div style="font-size:12px;color:var(--txt-l)">${[l.marque,l.modele].filter(Boolean).join(' ')||'—'}${l.resume?' · '+l.resume:''} · ${l.quantite} × ${(+l.pu).toFixed(2)} €</div></div>
     <div style="display:flex;align-items:center;gap:10px">
       <div style="font-weight:700;color:${l.sens==='retrait'?'#dc2626':'#16a34a'}">${l.sens==='retrait'?'−':'+'}${((+l.quantite)*(+l.pu)).toFixed(2)} €</div>
