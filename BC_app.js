@@ -2460,6 +2460,9 @@ async function savePiece(){
   const avantP=id?stockPieces.find(x=>x.id===id):null;
   if(_photoPiece){const ph=await uploaderPhotoPiece(code,avantP?.photo_path);if(ph)Object.assign(p,ph)}
   else if(_photoPieceSupprimee&&avantP?.photo_path){await db.storage.from('stock-photos').remove([avantP.photo_path]);p.photo_url=null;p.photo_path=null}
+  // Champs communs au produit (partagés entre toutes les agences) : tout sauf
+  // ce qui décrit un stock physique local (quantité/lots/agence/horodatage/id).
+  const champsPartages=(obj)=>({designation:obj.designation,marque:obj.marque,modele:obj.modele,seuil_alerte:obj.seuil_alerte,prix_vente:obj.prix_vente,categorie:obj.categorie,compatible_tous:obj.compatible_tous,conso_par_controle:obj.conso_par_controle,compatibilites:obj.compatibilites,gestion_peremption:obj.gestion_peremption,photo_url:obj.photo_url,photo_path:obj.photo_path,updated_at:obj.updated_at});
   if(id){
     const avant=stockPieces.find(x=>x.id===id);
     if(gPer)p.quantite=_lotsPiece.reduce((s,l)=>s+(+l.quantite||0),0);
@@ -2468,12 +2471,26 @@ async function savePiece(){
     if(gPer&&avant&&(+avant.quantite)!==p.quantite){
       await db.from('stock_mouvements').insert({piece_id:id,type:'rectification',quantite_avant:avant.quantite,quantite_apres:p.quantite,delta:p.quantite-(+avant.quantite),motif:'Modification des lots (bureau)',par:ME.id,agence_id:p.agence_id});
     }
+    // Répercute les champs communs sur les autres lignes de la même pièce (autres agences),
+    // pour que la fiche produit reste identique partout — seule la quantité est locale.
+    await db.from('stock_pieces').update(champsPartages(p)).eq('code',code).neq('id',id);
     toast('Pièce modifiée');
   }else{
     p.quantite=parseFloat($('pc-qte').value)||0;
     const {data:np,error}=await db.from('stock_pieces').insert(p).select().single();
     if(error){toast('Erreur: '+error.message,'err');return}
     if(p.quantite>0)await db.from('stock_mouvements').insert({piece_id:np.id,type:'entree',quantite_avant:0,quantite_apres:p.quantite,delta:p.quantite,motif:'Création de la pièce',par:ME.id,agence_id:p.agence_id});
+    // Crée automatiquement cette pièce dans les autres agences (quantité à 0) pour
+    // éviter la saisie manuelle en double et les doublons désynchronisés. Seules les
+    // agences qui n'ont pas déjà ce code sont concernées (cas "Sans agence" exclu).
+    if(p.agence_id){
+      const autresAgences=_stockAgences.filter(a=>a.id!==p.agence_id&&!stockPieces.some(x=>x.code===code&&x.agence_id===a.id));
+      if(autresAgences.length){
+        const clones=autresAgences.map(a=>({...champsPartages(p),code,agence_id:a.id,quantite:0,lots:gPer?[]:(p.lots||[]),created_at:new Date().toISOString()}));
+        const {error:eClone}=await db.from('stock_pieces').insert(clones);
+        if(eClone)toast('Pièce créée, mais synchro autres agences échouée : '+eClone.message,'err');
+      }
+    }
     toast('Pièce créée');
   }
   CM('mo-piece');loadStock();

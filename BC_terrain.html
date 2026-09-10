@@ -3604,6 +3604,7 @@ function voirContratTerrain(i){
 // ============================================================
 const CHAMPS_TYPE_TERRAIN = {
   extincteur: [
+    {id:'ef-mode-press',label:'Mode de pressurisation',type:'select',opts:['PP','PA']},
     {id:'ef-agent',label:'Agent extincteur',type:'select',opts:['CO2','BC','ABC','D','A','AB','ABF','A lith','Autre']},
     {id:'ef-cap',label:'Capacité',type:'number',placeholder:'6',step:'0.5'},
     {id:'ef-unite',label:'Unité',type:'select',opts:['kg','L']},
@@ -3671,6 +3672,16 @@ function onEFTypeChange(){
     if(mAv||moAv)setMarqueModele(mmType,'ef-',mAv,moAv);
   }
   const code = document.getElementById('ef-type').value;
+  // Extincteur : le N° identification/QR suit la règle PP-AGENT-CAPACITE-ANNEE-SEQ,
+  // généré automatiquement à l'enregistrement (même règle que l'atelier) — pas de
+  // saisie manuelle. Pour les autres types d'équipement, saisie manuelle inchangée.
+  const efNum=document.getElementById('ef-num');
+  if(efNum){
+    const estExtCreation = code==='extincteur' && !document.getElementById('ef-id').value;
+    efNum.readOnly = estExtCreation;
+    efNum.placeholder = estExtCreation ? 'Généré automatiquement à l\'enregistrement' : 'Ex: EXT-BRIEC-001';
+    if(estExtCreation) efNum.value='';
+  }
   const container = document.getElementById('ef-champs-specifiques');
   if(!container) return;
   container.innerHTML = '';
@@ -3698,7 +3709,7 @@ function onEFTypeChange(){
   container.appendChild(zonePerso);
   // Restaurer
   if(_efRestoreData){
-    const ids=['ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
+    const ids=['ef-mode-press','ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
     ids.forEach(id=>{const el=document.getElementById(id);if(el&&_efRestoreData[id])el.value=_efRestoreData[id];});
   }
   if(_efRestoreData['_perso']){
@@ -3730,7 +3741,7 @@ function getEFChampsPerso(){
 
 function getEFSpecificData(){
   const data={};
-  const ids=['ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
+  const ids=['ef-mode-press','ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el&&el.value)data[id]=el.value;});
   const perso=getEFChampsPerso();
   if(perso.length)data['_perso']=perso;
@@ -3919,20 +3930,40 @@ async function saveEquipTerrain(){
     if(!motifSel.value){toast('Choisis le motif de l\'ajout direct','err');return}
   }
   const id = document.getElementById('ef-id').value;
-  const num = document.getElementById('ef-num').value.trim();
+  const typeEq = document.getElementById('ef-type').value;
+  const estExtCreation = typeEq==='extincteur' && !id;
+  let num = document.getElementById('ef-num').value.trim();
+
+  // Extincteur, création : identification générée automatiquement (règle
+  // MODE-AGENT-CAPACITE-ANNEE-SEQ, même RPC que l'atelier) plutôt que saisie.
+  let uniteAgent=null,uniteMode=null,uniteCapacite=null,uniteUnite=null;
+  if(estExtCreation){
+    uniteMode=document.getElementById('ef-mode-press').value;
+    uniteAgent=document.getElementById('ef-agent').value;
+    uniteCapacite=parseFloat(document.getElementById('ef-cap').value);
+    uniteUnite=document.getElementById('ef-unite').value||'kg';
+    if(!uniteMode||!uniteAgent||isNaN(uniteCapacite)){toast('Mode de pressurisation, agent et capacité obligatoires pour générer l\'identification','err');return}
+    const anneeSrc=document.getElementById('ef-mis').value||document.getElementById('ef-fab').value;
+    const annee=anneeSrc?new Date(anneeSrc).getFullYear():new Date().getFullYear();
+    const {data:idGen,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:uniteMode,p_agent_code:uniteAgent,p_capacite:uniteCapacite,p_annee_mise_en_service:annee});
+    if(eg){toast('Erreur génération identification : '+eg.message,'err');return}
+    num=idGen;
+  }
   if(!num){toast('N° identification obligatoire','err');return}
+
+  const {marque,modele}=lireMarqueModele('ef-');
   const payload = {
     client_id: currentClient.id,
     agence_id: currentClient.agence_id,
     technicien_id: ME.id,
-    type_equipement_code: document.getElementById('ef-type').value,
+    type_equipement_code: typeEq,
     numero_identification: num,
     numero_serie: document.getElementById('ef-serie').value.trim()||null,
     numero_lot: document.getElementById('ef-lot').value.trim()||null,
     numero_entreprise: document.getElementById('ef-num-ent').value.trim()||null,
     emplacement: document.getElementById('ef-emplacement').value.trim()||null,
-    marque: (lireMarqueModele('ef-').marque||'').trim()||null,
-    modele: (lireMarqueModele('ef-').modele||'').trim()||null,
+    marque: (marque||'').trim()||null,
+    modele: (modele||'').trim()||null,
     localisation: document.getElementById('ef-loc').value.trim()||null,
     etage_zone: document.getElementById('ef-zone').value.trim()||null,
     statut: document.getElementById('ef-statut').value,
@@ -3945,6 +3976,27 @@ async function saveEquipTerrain(){
     ? await db.from('equipements').update(payload).eq('id',id).select().single()
     : await db.from('equipements').insert(payload).select().single();
   if(error){toast('Erreur: '+error.message,'err');return}
+
+  // Extincteur, création : l'unité physique associée (extincteurs_unites) est
+  // créée dans la foulée et liée à l'emplacement, pour garder la traçabilité
+  // (historique par unité, échange standard) cohérente avec l'atelier.
+  if(estExtCreation){
+    const dateMis=document.getElementById('ef-mis').value||(new Date().toISOString().slice(0,10));
+    const {data:unite,error:eu}=await db.from('extincteurs_unites').insert({
+      identification:num,mode_pressurisation:uniteMode,agent_code:uniteAgent,
+      capacite_valeur:uniteCapacite,capacite_unite:uniteUnite,
+      marque:payload.marque,modele:payload.modele,numero_serie:payload.numero_serie,
+      agence_id:currentClient.agence_id,statut:'en_service',date_mise_en_service:dateMis
+    }).select().single();
+    if(eu){
+      toast('Équipement créé, mais erreur unité physique : '+eu.message,'err');
+    }else{
+      await db.from('extincteurs_mouvements').insert({unite_id:unite.id,emplacement_id:data.id,type:'installation_initiale',technicien_id:ME.id,agence_id:currentClient.agence_id,notes:'Installation initiale (terrain)'});
+      await db.from('equipements').update({unite_extincteur_actuelle_id:unite.id}).eq('id',data.id);
+      data.unite_extincteur_actuelle_id=unite.id;
+    }
+  }
+
   // Mettre à jour la liste locale
   if(id){
     const idx=currentEquipements.findIndex(e=>e.id===id);
@@ -3952,7 +4004,7 @@ async function saveEquipTerrain(){
   } else {
     currentEquipements.push(data);
   }
-  toast(id?'Équipement modifié ✓':'Équipement créé ✓');
+  toast(id?'Équipement modifié ✓':'Équipement créé ✓'+(estExtCreation?' — '+num:''));
   _ficheEquipId = data.id;
   await ouvrirFicheEquip(data.id);
 }
