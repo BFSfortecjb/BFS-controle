@@ -991,6 +991,42 @@ function toast(msg,type='ok'){const t=$('toast');t.textContent=msg;t.className='
 function goTo(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active')}
 function OM(id){$(id).classList.add('open')}
 function CM(id){$(id).classList.remove('open')}
+
+// ============================================================
+// PULL-TO-REFRESH (swipe vers le bas en haut d'une liste pour actualiser)
+// Volontairement limité aux écrans de consultation/liste — désactivé sur les
+// formulaires, sessions de vérification et compteurs en cours pour ne pas
+// risquer d'écraser une saisie en cours.
+// ============================================================
+const _ptrHandlers = {
+  's-parc': ()=>loadParc(),
+  's-mes-sessions': ()=>ouvrirMesSessions(),
+  's-planning': ()=>ouvrirPlanning(),
+  's-client': ()=>currentClient&&ouvrirClient(currentClient.id),
+  's-equip-list': ()=>voirEquipements(),
+  's-fiche-equip': ()=>_ficheEquipId&&ouvrirFicheEquip(_ficheEquipId,_prevScreen),
+  's-stock': ()=>ouvrirStock(),
+};
+let _ptrStartY=0,_ptrActive=false,_ptrTriggered=false;
+document.addEventListener('touchstart',e=>{
+  const screen=document.querySelector('.screen.active');
+  if(!screen||!_ptrHandlers[screen.id])return;
+  const content=screen.querySelector('.content');
+  if(!content||content.scrollTop>0)return;
+  _ptrStartY=e.touches[0].clientY;_ptrActive=true;_ptrTriggered=false;
+},{passive:true});
+document.addEventListener('touchmove',e=>{
+  if(!_ptrActive)return;
+  if(e.touches[0].clientY-_ptrStartY>70)_ptrTriggered=true;
+},{passive:true});
+document.addEventListener('touchend',()=>{
+  if(_ptrActive&&_ptrTriggered){
+    const screen=document.querySelector('.screen.active');
+    const fn=screen&&_ptrHandlers[screen.id];
+    if(fn){toast('Actualisation…');fn();}
+  }
+  _ptrActive=false;_ptrTriggered=false;
+});
 document.querySelectorAll('.mo').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open')}));
 
 // ============================================================
@@ -4006,7 +4042,8 @@ async function saveEquipTerrain(){
     if(!uniteMode||!uniteAgent||isNaN(uniteCapacite)){toast('Mode de pressurisation, agent et capacité obligatoires pour générer l\'identification','err');return}
     const misVal=document.getElementById('ef-mis').value; // date complète
     const fabVal=document.getElementById('ef-fab').value; // année seule (nombre)
-    const annee=misVal?new Date(misVal).getFullYear():(fabVal?parseInt(fabVal,10):new Date().getFullYear());
+    // Règle de numérotation : année de FABRICATION en priorité (pas mise en service).
+    const annee=fabVal?parseInt(fabVal,10):(misVal?new Date(misVal).getFullYear():new Date().getFullYear());
     const {data:idGen,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:uniteMode,p_agent_code:uniteAgent,p_capacite:uniteCapacite,p_annee_mise_en_service:annee});
     if(eg){toast('Erreur génération identification : '+eg.message,'err');return}
     num=idGen;
