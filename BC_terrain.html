@@ -1288,8 +1288,21 @@ function renderEquipList(containerId,equips){
       <div class="equip-name">${e.types_equipements?.libelle||'—'} — ${e.numero_identification||'Non numéroté'}</div>
       <div class="equip-loc">${e.marque||''} ${e.modele||''} · ${e.localisation||'—'}</div>
     </div>
+    ${e.numero_identification?`<button type="button" onclick="event.stopPropagation();copierIdEquip('${e.numero_identification.replace(/'/g,"\\'")}')" title="Copier le N° identification / QR code" style="background:var(--bg);border:none;border-radius:8px;padding:8px;font-size:15px;cursor:pointer;flex-shrink:0;margin-right:4px">📋</button>`:''}
     <div class="equip-status ${e.statut==='opérationnel'?'':e.statut==='hors service'?'hs':''}">${e.statut}</div>
   </div>`).join('');
+}
+
+function copierIdEquip(num){
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(num).then(()=>toast('N° copié : '+num)).catch(()=>toast('Copie impossible','err'));
+  }else{
+    // Repli si l'API Clipboard n'est pas disponible (contexte non sécurisé, vieux navigateur)
+    const ta=document.createElement('textarea');ta.value=num;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');toast('N° copié : '+num)}catch(e){toast('Copie impossible','err')}
+    document.body.removeChild(ta);
+  }
 }
 
 async function voirFicheEquip(id){
@@ -3815,7 +3828,7 @@ async function ouvrirFicheEquip(id, prevScreenOverride){
     <div class="card" style="margin-bottom:14px">
       <div style="padding:14px 16px">
         <div class="sec">Identification</div>
-        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">N° identification</span><strong>${equip.numero_identification||'—'}</strong></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">N° identification</span><span style="display:flex;align-items:center;gap:8px"><strong>${equip.numero_identification||'—'}</strong>${equip.numero_identification?`<button type="button" onclick="copierIdEquip('${equip.numero_identification.replace(/'/g,"\\'")}')" title="Copier le N° identification / QR code" style="background:var(--bg);border:none;border-radius:8px;padding:6px 8px;font-size:14px;cursor:pointer">📋</button>`:''}</span></div>
         ${equip.numero_serie?`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">N° série</span><strong>${equip.numero_serie}</strong></div>`:''}
         ${equip.numero_lot?`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">N° lot</span><strong>${equip.numero_lot}</strong></div>`:''}
         <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">Marque / Modèle</span><strong>${equip.marque||'—'}${equip.modele?' '+equip.modele:''}</strong></div>
