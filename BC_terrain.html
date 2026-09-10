@@ -771,7 +771,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <input type="text" id="ef-emplacement" placeholder="Ex: Couloir RDC face toilettes, Atelier pilier B3">
     </div>
     <div id="ef-marque-modele"></div>
-    <div class="fg"><label>Date de fabrication</label><input type="date" id="ef-fab"></div>
+    <div class="fg"><label>Année de fabrication</label><input type="number" id="ef-fab" min="1980" max="2100" step="1" placeholder="2021" inputmode="numeric"></div>
     <div class="fg"><label>Mise en service</label><input type="date" id="ef-mis"></div>
 
     <!-- Champs conditionnels -->
@@ -1092,9 +1092,13 @@ async function loadParc(){
   const {data:affectations}=await db.from('affectations_client').select('client_id').eq('technicien_id',ME.id);
   const affectedClientIds=[...new Set((affectations||[]).map(a=>a.client_id))];
 
-  // Clients avec équipements affectés (ancienne logique)
-  const {data:mesequip}=await db.from('equipements').select('client_id').eq('technicien_id',ME.id);
-  const myClientIds=[...new Set([...affectedClientIds,...(mesequip||[]).map(e=>e.client_id)])];
+  // "Mes clients" = uniquement les clients où le technicien est référencé via
+  // affectations_client (assignation explicite). L'ancienne heuristique basée
+  // sur equipements.technicien_id (= celui qui a créé/modifié l'équipement en
+  // dernier) a été retirée : depuis la visibilité "Toutes agences", un
+  // technicien peut créer des équipements pour des clients qui ne sont pas
+  // "les siens", ce qui faisait apparaître tous les clients dans "Mes clients".
+  const myClientIds=affectedClientIds;
 
   // Appliquer le filtre actif
   let allClients=[];
@@ -3658,6 +3662,9 @@ let _efRestoreData = {};
 let _efPersoCount = 0;
 let _ficheEquipId = null;
 let _prevScreen = 's-equip-list';
+// Écran à retrouver après enregistrement (création OU édition), pour que le
+// retour depuis la fiche rouverte ne boucle pas sur le formulaire lui-même.
+let _screenAvantEquipForm = 's-equip-list';
 
 function goBack(){
   goTo(_prevScreen);
@@ -3772,8 +3779,12 @@ function getEFSpecificData(){
 // ============================================================
 // FICHE ÉQUIPEMENT
 // ============================================================
-async function ouvrirFicheEquip(id){
-  _prevScreen = document.querySelector('.screen.active')?.id || 's-equip-list';
+async function ouvrirFicheEquip(id, prevScreenOverride){
+  // prevScreenOverride : utilisé juste après un enregistrement (création/édition)
+  // pour que le retour depuis la fiche pointe vers l'écran d'avant le formulaire
+  // (ex. la liste d'équipements), et non vers le formulaire lui-même qui est
+  // l'écran "actif" au moment de cet appel — sinon boucle fiche ↔ formulaire.
+  _prevScreen = prevScreenOverride || document.querySelector('.screen.active')?.id || 's-equip-list';
   _ficheEquipId = id;
   const equip = currentEquipements.find(e=>e.id===id);
   if(!equip){toast('Équipement introuvable','err');return}
@@ -3816,7 +3827,7 @@ async function ouvrirFicheEquip(id){
     </div>
     ${specRows||perso?`<div class="card" style="margin-bottom:14px"><div style="padding:14px 16px"><div class="sec">Caractéristiques</div>${specRows}${perso}</div></div>`:''}
     ${equip.notes?`<div class="card" style="margin-bottom:14px"><div style="padding:14px 16px;font-size:13px;color:var(--txt-l)"><div class="sec">Notes</div>${equip.notes}</div></div>`:''}
-    ${(equip.historique&&equip.historique.length)?`<div class="card"><div style="padding:14px 16px"><div class="sec">📜 Historique</div>${[...equip.historique].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(h=>`<div style="padding:8px 0;border-bottom:1px solid #f0f0f0"><div style="font-size:13px;font-weight:600">${fmt(h.date)} — ${h.type}</div>${h.commentaire?`<div style="font-size:12px;color:var(--txt-l)">${h.commentaire}</div>`:''}</div>`).join('')}</div></div>`:''}
+    ${(equip.historique&&equip.historique.length)?`<div class="card"><div style="padding:14px 16px"><div class="sec">📜 Historique</div>${[...equip.historique].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(h=>`<div style="padding:8px 0;border-bottom:1px solid #f0f0f0"><div style="font-size:13px;font-weight:600">${fmtMoisAnnee(h.date)} — ${h.type}</div>${h.commentaire?`<div style="font-size:12px;color:var(--txt-l)">${h.commentaire}</div>`:''}</div>`).join('')}</div></div>`:''}
   `;
   goTo('s-fiche-equip');
 }
@@ -3831,6 +3842,7 @@ function verifierCetEquip(){
 async function creerEquipement(){
   await ensureTypesTerrain();
   _prevScreen = document.querySelector('.screen.active')?.id || 's-client';
+  _screenAvantEquipForm = _prevScreen;
   _efRestoreData = {};
   _historiqueEquipTerrain = [];
   const av=document.getElementById('ef-avert');if(av)av.style.display='block';
@@ -3852,10 +3864,17 @@ async function creerEquipement(){
 async function editerEquipement(){
   await ensureTypesTerrain();
   const av=document.getElementById('ef-avert');if(av)av.style.display='none';
+  // On entre toujours en édition depuis la fiche : son propre "retour" pointe déjà
+  // vers l'écran d'avant (la liste) — on le récupère AVANT de l'écraser pour le
+  // formulaire, afin de le réutiliser après l'enregistrement.
+  _screenAvantEquipForm = _prevScreen;
   _prevScreen = 's-fiche-equip';
   const equip = currentEquipements.find(e=>e.id===_ficheEquipId);
   if(!equip){toast('Équipement introuvable','err');return}
   _efRestoreData = {...(equip.donnees_specifiques||{})};
+  // Année de fabrication : vit dans la vraie colonne date_fabrication, pas dans
+  // donnees_specifiques — prioritaire sur une éventuelle ancienne valeur ef-fab.
+  if(equip.date_fabrication) _efRestoreData['ef-fab'] = new Date(equip.date_fabrication).getFullYear();
   _historiqueEquipTerrain = Array.isArray(equip.historique) ? [...equip.historique] : [];
   document.getElementById('ef-id').value = equip.id;
   document.getElementById('ef-client-nom').value = currentClient?.raison_sociale||'';
@@ -3883,6 +3902,13 @@ async function editerEquipement(){
 // HISTORIQUE INFORMATIF — TERRAIN
 // ============================================================
 let _historiqueEquipTerrain = [];
+function fmtMoisAnnee(d){
+  // Affiche "MM/AAAA" — pas de jour, la saisie ne demande que mois/année.
+  if(!d)return'—';
+  const m=String(d).match(/^(\d{4})-(\d{2})/);
+  return m?m[2]+'/'+m[1]:fmt(d);
+}
+
 const TYPES_OP_HISTORIQUE_TERRAIN = [
   'Mise en service','Vérification annuelle','Maintenance approfondie (MAA)',
   'Révision atelier','Recharge','Remplacement pièce','Percussion / incident',
@@ -3900,7 +3926,7 @@ function renderHistoriqueTerrain(){
   el.innerHTML = sorted.map(h=>`
     <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border-radius:10px;margin-bottom:6px">
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:700">${fmt(h.date)} — ${h.type}</div>
+        <div style="font-size:13px;font-weight:700">${fmtMoisAnnee(h.date)} — ${h.type}</div>
         ${h.commentaire?`<div style="font-size:12px;color:var(--txt-l)">${h.commentaire}</div>`:''}
       </div>
       <button type="button" onclick="supprimerLigneHistoriqueTerrain(${h._idx})" style="background:#fee2e2;color:#dc2626;border:none;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px;flex-shrink:0">✕</button>
@@ -3914,7 +3940,7 @@ function ajouterLigneHistoriqueTerrain(){
   modal.innerHTML = `<div class="mo-box">
     <div class="mo-handle"></div>
     <h3>Ajouter une ligne d'historique</h3>
-    <div class="fg"><label>Date</label><input type="date" id="hist-date-t"></div>
+    <div class="fg"><label>Mois / année</label><input type="month" id="hist-date-t"></div>
     <div class="fg"><label>Type d'opération</label>
       <select id="hist-type-t">${TYPES_OP_HISTORIQUE_TERRAIN.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
     </div>
@@ -3929,11 +3955,11 @@ function ajouterLigneHistoriqueTerrain(){
 }
 
 function confirmerLigneHistoriqueTerrain(btn){
-  const date = document.getElementById('hist-date-t').value;
+  const mois = document.getElementById('hist-date-t').value; // "AAAA-MM", pas de jour saisi
   const type = document.getElementById('hist-type-t').value;
   const commentaire = document.getElementById('hist-commentaire-t').value.trim();
-  if(!date){ toast('Date obligatoire','err'); return; }
-  _historiqueEquipTerrain.push({date, type, commentaire});
+  if(!mois){ toast('Mois/année obligatoire','err'); return; }
+  _historiqueEquipTerrain.push({date:mois+'-01', type, commentaire});
   btn.closest('.mo').remove();
   renderHistoriqueTerrain();
 }
@@ -3964,8 +3990,9 @@ async function saveEquipTerrain(){
     uniteCapacite=parseFloat(document.getElementById('ef-cap').value);
     uniteUnite=document.getElementById('ef-unite').value||'kg';
     if(!uniteMode||!uniteAgent||isNaN(uniteCapacite)){toast('Mode de pressurisation, agent et capacité obligatoires pour générer l\'identification','err');return}
-    const anneeSrc=document.getElementById('ef-mis').value||document.getElementById('ef-fab').value;
-    const annee=anneeSrc?new Date(anneeSrc).getFullYear():new Date().getFullYear();
+    const misVal=document.getElementById('ef-mis').value; // date complète
+    const fabVal=document.getElementById('ef-fab').value; // année seule (nombre)
+    const annee=misVal?new Date(misVal).getFullYear():(fabVal?parseInt(fabVal,10):new Date().getFullYear());
     const {data:idGen,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:uniteMode,p_agent_code:uniteAgent,p_capacite:uniteCapacite,p_annee_mise_en_service:annee});
     if(eg){toast('Erreur génération identification : '+eg.message,'err');return}
     num=idGen;
@@ -3987,6 +4014,7 @@ async function saveEquipTerrain(){
     modele: (modele||'').trim()||null,
     localisation: document.getElementById('ef-loc').value.trim()||null,
     etage_zone: document.getElementById('ef-zone').value.trim()||null,
+    date_fabrication: document.getElementById('ef-fab').value ? document.getElementById('ef-fab').value+'-01-01' : null,
     statut: document.getElementById('ef-statut').value,
     notes: ((estCreation&&motifSel&&motifSel.value?'['+motifSel.value+'] ':'')+document.getElementById('ef-notes').value.trim())||null,
     donnees_specifiques: getEFSpecificData(),
@@ -4027,7 +4055,7 @@ async function saveEquipTerrain(){
   }
   toast(id?'Équipement modifié ✓':'Équipement créé ✓'+(estExtCreation?' — '+num:''));
   _ficheEquipId = data.id;
-  await ouvrirFicheEquip(data.id);
+  await ouvrirFicheEquip(data.id, _screenAvantEquipForm);
 }
 
 // Types équipements chargés au démarrage terrain
@@ -4099,6 +4127,7 @@ async function reforme_aPrevoir(equipId){
 }
 
 async function reforme_surPlace(equipId){
+  _screenAvantEquipForm = document.querySelector('.screen.active')?.id || 's-fiche-equip';
   const ancien = currentEquipements.find(e=>e.id===equipId);
   // Archiver l'ancien
   await db.from('equipements').update({
