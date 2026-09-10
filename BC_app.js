@@ -1954,6 +1954,14 @@ function getEquipSpecificData(){
 // BASE TARIFAIRE — gestion réservée (drapeau gestion_tarifs)
 // ============================================================
 let tarifs=[];
+// Photos des pièces/accessoires : vivent uniquement dans stock_pieces (par code), la Base
+// tarifaire les affiche à titre indicatif (même code) sans jamais les stocker en double.
+let tarifPhotos={};
+async function chargerTarifPhotos(){
+  const {data}=await db.from('stock_pieces').select('code,photo_url').not('photo_url','is',null);
+  tarifPhotos={};
+  (data||[]).forEach(p=>{ if(p.code && !tarifPhotos[p.code]) tarifPhotos[p.code]=p.photo_url; });
+}
 const peutGererTarifs=()=>!!ME?.gestion_tarifs;
 
 async function loadTarifs(){
@@ -1964,6 +1972,7 @@ async function loadTarifs(){
   const droit=peutGererTarifs();
   ['btn-import-tarifs','btn-augm-tarifs','btn-add-tarif'].forEach(id=>{const b=$(id);if(b)b.style.display=droit?'':'none'});
   $('tarifs-droits').style.display=droit?'none':'block';
+  await chargerTarifPhotos();
   renderTarifs();
 }
 const catTarif=c=>({prestation:'🛠 Prestation',piece:'🔩 Pièce',equipement:'🧯 Équipement neuf',accessoire:'🏷 Accessoire'}[c]||c);
@@ -1978,15 +1987,16 @@ function renderTarifs(){
   el.innerHTML=`<table><thead><tr><th>Code</th><th>Désignation</th><th>Catégorie</th><th>Unité</th><th style="text-align:right">Prix d'achat</th><th style="text-align:right">Prix de vente</th><th style="text-align:right">Marge</th><th>Code Galaxy</th><th>Dernière maj</th>${droit?'<th>Actions</th>':''}</tr></thead><tbody>${data.map(t=>{
     const marge=(t.prix_achat!=null&&t.prix_ht!=null)?(+t.prix_ht-+t.prix_achat):null;
     const margePct=(marge!=null&&+t.prix_achat>0)?Math.round(marge/(+t.prix_achat)*100):null;
+    const photo=t.code?tarifPhotos[t.code]:null;
     return `<tr${t.actif===false?' style="opacity:.5"':''}>
     <td><strong>${t.code||'—'}</strong></td>
-    <td>${t.designation||'—'}</td>
+    <td style="display:flex;align-items:center;gap:8px">${photo?`<img src="${photo}" style="width:32px;height:32px;object-fit:cover;border-radius:6px;cursor:zoom-in;flex-shrink:0" onclick="window.open('${photo}','_blank')">`:''}${t.designation||'—'}</td>
     <td><span class="badge bg">${catTarif(t.categorie)}</span></td>
     <td>${t.unite||'unité'}</td>
     <td style="text-align:right">${eur(t.prix_achat)}</td>
     <td style="text-align:right;font-weight:700">${t.prix_ht!=null?eur(t.prix_ht):'<span style="font-weight:400;color:var(--txt-l)">à définir</span>'}</td>
     <td style="text-align:right;${marge!=null?(marge<0?'color:#dc2626':'color:#16a34a'):''}">${marge!=null?eur(marge)+(margePct!=null?' <small>('+margePct+'%)</small>':''):'—'}</td>
-    <td style="font-size:12px">${t.code_galaxy?t.code_galaxy:'<span style="color:var(--txt-l)">—</span>'}</td>
+    <td style="font-size:12px">${t.code_galaxy?t.code_galaxy:'<span style="color:var(--txt-l)">—</span>'}${t.url_fournisseur?` <a href="${t.url_fournisseur}" target="_blank" title="${t.fournisseur||'Fournisseur'}${t.reference_fournisseur?' — réf. '+t.reference_fournisseur:''}">🔗</a>`:''}</td>
     <td style="font-size:12px">${fmt(t.updated_at)}${t.profils?'<br><small style="color:var(--txt-l)">'+(t.profils.prenom||'')+' '+t.profils.nom+'</small>':''}</td>
     ${droit?`<td><div class="ia"><button class="btn btn-s btn-xs" onclick="editTarif('${t.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="deleteTarif('${t.id}')">🗑</button></div></td>`:''}
   </tr>`}).join('')}</tbody></table>`;
@@ -2000,9 +2010,9 @@ function majMargeTarif(){
 }
 function openTarifModal(prefill=null){
   if(!peutGererTarifs()){toast('Réservé aux gestionnaires des tarifs','err');return}
-  ['tf-id','tf-code','tf-designation','tf-prix','tf-prix-achat','tf-code-galaxy'].forEach(id=>$(id).value='');
+  ['tf-id','tf-code','tf-designation','tf-prix','tf-prix-achat','tf-code-galaxy','tf-fournisseur','tf-ref-fournisseur','tf-url-fournisseur'].forEach(id=>$(id).value='');
   $('tf-unite').value='unité';$('tf-cat').value='prestation';$('mo-tf-t').textContent='Nouveau tarif';$('tf-marge-bloc').textContent='';
-  if(prefill){$('tf-id').value=prefill.id;$('tf-code').value=prefill.code;$('tf-designation').value=prefill.designation;$('tf-cat').value=prefill.categorie||'prestation';$('tf-unite').value=prefill.unite||'unité';$('tf-prix').value=prefill.prix_ht;$('tf-prix-achat').value=prefill.prix_achat!=null?prefill.prix_achat:'';$('tf-code-galaxy').value=prefill.code_galaxy||'';$('mo-tf-t').textContent='Modifier le tarif';majMargeTarif();}
+  if(prefill){$('tf-id').value=prefill.id;$('tf-code').value=prefill.code;$('tf-designation').value=prefill.designation;$('tf-cat').value=prefill.categorie||'prestation';$('tf-unite').value=prefill.unite||'unité';$('tf-prix').value=prefill.prix_ht;$('tf-prix-achat').value=prefill.prix_achat!=null?prefill.prix_achat:'';$('tf-code-galaxy').value=prefill.code_galaxy||'';$('tf-fournisseur').value=prefill.fournisseur||'';$('tf-ref-fournisseur').value=prefill.reference_fournisseur||'';$('tf-url-fournisseur').value=prefill.url_fournisseur||'';$('mo-tf-t').textContent='Modifier le tarif';majMargeTarif();}
   OM('mo-tarif');
 }
 function editTarif(id){openTarifModal(tarifs.find(t=>t.id===id))}
@@ -2015,7 +2025,9 @@ async function saveTarif(){
   const prixAchat=prixAchatRaw===''?null:parseFloat(prixAchatRaw);
   if(!code||!des||(prix!==null&&isNaN(prix))||(prixAchat!==null&&isNaN(prixAchat))){toast('Code et désignation obligatoires (les prix peuvent rester vides pour l\'instant)','err');return}
   const codeGalaxy=$('tf-code-galaxy').value.trim();
-  const p={code,designation:des,categorie:$('tf-cat').value,unite:$('tf-unite').value.trim()||'unité',prix_ht:prix,prix_achat:prixAchat,code_galaxy:codeGalaxy||null,maj_par:ME.id,updated_at:new Date().toISOString()};
+  const p={code,designation:des,categorie:$('tf-cat').value,unite:$('tf-unite').value.trim()||'unité',prix_ht:prix,prix_achat:prixAchat,code_galaxy:codeGalaxy||null,
+    fournisseur:$('tf-fournisseur').value.trim()||null,reference_fournisseur:$('tf-ref-fournisseur').value.trim()||null,url_fournisseur:$('tf-url-fournisseur').value.trim()||null,
+    maj_par:ME.id,updated_at:new Date().toISOString()};
   const {data,error}=id?await db.from('tarifs').update(p).eq('id',id).select():await db.from('tarifs').insert(p).select();
   if(error){toast('Erreur : '+error.message,'err');return}
   if(!data||!data.length){toast('Modification refusée — droits « gestion des tarifs » requis','err');return}
@@ -2041,9 +2053,9 @@ async function syncTarifVersStock(t){
   if(existants&&existants.length)return;
   const {data:agences}=await db.from('agences').select('id');
   if(!agences||!agences.length)return;
-  const lignes=agences.map(a=>({code:t.code,designation:t.designation,categorie:t.categorie,prix_achat:null,quantite:0,seuil_alerte:0,compatible_tous:false,compatibilites:[],agence_id:a.id,updated_at:new Date().toISOString()}));
+  const lignes=agences.map(a=>({code:t.code,designation:t.designation,categorie:t.categorie,quantite:0,seuil_alerte:0,compatible_tous:false,compatibilites:[],agence_id:a.id,updated_at:new Date().toISOString()}));
   const {error}=await db.from('stock_pieces').insert(lignes);
-  if(!error){toast('Pièce également créée dans le Stock (quantité 0, prix d\'achat à définir) sur '+lignes.length+' agence(s)');if(typeof loadStock==='function')loadStock().catch(()=>{})}
+  if(!error){toast('Pièce également créée dans le Stock (quantité 0) sur '+lignes.length+' agence(s)');if(typeof loadStock==='function')loadStock().catch(()=>{})}
 }
 // Sens inverse : une pièce/accessoire créée ou modifiée côté Stock doit exister côté
 // Base tarifaire (prix de vente laissé à définir/inchangé), sinon elle est invisible en
