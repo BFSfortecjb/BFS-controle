@@ -516,6 +516,7 @@ tr:hover td{background:#fafafa}
           <input type="file" id="stock-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importStockExcel(this)">
           <button class="btn btn-s" onclick="exportStockXLS()">⬇ Excel</button>
           <button class="btn btn-s" onclick="ouvrirMaterioVigilance()">🔍 Matériovigilance (n° de lot)</button>
+          <button class="btn btn-s" onclick="ouvrirImportPhotos()">📷 Photos (masse)</button>
           <button class="btn btn-p" onclick="openPieceModal()">+ Pièce</button>
         </div>
         <div class="card"><div id="tbl-stock"><div class="loading"><span class="spin"></span></div></div></div>
@@ -956,6 +957,21 @@ tr:hover td{background:#fafafa}
       </div>
     </div>
     <div class="fa"><button class="btn btn-s" onclick="CM('mo-piece')">Annuler</button><button class="btn btn-p" onclick="savePiece()">Enregistrer</button></div>
+  </div></div>
+</div>
+
+<!-- Import photos en masse (stock) -->
+<div class="mo" id="mo-import-photos">
+  <div class="modal" style="max-width:640px"><div class="mh"><h3>📷 Import de photos en masse</h3><button class="mclose" onclick="CM('mo-import-photos')">✕</button></div>
+  <div class="mc">
+    <div style="font-size:13px;color:var(--txt-l);margin-bottom:12px">
+      Dépose ou sélectionne plusieurs photos d'un coup. Chaque fichier doit être nommé avec le <strong>code</strong> exact de la pièce
+      (ex : <code>JOINT-TETE-ANDR.jpg</code>) — l'appli associe automatiquement chaque photo à la bonne pièce, dans toutes les agences
+      où ce code existe. Les fichiers dont le nom ne correspond à aucun code sont listés sans être importés.
+    </div>
+    <input type="file" id="ip-files" accept="image/*" multiple style="display:none" onchange="importPhotosMasse(this)">
+    <button class="btn btn-p" onclick="document.getElementById('ip-files').click()">Choisir les photos…</button>
+    <div id="ip-resultats" style="margin-top:14px"></div>
   </div></div>
 </div>
 

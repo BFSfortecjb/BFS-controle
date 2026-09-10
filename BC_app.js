@@ -2361,6 +2361,54 @@ async function uploaderPhotoPiece(code,ancienPath){
   return {photo_path:path,photo_url:db.storage.from('stock-photos').getPublicUrl(path).data.publicUrl};
 }
 
+// ---- Import de photos en masse (une photo par code, propagée à toutes les agences) ----
+function ouvrirImportPhotos(){
+  $('ip-resultats').innerHTML='';
+  OM('mo-import-photos');
+}
+async function importPhotosMasse(input){
+  const files=Array.from(input.files||[]);
+  input.value='';
+  if(!files.length)return;
+  const el=$('ip-resultats');
+  el.innerHTML='<div class="loading"><span class="spin"></span> Import en cours…</div>';
+
+  // Index des codes existants (insensible à la casse)
+  const codesDispo=new Map(); // code lower -> code réel
+  stockPieces.forEach(p=>{ if(p.code) codesDispo.set(p.code.toLowerCase(),p.code); });
+
+  const ok=[],echoues=[],nonTrouves=[];
+  for(const f of files){
+    const nomSansExt=f.name.replace(/\.[^.]+$/,'');
+    const codeReel=codesDispo.get(nomSansExt.toLowerCase());
+    if(!codeReel){ nonTrouves.push(f.name); continue; }
+    try{
+      const blob=await compresserPhoto(f,800);
+      const path='piece_'+codeReel.replace(/[^a-zA-Z0-9-]/g,'_')+'_'+Date.now()+'.jpg';
+      // supprime les anciennes photos de ce code (toutes agences) avant d'uploader la nouvelle
+      const ancienPaths=stockPieces.filter(p=>p.code===codeReel&&p.photo_path).map(p=>p.photo_path);
+      if(ancienPaths.length) await db.storage.from('stock-photos').remove(ancienPaths).catch(()=>{});
+      const {error:upErr}=await db.storage.from('stock-photos').upload(path,blob,{contentType:'image/jpeg'});
+      if(upErr){ echoues.push(f.name+' ('+upErr.message+')'); continue; }
+      const photo_url=db.storage.from('stock-photos').getPublicUrl(path).data.publicUrl;
+      const {error:updErr}=await db.from('stock_pieces')
+        .update({photo_path:path,photo_url,updated_at:new Date().toISOString()})
+        .eq('code',codeReel);
+      if(updErr){ echoues.push(f.name+' ('+updErr.message+')'); continue; }
+      stockPieces.forEach(p=>{ if(p.code===codeReel){ p.photo_path=path; p.photo_url=photo_url; } });
+      ok.push(codeReel);
+    }catch(e){ echoues.push(f.name+' ('+(e.message||e)+')'); }
+  }
+
+  renderStock();
+  el.innerHTML=`
+    <div style="margin-bottom:6px">✅ ${ok.length} photo(s) importée(s)${ok.length?' : '+ok.join(', '):''}</div>
+    ${echoues.length?`<div style="color:#dc2626;margin-bottom:6px">⚠ ${echoues.length} échec(s) : ${echoues.join(', ')}</div>`:''}
+    ${nonTrouves.length?`<div style="color:#d97706">❓ ${nonTrouves.length} fichier(s) sans code correspondant : ${nonTrouves.join(', ')}<br><span style="font-size:12px;color:var(--txt-l)">Renomme ces fichiers avec le code exact de la pièce puis réimporte-les.</span></div>`:''}
+  `;
+  toast(ok.length?`${ok.length} photo(s) importée(s)`:'Aucune photo importée', ok.length?'ok':'err');
+}
+
 // ---- Lots par date de péremption ----
 let _lotsPiece=[];
 const lotEtat=d=>{ // d = 'AAAA-MM'
@@ -2590,16 +2638,23 @@ async function importStockExcel(input){
       if(!code){err++;continue}
       const agNom=String(col(r,'agence')).trim().toLowerCase();
       const agId=agNom?((_stockAgences.find(a=>a.nom.toLowerCase()===agNom||a.code===agNom)||{}).id||null):(_stockAgFiltre||null);
+      // Prix : colonne optionnelle. Si absente/vide sur la ligne, on NE TOUCHE PAS
+      // au prix déjà en base (évite d'écraser un prix saisi manuellement par un
+      // import qui ne visait qu'à ajuster des quantités).
+      const prixRaw=col(r,'prix','prix vente','prix_vente','prix ht','prix ht (€)','prix (€)');
+      const prix=prixRaw!==''&&prixRaw!=null?parseFloat(String(prixRaw).replace(',','.')):null;
       const exist=stockPieces.find(p=>p.code.toLowerCase()===code.toLowerCase()&&(p.agence_id||null)===(agId||null));
       if(exist){
         const apres=(+exist.quantite)+qte;
-        await db.from('stock_pieces').update({quantite:apres,updated_at:new Date().toISOString()}).eq('id',exist.id);
+        const maj={quantite:apres,updated_at:new Date().toISOString()};
+        if(prix!=null&&!isNaN(prix))maj.prix_vente=prix;
+        await db.from('stock_pieces').update(maj).eq('id',exist.id);
         await db.from('stock_mouvements').insert({piece_id:exist.id,type:'import',quantite_avant:exist.quantite,quantite_apres:apres,delta:qte,motif:'Import '+file.name,par:ME.id,agence_id:exist.agence_id});
         inc++;
       }else{
         const compRaw=String(col(r,'compatibilités','compatibilites','compatible'));
         const comp=compRaw?compRaw.split(';').map(s=>{const t=s.trim().split(/\s+/);return{marque:t[0]||'',modele:t.slice(1).join(' ')}}).filter(x=>x.marque):[];
-        const {data:np,error}=await db.from('stock_pieces').insert({code,designation:String(col(r,'désignation','designation'))||code,marque:String(col(r,'marque')),modele:String(col(r,'modèle','modele')),quantite:qte,seuil_alerte:parseFloat(col(r,'seuil','seuil d\'alerte'))||0,agence_id:agId,compatibilites:comp}).select().single();
+        const {data:np,error}=await db.from('stock_pieces').insert({code,designation:String(col(r,'désignation','designation'))||code,marque:String(col(r,'marque')),modele:String(col(r,'modèle','modele')),quantite:qte,seuil_alerte:parseFloat(col(r,'seuil','seuil d\'alerte'))||0,prix_vente:(prix!=null&&!isNaN(prix))?prix:null,agence_id:agId,compatibilites:comp}).select().single();
         if(error){err++;continue}
         await db.from('stock_mouvements').insert({piece_id:np.id,type:'import',quantite_avant:0,quantite_apres:qte,delta:qte,motif:'Import '+file.name,par:ME.id,agence_id:agId});
         crees++;
