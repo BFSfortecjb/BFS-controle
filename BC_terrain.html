@@ -1275,7 +1275,7 @@ async function voirEquipements(){
 
 function filterEquip(){
   const q=$('equip-search').value.toLowerCase();
-  const filtered=currentEquipements.filter(e=>(e.numero_identification+e.marque+e.modele+e.localisation).toLowerCase().includes(q));
+  const filtered=currentEquipements.filter(e=>(e.numero_identification+(e.numero_entreprise||'')+e.marque+e.modele+e.localisation).toLowerCase().includes(q));
   renderEquipList('equip-list-content',filtered);
 }
 
@@ -1286,6 +1286,7 @@ function renderEquipList(containerId,equips){
     <div class="equip-ico">${e.types_equipements?.icone||'🔧'}</div>
     <div class="equip-info">
       <div class="equip-name">${e.types_equipements?.libelle||'—'} — ${e.numero_identification||'Non numéroté'}</div>
+      ${e.numero_entreprise?`<div class="equip-loc" style="font-weight:600">N° entreprise : ${e.numero_entreprise}</div>`:''}
       <div class="equip-loc">${e.marque||''} ${e.modele||''} · ${e.localisation||'—'}</div>
     </div>
     ${e.numero_identification?`<button type="button" onclick="event.stopPropagation();copierIdEquip('${e.numero_identification.replace(/'/g,"\\'")}')" title="Copier le N° identification / QR code" style="background:var(--bg);border:none;border-radius:8px;padding:8px;font-size:15px;cursor:pointer;flex-shrink:0;margin-right:4px">📋</button>`:''}
