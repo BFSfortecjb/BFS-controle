@@ -97,7 +97,9 @@ async function loadDashTech(){
       </tr>`).join('')}</tbody></table>`
     : '<div class="t-empty">Aucun RDV planifié dans les 30 prochains jours</div>';
 
-  renderEcheancesTable(ec.filter(e=>e.statut_echeance!=='ok'),$('dash-tech-table'));
+  // "À jour" inclus désormais (classé en dernier par renderEcheancesTable) — demande explicite
+  // de Jeremy d'avoir les 3 catégories (urgent/proche/à jour) dans un seul classement trié.
+  renderEcheancesTable(ec,$('dash-tech-table'));
 }
 window.dashTechTab=async function(btn,scope){
   document.querySelectorAll('#dash-tech-tabs .ag-tab').forEach(b=>b.classList.remove('active'));
@@ -106,7 +108,7 @@ window.dashTechTab=async function(btn,scope){
   if(scope==='perso'){q=q.eq('technicien_id',ME.id);$('dash-tech-title').textContent='Mes échéances';}
   else{q=q.eq('agence_code',scope);$('dash-tech-title').textContent='Échéances agence';}
   const {data}=await q;
-  renderEcheancesTable((data||[]).filter(e=>e.statut_echeance!=='ok'),$('dash-tech-table'));
+  renderEcheancesTable(data||[],$('dash-tech-table'));
 };
 
 // ============================================================
@@ -156,7 +158,7 @@ async function loadDashAdmin(){
     cardRetard.style.display='none';
   }
 
-  renderEcheancesTable(e.filter(x=>x.statut_echeance!=='ok'),$('admin-echeances'));
+  renderEcheancesTable(e,$('admin-echeances'));
   loadCaMarge();
 }
 window.adminSetAgence=function(btn,ag){
@@ -276,6 +278,9 @@ async function loadDashSec(){
   renderCal('calendrier',calDate);
 }
 
+// Ordre de gravité d'une échéance — utilisé pour le classement du tableau de bord (retard
+// d'abord, puis urgent <30j, puis proche <90j, puis à jour en dernier).
+const RANG_ECHEANCE={'en retard':0,'urgent':1,'proche':2,'ok':3};
 function renderEcheancesTable(data,el){
   if(!data.length){el.innerHTML='<div class="t-empty">✅ Tout est à jour</div>';return}
 
@@ -286,10 +291,16 @@ function renderEcheancesTable(data,el){
     if(!groupes[key]) groupes[key] = {raison_sociale:e.raison_sociale, ville:e.ville, agence_nom:e.agence_nom, items:[]};
     groupes[key].items.push(e);
   });
+  // Classement demandé par Jeremy : catégorie de gravité d'abord (retard > urgent > proche >
+  // à jour), et à l'intérieur d'une même catégorie, l'échéance la plus proche en premier.
   const clientsList = Object.entries(groupes).sort((a,b)=>{
-    const pireA = a[1].items.some(i=>i.statut_echeance==='en retard')?0:a[1].items.some(i=>i.statut_echeance==='urgent')?1:2;
-    const pireB = b[1].items.some(i=>i.statut_echeance==='en retard')?0:b[1].items.some(i=>i.statut_echeance==='urgent')?1:2;
-    return pireA-pireB;
+    const pireA = Math.min(...a[1].items.map(i=>RANG_ECHEANCE[i.statut_echeance]??3));
+    const pireB = Math.min(...b[1].items.map(i=>RANG_ECHEANCE[i.statut_echeance]??3));
+    if(pireA!==pireB)return pireA-pireB;
+    const dateA = a[1].items.reduce((min,i)=>!min||(i.date_prochaine_echeance&&i.date_prochaine_echeance<min)?i.date_prochaine_echeance:min,null);
+    const dateB = b[1].items.reduce((min,i)=>!min||(i.date_prochaine_echeance&&i.date_prochaine_echeance<min)?i.date_prochaine_echeance:min,null);
+    if(!dateA)return 1;if(!dateB)return -1;
+    return dateA<dateB?-1:dateA>dateB?1:0;
   });
 
   el.innerHTML = `<table><thead><tr><th></th><th>Client</th><th>Agence</th><th>Équipements concernés</th><th>Plus proche échéance</th></tr></thead><tbody>${clientsList.map(([key,g],idx)=>{
