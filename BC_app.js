@@ -434,28 +434,37 @@ async function deleteRdv(){
 // ============================================================
 async function loadClients(){
   const {data}=await db.from('clients').select('*,agences(nom,code)').order('raison_sociale');
-  clients=data||[];renderClients();
+  clients=data||[];
+  // Pour le badge "Sans contrat" dans le tableau — un simple select des client_id ayant au
+  // moins un contrat suffit, pas besoin d'un embed par ligne.
+  const {data:cts}=await db.from('contrats').select('client_id');
+  _clientsAvecContrat=new Set((cts||[]).map(c=>c.client_id));
+  renderClients();
   [$('f-cl-verif'),$('ct-client'),$('rdv-client')].forEach(el=>{if(!el)return;
     const cur=el.value;
     el.innerHTML='<option value="">—</option>'+clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
     if(cur)el.value=cur;
   });
 }
+let _clientsAvecContrat=new Set();
 function renderClients(){
   const q=$('q-clients').value.toLowerCase();const ag=$('f-ag-clients').value;
   const data=clients.filter(c=>(c.raison_sociale+c.ville+c.siret).toLowerCase().includes(q)&&(!ag||c.agences?.code===ag));
   const el=$('tbl-clients');
   if(!data.length){el.innerHTML='<div class="t-empty">Aucun client</div>';return}
-  el.innerHTML=`<table><thead><tr><th>Raison sociale</th><th>Agence</th><th>Ville</th><th>Contact</th><th>Téléphone</th><th>Actions</th></tr></thead><tbody>${data.map(c=>`<tr>
-    <td><strong>${c.raison_sociale}</strong></td><td><span class="badge bg">${c.agences?.nom||'—'}</span></td>
+  el.innerHTML=`<table><thead><tr><th>Raison sociale</th><th>Agence</th><th>Ville</th><th>Contact</th><th>Téléphone</th><th>Actions</th></tr></thead><tbody>${data.map(c=>`<tr${c.actif===false?' style="opacity:.55"':''}>
+    <td><strong>${c.raison_sociale}</strong>${c.actif===false?' <span class="badge" style="background:#e5e7eb;color:#6b7280">Inactif</span>':''}${!_clientsAvecContrat.has(c.id)?' <span class="badge" style="background:#fee2e2;color:#b91c1c" title="Aucun contrat en base">⚠ Sans contrat</span>':''}</td><td><span class="badge bg">${c.agences?.nom||'—'}</span></td>
     <td>${c.ville||'—'}</td><td>${c.contact_nom||'—'}</td><td>${c.contact_telephone||'—'}</td>
-    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editClient('${c.id}')">✏️</button><button class="btn btn-s btn-xs" onclick="voirContratsClient('${c.raison_sociale.replace(/'/g,"\\'")}')" title="Voir les contrats de ce client">📋</button><button class="btn btn-s btn-xs" onclick="voirHistoriqueExtincteursClient('${c.id}')" title="Tous les extincteurs passés chez ce client">🧯</button><button class="btn btn-s btn-xs" onclick="deleteClient('${c.id}')">🗑</button></div></td>
+    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="voirFicheClient('${c.id}')" title="Consulter la fiche (lecture seule)">👁️</button><button class="btn btn-s btn-xs" onclick="editClient('${c.id}')" title="Modifier">✏️</button><button class="btn btn-s btn-xs" onclick="voirContratsClient('${c.raison_sociale.replace(/'/g,"\\'")}')" title="Voir les contrats de ce client">📋</button><button class="btn btn-s btn-xs" onclick="voirHistoriqueExtincteursClient('${c.id}')" title="Tous les extincteurs passés chez ce client">🧯</button><button class="btn btn-s btn-xs" onclick="deleteClient('${c.id}')">🗑</button></div></td>
   </tr>`).join('')}</tbody></table>`;
 }
-async function openClientModal(prefill=null){
+// readOnly=true : fiche de consultation (œil) — mêmes champs que la modale d'édition mais
+// désactivés, bouton Enregistrer masqué. readOnly=false : édition normale (inchangé).
+async function openClientModal(prefill=null,readOnly=false){
   const {data:ag}=await db.from('agences').select('*');
   $('c-agence').innerHTML='<option value="">—</option>'+(ag||[]).map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
   ['c-id','c-rs','c-adr','c-cp','c-ville','c-siret','c-contact','c-tel','c-email','c-notes'].forEach(id=>$(id).value='');
+  $('c-actif').checked=true;$('c-actif-label').textContent='Actif';
   $('mo-cl-t').textContent='Nouveau client';
   $('c-affectations-section').style.display='none';
   $('c-affectations-list').style.display='none';
@@ -466,17 +475,24 @@ async function openClientModal(prefill=null){
     $('c-adr').value=prefill.adresse||'';$('c-cp').value=prefill.code_postal||'';$('c-ville').value=prefill.ville||'';
     $('c-siret').value=prefill.siret||'';$('c-contact').value=prefill.contact_nom||'';
     $('c-tel').value=prefill.contact_telephone||'';$('c-email').value=prefill.contact_email||'';$('c-notes').value=prefill.notes||'';
-    $('mo-cl-t').textContent='Modifier le client';
+    $('c-actif').checked=prefill.actif!==false;$('c-actif-label').textContent=prefill.actif!==false?'Actif':'Inactif';
+    $('mo-cl-t').textContent=readOnly?'Fiche client — '+prefill.raison_sociale:'Modifier le client';
     $('c-affectations-section').style.display='block';
     $('c-affectations-list').style.display='block';
-    $('c-btn-affectation').style.display='inline-flex';
+    $('c-btn-affectation').style.display=readOnly?'none':'inline-flex';
     const {data:aff}=await db.from('vue_affectations').select('*').eq('client_id',prefill.id);
     _affectationsClient=aff||[];
     renderAffectations();
   }
+  // Verrouille tous les champs en consultation — évite une double implémentation du formulaire.
+  ['c-agence','c-rs','c-adr','c-cp','c-ville','c-siret','c-contact','c-tel','c-email','c-notes','c-actif'].forEach(id=>$(id).disabled=readOnly);
+  $('c-btn-enregistrer').style.display=readOnly?'none':'';
+  $('c-btn-fermer').textContent=readOnly?'Fermer':'Annuler';
   OM('mo-client');
 }
 function editClient(id){openClientModal(clients.find(c=>c.id===id))}
+function voirFicheClient(id){openClientModal(clients.find(c=>c.id===id),true)}
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='c-actif')$('c-actif-label').textContent=e.target.checked?'Actif':'Inactif'});
 
 // ============================================================
 // AFFECTATIONS TECHNICIENS
@@ -550,7 +566,7 @@ async function supprimerAffectation(affId){
 async function saveClient(){
   const id=$('c-id').value;const rs=$('c-rs').value.trim();
   if(!rs){toast('Raison sociale obligatoire','err');return}
-  const p={raison_sociale:rs,agence_id:$('c-agence').value||null,adresse:$('c-adr').value.trim(),code_postal:$('c-cp').value.trim(),ville:$('c-ville').value.trim(),siret:$('c-siret').value.trim(),contact_nom:$('c-contact').value.trim(),contact_telephone:$('c-tel').value.trim(),contact_email:$('c-email').value.trim(),notes:$('c-notes').value.trim(),updated_at:new Date().toISOString()};
+  const p={raison_sociale:rs,agence_id:$('c-agence').value||null,adresse:$('c-adr').value.trim(),code_postal:$('c-cp').value.trim(),ville:$('c-ville').value.trim(),siret:$('c-siret').value.trim(),contact_nom:$('c-contact').value.trim(),contact_telephone:$('c-tel').value.trim(),contact_email:$('c-email').value.trim(),notes:$('c-notes').value.trim(),actif:$('c-actif').checked,updated_at:new Date().toISOString()};
   const {error}=id?await db.from('clients').update(p).eq('id',id):await db.from('clients').insert(p);
   if(error){toast('Erreur: '+error.message,'err');return}
   toast(id?'Client modifié':'Client créé');CM('mo-client');loadClients();
