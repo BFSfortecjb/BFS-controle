@@ -1902,7 +1902,9 @@ async function enregistrerCorrectionUnite(){
   if(idChange){
     // Nouvelle identification (nouveau QR) — l'ancienne devient caduque et ne doit plus être
     // utilisée/imprimée ; reste en attente de confirmation tant que la nouvelle étiquette n'a
-    // pas été imprimée, collée puis rescannée.
+    // pas été imprimée, collée puis rescannée. Confirmation explicite demandée avant de générer
+    // (filet de sécurité si le changement détecté n'était pas voulu — évite de gâcher une étiquette).
+    if(!confirm('Ce changement va recréer un numéro d\'identification (nouvelle étiquette à imprimer, l\'ancienne '+u.identification+' devient caduque). Continuer ?'))return;
     const annee = anneeFab || anneeMES || new Date().getFullYear();
     const {data,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:mode,p_agent_code:agent,p_capacite:capacite,p_annee_mise_en_service:annee});
     if(eg){toast('Erreur génération identification : '+eg.message,'err');return}

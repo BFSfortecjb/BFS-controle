@@ -2171,6 +2171,12 @@ async function loadStock(){
   chargerUnitesExtincteurs();
 }
 
+// Navigation rapide entre les sous-parties de la page Stock (ancre + défilement doux),
+// sans changer de "page" — évite de dupliquer les chargements liés à navigate().
+function scrollToSection(id){
+  const el=document.getElementById(id);
+  if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+}
 // ---- Extincteurs neufs en stock (à installer) ----
 let stockNeufs=[];
 async function chargerStockNeufs(){

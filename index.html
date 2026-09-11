@@ -523,7 +523,15 @@ tr:hover td{background:#fafafa}
           <button class="ag-tab" onclick="navigate('commandes')">📦 Commandes à prévoir</button>
         </div>
         <div id="stock-ag-tabs" style="display:flex;gap:8px;margin-bottom:14px"></div>
-        <div class="search-bar">
+        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+          <button class="btn btn-s btn-sm" onclick="scrollToSection('sec-pieces')">🧩 Pièces</button>
+          <button class="btn btn-s btn-sm" onclick="scrollToSection('sec-neufs')">🧯 Neufs</button>
+          <button class="btn btn-s btn-sm" onclick="scrollToSection('sec-atelier')">🔄 Atelier</button>
+          <button class="btn btn-s btn-sm" onclick="scrollToSection('sec-previsionnel')">🔮 Prévisionnel</button>
+          <button class="btn btn-s btn-sm" onclick="scrollToSection('sec-inventaires')">📑 Inventaires</button>
+          <button class="btn btn-s btn-sm" onclick="scrollToSection('sec-mouvements')">🔀 Mouvements</button>
+        </div>
+        <div id="sec-pieces" class="search-bar">
           <input type="text" id="q-stock" placeholder="Rechercher code, désignation, marque…" oninput="renderStock()">
           <button class="btn btn-s" onclick="document.getElementById('stock-file').click()">⬆ Import Excel</button>
           <input type="file" id="stock-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importStockExcel(this)">
@@ -534,7 +542,7 @@ tr:hover td{background:#fafafa}
         </div>
         <div class="card"><div id="tbl-stock"><div class="loading"><span class="spin"></span></div></div></div>
 
-        <div class="card" style="margin-top:16px">
+        <div class="card" id="sec-neufs" style="margin-top:16px">
           <div class="card-header"><h2>🧯 Extincteurs neufs en stock</h2>
             <button class="btn btn-p btn-sm" onclick="openStockNeufModal()">+ Extincteur neuf</button>
           </div>
@@ -547,7 +555,7 @@ tr:hover td{background:#fafafa}
           <div id="tbl-stock-neufs"><div class="t-empty">Chargement…</div></div>
         </div>
 
-        <div class="card" style="margin-top:16px">
+        <div class="card" id="sec-atelier" style="margin-top:16px">
           <div class="card-header"><h2>🔄 Atelier — échange standard extincteurs PP</h2>
             <div style="display:flex;gap:6px">
               <button class="btn btn-s btn-sm" onclick="exporterModeleImportUnites()" title="Fichier Excel à remplir pour un import en masse">📋 Modèle import</button>
@@ -582,17 +590,17 @@ tr:hover td{background:#fafafa}
           <div id="tbl-unites-extincteurs"><div class="t-empty">Chargement…</div></div>
         </div>
 
-        <div class="card" style="margin-top:16px">
+        <div class="card" id="sec-previsionnel" style="margin-top:16px">
           <div class="card-header"><h2>🔮 Besoin prévisionnel</h2>
             <select id="f-horizon-prev" onchange="renderPrevision()" style="max-width:160px"><option value="90">90 jours</option><option value="30">30 jours</option><option value="180">180 jours</option></select>
           </div>
           <div id="tbl-prevision"><div class="t-empty">Calcul en cours…</div></div>
         </div>
-        <div class="card" style="margin-top:16px">
+        <div class="card" id="sec-inventaires" style="margin-top:16px">
           <div class="card-header"><h2>📑 Inventaires</h2></div>
           <div id="tbl-inventaires"></div>
         </div>
-        <div class="card" style="margin-top:16px">
+        <div class="card" id="sec-mouvements" style="margin-top:16px">
           <div class="card-header"><h2>🔀 Derniers mouvements</h2>
             <select id="f-type-mvt" onchange="loadStock()" style="max-width:180px"><option value="">Tous types</option><option value="entree">Entrées</option><option value="rectification">Rectifications</option><option value="casse">Sorties casse</option><option value="transfert">Transferts d'agence</option><option value="import">Imports Excel</option></select>
           </div>
