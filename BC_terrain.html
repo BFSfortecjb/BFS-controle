@@ -643,8 +643,35 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     </div>
     <button class="btn btn-p" style="width:100%" onclick="chercherUniteAtelier($('atelier-manuel').value)">🔍 Rechercher</button>
   </div>
-  <div class="footer">
+  <div class="footer" style="flex-direction:column;gap:8px">
     <button class="btn btn-vert" onclick="ouvrirScanner('atelier')">📷 Scanner un extincteur</button>
+    <button class="btn btn-s" onclick="ouvrirReceptionNeuf()">📦 Réception neuf (identifiée dès l'entrée)</button>
+  </div>
+</div>
+
+<!-- ===== RÉCEPTION STOCK NEUF (carton, identifié dès l'entrée) ===== -->
+<div class="screen" id="s-atelier-reception">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-atelier')">←</button>
+    <h1>Réception neuf</h1>
+  </div>
+  <div class="content">
+    <div class="card" style="margin-bottom:14px"><div style="padding:14px 16px;font-size:13px;color:var(--txt-l)">
+      Pour un extincteur neuf en carton. Une identification est générée tout de suite (basculera automatiquement en stock tampon s'il n'est pas posé chez un client dans l'année) — colle l'étiquette sur le carton, puis rescanne pour confirmer une fois posée.
+    </div></div>
+    <div class="fg" style="margin-bottom:12px"><label>Mode de pressurisation</label>
+      <select id="ar-mode"><option value="PP">PP — pression permanente</option><option value="PA">PA — pression auxiliaire</option></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Agent extincteur</label><select id="ar-agent"></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Capacité</label><input type="number" id="ar-capacite" step="0.1" min="0"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Unité</label><select id="ar-unite"><option value="L">L</option><option value="kg">kg</option></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Année de fabrication</label><input type="number" id="ar-fabrication" min="1990" max="2100" placeholder="Ex. 2026"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Agence</label><select id="ar-agence"></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Marque</label><input type="text" id="ar-marque"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Modèle</label><input type="text" id="ar-modele"></div>
+    <div class="fg" style="margin-bottom:12px"><label>N° de lot</label><input type="text" id="ar-lot"></div>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="enregistrerReceptionNeuf()">✅ Générer l'identification</button>
   </div>
 </div>
 
@@ -666,8 +693,25 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     </div></div>
     <div class="card" style="margin-bottom:14px" id="af-reco-bloc">
       <div style="padding:14px 16px">
-      <div class="sec" style="margin-top:0">Vérification recommandée</div>
-      <div id="af-recommandation" style="font-size:15px;font-weight:700"></div>
+      <div class="sec" style="margin-top:0">Type de vérification à faire</div>
+      <div id="af-decennale-alerte" style="display:none;background:#fee2e2;border:1px solid #fecaca;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:13px;color:#b91c1c;font-weight:600"></div>
+      <div id="af-recommandation" style="font-size:13px;color:var(--txt-l);margin-bottom:10px"></div>
+      <div class="statut-grid" style="grid-template-columns:1fr 1fr;margin:0 0 10px">
+        <button class="statut-btn" id="af-btn-maa" onclick="afChoisirPalier('approfondie')"><span class="ico">🔧</span>MAA (approfondie)</button>
+        <button class="statut-btn" id="af-btn-annuelle" onclick="afChoisirPalier('simple')"><span class="ico">📋</span>Annuelle</button>
+      </div>
+      <div style="font-size:12px;color:var(--txt-l);margin-bottom:10px">Historique avant import inconnu — la recommandation ci-dessus est une estimation. Si tu sais qu'une MAA (ou décennale) a déjà été faite, choisis "Annuelle" et renseigne la date ci-dessous pour que le calcul soit juste la prochaine fois.</div>
+      <div id="af-histo-inconnu" style="display:none;flex-direction:column;gap:10px">
+        <div class="fg" id="af-fg-maa" style="display:none;margin-bottom:0">
+          <label>Date de la dernière MAA (mois/année)</label>
+          <input type="month" id="af-derniere-maa">
+        </div>
+        <div class="fg" id="af-fg-decennale" style="display:none;margin-bottom:0">
+          <label>Date de la dernière décennale / épreuve hydraulique (mois/année)</label>
+          <input type="month" id="af-derniere-decennale">
+        </div>
+        <button class="btn btn-s" style="width:100%" onclick="afEnregistrerHistorique()">💾 Enregistrer cet historique</button>
+      </div>
     </div></div>
   </div>
   <div class="footer" style="flex-direction:column;gap:8px">
@@ -676,7 +720,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <button class="btn btn-s" style="color:#b91c1c" onclick="ouvrirCorrectionUnite()">✏️ Ça ne correspond pas — corriger</button>
     </div>
     <div id="af-actions-normales" style="display:flex;flex-direction:column;gap:8px">
-      <button class="btn btn-vert" onclick="ouvrirVerifAtelier()">🔍 Faire la vérification (annuelle / MAA)</button>
+      <button class="btn btn-vert" onclick="ouvrirVerifAtelier()">🔍 Faire la vérification</button>
       <button class="btn btn-s" onclick="ouvrirCorrectionUnite()">✏️ Modifier les informations</button>
       <button class="btn btn-s" style="color:#b91c1c" onclick="validerAtelierReforme()">♻️ Dépollué / réformé pour recyclage (sans vérification)</button>
     </div>
@@ -714,10 +758,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 <!-- ===== NOUVELLE ÉTIQUETTE À IMPRIMER (après correction changeant l'identification) ===== -->
 <div class="screen" id="s-atelier-nouvelle-id">
   <div class="hdr">
-    <h1>Nouvelle étiquette</h1>
+    <h1 id="an-titre">Nouvelle étiquette</h1>
   </div>
   <div class="content">
-    <div class="card" style="margin-bottom:14px"><div style="padding:14px 16px;font-size:13px;color:var(--txt-l)">
+    <div class="card" style="margin-bottom:14px"><div id="an-texte" style="padding:14px 16px;font-size:13px;color:var(--txt-l)">
       L'identification a changé. Copie le nouveau numéro pour l'imprimer, colle la nouvelle étiquette sur l'extincteur (jette l'ancienne), puis rescanne pour confirmer.
     </div></div>
     <div class="card" style="margin-bottom:14px"><div style="padding:20px 16px;text-align:center">
@@ -1824,24 +1868,76 @@ async function chercherUniteAtelier(identification){
   goTo('s-atelier-fiche');
 }
 const AGENTS_EXTINCTEURS_CODES=['CO2','BC','ABC','D','A','AB','ABF','A lith','Autre'];
+// Recommandation de palier (MAA vs annuelle) + alerte décennale, partagée entre la fiche atelier
+// (af-*) et l'écran de vérification (av-*). Priorité aux dates réellement connues
+// (date_derniere_maa/date_derniere_decennale, saisies à la main quand l'historique avant import
+// est inconnu) plutôt qu'à un calcul systématique depuis la fabrication, qui suppose à tort
+// qu'aucune MAA/décennale n'a jamais été faite.
+function recommanderPalierUnite(u){
+  const annee=d=>d?new Date(d).getFullYear():null;
+  const anneeRefMaa=annee(u.date_derniere_maa)||annee(u.date_fabrication);
+  const ageMaa=anneeRefMaa!=null?(new Date().getFullYear()-anneeRefMaa):null;
+  const notesLower=(u.notes||'').toLowerCase();
+  let code='simple',texte='Vérification annuelle (visuelle + fonctionnelle)';
+  if(!u.date_derniere_maa&&notesLower.includes('maa')){
+    code='approfondie';texte='Maintenance approfondie (MAA) — indiquée à l\'entrée en stock';
+  } else if(ageMaa!=null&&ageMaa>=5){
+    code='approfondie';
+    texte='Maintenance approfondie (MAA) — '+ageMaa+' an(s) depuis '+(u.date_derniere_maa?'la dernière MAA':'la fabrication (historique antérieur inconnu)');
+  }
+  const anneeRefDec=annee(u.date_derniere_decennale)||annee(u.date_fabrication);
+  const ageDec=anneeRefDec!=null?(new Date().getFullYear()-anneeRefDec):null;
+  const decennaleAlerte=ageDec!=null&&ageDec>=10;
+  const decennaleTexte=decennaleAlerte?('⚠️ Décennale (requalification / épreuve hydraulique) à vérifier — '+ageDec+' an(s) depuis '+(u.date_derniere_decennale?'la dernière décennale':'la fabrication (historique antérieur inconnu)')):'';
+  return{code,texte,decennaleAlerte,decennaleTexte};
+}
+let _afPalierChoisi=null;
+function afMajBoutonsPalier(){
+  $('af-btn-maa').className='statut-btn'+(_afPalierChoisi==='approfondie'?' sel-nc':'');
+  $('af-btn-annuelle').className='statut-btn'+(_afPalierChoisi==='simple'?' sel-conforme':'');
+}
+function afChoisirPalier(code){
+  const u=_uniteAtelierCourante;if(!u)return;
+  _afPalierChoisi=code;
+  afMajBoutonsPalier();
+  const reco=recommanderPalierUnite(u);
+  const overrideMaa=code==='simple'&&reco.code==='approfondie';
+  $('af-fg-maa').style.display=overrideMaa?'block':'none';
+  $('af-histo-inconnu').style.display=(overrideMaa||reco.decennaleAlerte)?'flex':'none';
+}
+async function afEnregistrerHistorique(){
+  const u=_uniteAtelierCourante;if(!u)return;
+  const p={};
+  if($('af-fg-maa').style.display!=='none'){
+    const v=$('af-derniere-maa').value;
+    if(!v){toast('Indique le mois/année de la dernière MAA','err');return}
+    p.date_derniere_maa=v+'-01';
+  }
+  if($('af-fg-decennale').style.display!=='none'&&$('af-derniere-decennale').value){
+    p.date_derniere_decennale=$('af-derniere-decennale').value+'-01';
+  }
+  if(!Object.keys(p).length)return;
+  const {data:maj,error}=await db.from('extincteurs_unites').update({...p,updated_at:new Date().toISOString()}).eq('id',u.id).select().single();
+  if(error){toast('Erreur : '+error.message,'err');return}
+  toast('Historique enregistré ✓');
+  afficherFicheUniteAtelier(maj);
+}
 function afficherFicheUniteAtelier(u){
+  _uniteAtelierCourante=u;
   $('af-identification').textContent=u.identification;
   $('af-detail').textContent=[u.mode_pressurisation,u.agent_code,(u.capacite_valeur!=null?u.capacite_valeur+(u.capacite_unite||''):''),u.marque,u.modele].filter(Boolean).join(' · ');
   const statutLabels={en_atelier_a_reviser:'🟠 À réviser',en_atelier_revise:'🔵 Révisé — prêt',en_service:'🟢 En service (client)',reforme:'⚫ Réformé'};
   $('af-statut').innerHTML='Statut actuel : <strong>'+(statutLabels[u.statut]||u.statut)+'</strong>';
   $('af-notes').textContent=u.notes||'';
-  // Recommandation : d'abord la note laissée à l'entrée en stock ("Vérification requise :
-  // Annuelle/MAA", cf. import en masse), sinon repli sur l'âge depuis la fabrication
-  // (MAA tous les 5 ans, cf. cadence retenue pour la base tarifaire pièces détachées).
-  const notesLower=(u.notes||'').toLowerCase();
-  let reco='Vérification annuelle (visuelle + fonctionnelle)';
-  if(notesLower.includes('maa')){
-    reco='Maintenance approfondie (MAA)';
-  } else if(!notesLower.includes('annuel') && u.date_fabrication){
-    const age=new Date().getFullYear()-new Date(u.date_fabrication).getFullYear();
-    if(age>=5)reco='Maintenance approfondie (MAA) — '+age+' ans depuis fabrication';
-  }
-  $('af-recommandation').textContent=reco;
+  const reco=recommanderPalierUnite(u);
+  _afPalierChoisi=reco.code;
+  afMajBoutonsPalier();
+  $('af-recommandation').textContent='Recommandation : '+reco.texte;
+  $('af-decennale-alerte').style.display=reco.decennaleAlerte?'block':'none';
+  $('af-decennale-alerte').textContent=reco.decennaleTexte;
+  $('af-fg-maa').style.display='none';
+  $('af-fg-decennale').style.display=reco.decennaleAlerte?'block':'none';
+  $('af-histo-inconnu').style.display=reco.decennaleAlerte?'flex':'none';
   // Import en masse = risque de décalage étiquette/extincteur physique tant que personne n'a
   // scanné physiquement l'unité pour confirmer que le QR collé correspond bien à cet appareil.
   const enAttente=!!u.en_attente_confirmation;
@@ -1856,6 +1952,42 @@ async function confirmerIdentiteUnite(){
   if(error){toast('Erreur : '+error.message,'err');return}
   await db.from('extincteurs_mouvements').insert({unite_id:u.id,type:'confirmation_identite',technicien_id:ME.id,notes:'Identité confirmée par scan terrain (étiquette ↔ extincteur)'});
   toast('Identité confirmée ✓');goTo('s-atelier');
+}
+// ============================================================
+// RÉCEPTION STOCK NEUF (carton, identifié dès l'entrée) — décision finale de Jeremy :
+// étiqueter le carton tout de suite, quitte à ce que l'unité bascule automatiquement en
+// stock tampon (poolUnite(), côté bureau) si elle n'est pas posée dans l'année — plutôt
+// que de ne pas identifier du tout (premier essai, rejeté : voir mémoire projet pour le
+// contexte des deux allers-retours sur cette fonctionnalité). Utilise extincteurs_unites,
+// même génération d'identification que "+ Unité" (bureau) et l'import en masse.
+// ============================================================
+async function ouvrirReceptionNeuf(){
+  $('ar-agent').innerHTML=AGENTS_EXTINCTEURS_CODES.map(c=>`<option value="${c}">${c}</option>`).join('');
+  const {data:ags}=await db.from('agences').select('id,nom').order('nom');
+  $('ar-agence').innerHTML=(ags||[]).map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
+  ['ar-capacite','ar-marque','ar-modele','ar-lot'].forEach(id=>$(id).value='');
+  $('ar-mode').value='PP';$('ar-unite').value='L';$('ar-fabrication').value=new Date().getFullYear();
+  goTo('s-atelier-reception');
+}
+async function enregistrerReceptionNeuf(){
+  const mode=$('ar-mode').value,agent=$('ar-agent').value,capacite=parseFloat($('ar-capacite').value);
+  const uniteCap=$('ar-unite').value,agenceId=$('ar-agence').value;
+  const marque=$('ar-marque').value.trim()||null,modele=$('ar-modele').value.trim()||null,lot=$('ar-lot').value.trim()||null;
+  const anneeFab=parseInt($('ar-fabrication').value)||null;
+  if(!agent||isNaN(capacite)||!agenceId){toast('Agent, capacité et agence obligatoires','err');return}
+  const annee=anneeFab||new Date().getFullYear();
+  const {data:idGen,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:mode,p_agent_code:agent,p_capacite:capacite,p_annee_mise_en_service:annee});
+  if(eg){toast('Erreur génération identification : '+eg.message,'err');return}
+  const p={identification:idGen,mode_pressurisation:mode,agent_code:agent,capacite_valeur:capacite,capacite_unite:uniteCap,
+    marque,modele,numero_lot:lot,date_fabrication:anneeFab?anneeFab+'-01-01':null,agence_id:agenceId,
+    statut:'en_atelier_revise',en_attente_confirmation:true,notes:'Réception stock neuf (carton) — terrain'};
+  const {data:nu,error}=await db.from('extincteurs_unites').insert(p).select().single();
+  if(error){toast('Erreur : '+error.message,'err');return}
+  await db.from('extincteurs_mouvements').insert({unite_id:nu.id,type:'remise_en_stock',technicien_id:ME.id,agence_id:agenceId,notes:'Réception stock neuf (carton) — terrain'});
+  $('an-titre').textContent='Nouvel extincteur';
+  $('an-texte').textContent='Copie le numéro pour l\'étiqueteuse et colle l\'étiquette sur le carton. Une fois posé chez le client, rescanne pour confirmer l\'identité.';
+  $('an-identification').textContent=idGen;
+  goTo('s-atelier-nouvelle-id');
 }
 async function ouvrirCorrectionUnite(){
   const u=_uniteAtelierCourante;if(!u)return;
@@ -1919,6 +2051,8 @@ async function enregistrerCorrectionUnite(){
   _uniteAtelierCourante=maj;
   if(idChange){
     toast('Corrigé — nouvelle identification générée');
+    $('an-titre').textContent='Nouvelle étiquette';
+    $('an-texte').textContent='L\'identification a changé. Copie le nouveau numéro pour l\'imprimer, colle la nouvelle étiquette sur l\'extincteur (jette l\'ancienne), puis rescanne pour confirmer.';
     $('an-identification').textContent=idGen;
     goTo('s-atelier-nouvelle-id');
   } else {
@@ -1966,11 +2100,10 @@ async function ouvrirVerifAtelier(){
     return true;
   }).map(p=>({...p,libelle:p.libelle.replace(/\s*\[(pp_eau_poudre|pa|co2|quinquennal)\]/gi,'').trim()}));
 
-  // Recommandation (même logique que la fiche) pour présélectionner le palier
-  const notesLower=(u.notes||'').toLowerCase();
-  let codeReco='simple';
-  if(notesLower.includes('maa'))codeReco='approfondie';
-  else if(!notesLower.includes('annuel')&&u.date_fabrication&&(new Date().getFullYear()-new Date(u.date_fabrication).getFullYear())>=5)codeReco='approfondie';
+  // Présélection du palier : priorité au choix explicite fait par le technicien sur la fiche
+  // (_afPalierChoisi, qui prend en compte un historique MAA/décennale saisi à la main), sinon
+  // repli sur la recommandation calculée (même helper que la fiche, cf. recommanderPalierUnite()).
+  const codeReco=_afPalierChoisi||recommanderPalierUnite(u).code;
 
   _avPieces={};
   _avStockUsage={};
@@ -2113,6 +2246,9 @@ async function enregistrerVerifAtelier(){
   const nouveauStatut=_avStatut==='hors service'?'reforme':'en_atelier_revise';
   const majUnite={statut:nouveauStatut,en_attente_confirmation:false,updated_at:new Date().toISOString()};
   if(nouveauStatut==='en_atelier_revise')majUnite.date_derniere_revision_atelier=new Date().toISOString().slice(0,10);
+  // La MAA qu'on vient de faire devient la nouvelle référence pour le calcul de la prochaine
+  // échéance (recommanderPalierUnite()) — évite de redemander la date à chaque passage.
+  if(palierCode==='approfondie')majUnite.date_derniere_maa=new Date().toISOString().slice(0,10);
   await db.from('extincteurs_unites').update(majUnite).eq('id',u.id);
   await db.from('extincteurs_mouvements').insert({unite_id:u.id,type:nouveauStatut==='reforme'?'mise_au_rebut':'revision_atelier',technicien_id:ME.id,notes:'Vérification atelier terrain — '+_avStatut+(nbSorties?' · '+nbSorties+' pièce(s) sortie(s)':'')});
 

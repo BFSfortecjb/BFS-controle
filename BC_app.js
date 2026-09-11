@@ -2387,17 +2387,30 @@ async function reformerUnite(id){
   await db.from('extincteurs_mouvements').insert({unite_id:id,type:'mise_au_rebut',technicien_id:ME.id});
   toast('Unité réformée');chargerUnitesExtincteurs();
 }
+// Copie dans le presse-papier + repli si l'API Clipboard est indisponible (même pattern que
+// copierIdEquip() côté terrain, BC_terrain.html).
+function copierTexteBureau(txt){
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(()=>toast('Copié : '+txt)).catch(()=>toast('Copie impossible','err'));
+  }else{
+    const ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');toast('Copié : '+txt)}catch(e){toast('Copie impossible','err')}
+    document.body.removeChild(ta);
+  }
+}
 function openUniteExtincteurModal(prefill=null){
-  ['ue-id','ue-marque','ue-modele','ue-serie','ue-notes','ue-fabrication'].forEach(id=>{if($(id))$(id).value=''});
+  ['ue-id','ue-marque','ue-modele','ue-serie','ue-lot','ue-notes','ue-fabrication'].forEach(id=>{if($(id))$(id).value=''});
   $('ue-mode').value='PP';$('ue-capacite-unite').value='L';$('ue-annee').value=new Date().getFullYear();$('ue-statut').value='en_atelier_revise';
   $('mo-ue-t').textContent="Nouvelle unité d'extincteur";$('ue-id-generee').textContent='';
+  $('ue-btn-enregistrer').style.display='';$('ue-btn-enregistrer').textContent='Enregistrer';$('ue-btn-annuler').textContent='Annuler';
   if(prefill){
     $('ue-id').value=prefill.id;$('ue-mode').value=prefill.mode_pressurisation;$('ue-agent').value=prefill.agent_code||'';
     $('ue-capacite').value=prefill.capacite_valeur||'';$('ue-capacite-unite').value=prefill.capacite_unite||'L';
     $('ue-fabrication').value=prefill.date_fabrication?new Date(prefill.date_fabrication).getFullYear():'';
     $('ue-annee').value=prefill.date_mise_en_service?new Date(prefill.date_mise_en_service).getFullYear():new Date().getFullYear();
     $('ue-agence').value=prefill.agence_id||'';$('ue-marque').value=prefill.marque||'';$('ue-modele').value=prefill.modele||'';
-    $('ue-serie').value=prefill.numero_serie||'';$('ue-statut').value=prefill.statut;$('ue-notes').value=prefill.notes||'';
+    $('ue-serie').value=prefill.numero_serie||'';$('ue-lot').value=prefill.numero_lot||'';$('ue-statut').value=prefill.statut;$('ue-notes').value=prefill.notes||'';
     $('mo-ue-t').textContent='Modifier l\'unité';$('ue-id-generee').textContent='Identification : '+prefill.identification+' (non modifiable)';
   }
   OM('mo-unite-ext');
@@ -2412,11 +2425,13 @@ async function saveUniteExtincteur(){
   if(!agent||isNaN(capacite)||!annee||!agenceId){toast('Agent, capacité, année de mise en service et agence sont obligatoires','err');return}
   const p={mode_pressurisation:mode,agent_code:agent,capacite_valeur:capacite,capacite_unite:$('ue-capacite-unite').value,
     marque:$('ue-marque').value.trim()||null,modele:$('ue-modele').value.trim()||null,numero_serie:$('ue-serie').value.trim()||null,
+    numero_lot:$('ue-lot').value.trim()||null,
     date_fabrication:fabrication,agence_id:agenceId,statut:$('ue-statut').value,notes:$('ue-notes').value.trim()||null,updated_at:new Date().toISOString()};
   if(id){
     const {error}=await db.from('extincteurs_unites').update(p).eq('id',id);
     if(error){toast('Erreur : '+error.message,'err');return}
     toast('Unité modifiée');
+    CM('mo-unite-ext');chargerUnitesExtincteurs();
   }else{
     // Numérotation basée sur l'année de fabrication si connue (cohérent avec la création terrain,
     // cf. "Année de numérotation = fabrication, pas mise en service"), sinon repli sur la mise en service.
@@ -2424,13 +2439,21 @@ async function saveUniteExtincteur(){
     const {data:idGen,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:mode,p_agent_code:agent,p_capacite:capacite,p_annee_mise_en_service:anneeIdentification});
     if(eg){toast('Erreur génération identification : '+eg.message,'err');return}
     p.identification=idGen;p.date_mise_en_service=annee+'-01-01';
+    // Réception neuf en carton (ou tout ajout manuel) : le numéro est généré tout de suite pour
+    // pouvoir imprimer l'étiquette, mais elle ne sera collée sur l'appareil physique qu'à la pose
+    // — même logique de confirmation que l'import en masse (risque de décalage étiquette/appareil).
+    p.en_attente_confirmation=true;
     if(p.statut==='en_atelier_revise')p.date_derniere_revision_atelier=new Date().toISOString().slice(0,10);
     const {data:nu,error}=await db.from('extincteurs_unites').insert(p).select().single();
     if(error){toast('Erreur : '+error.message,'err');return}
     await db.from('extincteurs_mouvements').insert({unite_id:nu.id,type:'remise_en_stock',technicien_id:ME.id,agence_id:agenceId,notes:'Création manuelle atelier'});
-    toast('Unité créée : '+idGen);
+    chargerUnitesExtincteurs();
+    // Affiche le numéro généré avec un bouton copier (pour l'étiqueteuse) au lieu de fermer tout
+    // de suite — laisse le modal ouvert le temps de copier/imprimer.
+    $('ue-id-generee').innerHTML='✅ Identification générée : <strong>'+idGen+'</strong> &nbsp;<button class="btn btn-s btn-xs" onclick="copierTexteBureau(\''+idGen+'\')">📋 Copier</button><br><span style="color:var(--txt-l)">À imprimer et coller au moment de la pose chez le client, puis à confirmer par scan sur l\'appli terrain.</span>';
+    $('ue-btn-enregistrer').style.display='none';
+    $('ue-btn-annuler').textContent='Fermer';
   }
-  CM('mo-unite-ext');chargerUnitesExtincteurs();
 }
 
 // ============================================================
