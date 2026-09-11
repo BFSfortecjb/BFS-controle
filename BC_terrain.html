@@ -1321,16 +1321,30 @@ async function loadParc(){
     return;
   }
 
-  // Récup échéances
-  const {data:ech}=await db.from('vue_echeances').select('client_id,statut_echeance');
+  // Récup échéances — classement demandé par Jeremy (même logique que le bureau,
+  // renderEcheancesTable()/RANG_ECHEANCE dans BC_app.js) : gravité d'abord (retard > urgent >
+  // proche > à jour), puis échéance la plus proche en premier au sein d'une même catégorie.
+  const {data:ech}=await db.from('vue_echeances').select('client_id,statut_echeance,date_prochaine_echeance');
+  const RANG_ECHEANCE_T={'en retard':0,'urgent':1,'proche':2,'ok':3};
   const echMap={};
   (ech||[]).forEach(e=>{
-    if(!echMap[e.client_id]||e.statut_echeance==='en retard')echMap[e.client_id]=e.statut_echeance;
-    else if(e.statut_echeance==='urgent'&&echMap[e.client_id]!=='en retard')echMap[e.client_id]='urgent';
+    const r=RANG_ECHEANCE_T[e.statut_echeance]??3;
+    if(!echMap[e.client_id])echMap[e.client_id]={statut:e.statut_echeance,rang:r,date:e.date_prochaine_echeance||null};
+    else{
+      const cur=echMap[e.client_id];
+      if(r<cur.rang){cur.rang=r;cur.statut=e.statut_echeance}
+      if(e.date_prochaine_echeance&&(!cur.date||e.date_prochaine_echeance<cur.date))cur.date=e.date_prochaine_echeance;
+    }
+  });
+  allClients.sort((a,b)=>{
+    const ea=echMap[a.id]||{rang:3,date:null},eb=echMap[b.id]||{rang:3,date:null};
+    if(ea.rang!==eb.rang)return ea.rang-eb.rang;
+    if(!ea.date)return eb.date?1:0;if(!eb.date)return -1;
+    return ea.date<eb.date?-1:ea.date>eb.date?1:0;
   });
 
   el.innerHTML=allClients.map(c=>{
-    const st=echMap[c.id]||'ok';
+    const st=echMap[c.id]?.statut||'ok';
     const badge=st==='en retard'?'cb-rouge':st==='urgent'?'cb-orange':st==='proche'?'cb-orange':'cb-vert';
     const label=st==='en retard'?'En retard':st==='urgent'?'Urgent':st==='proche'?'Proche':'À jour';
     const isAffecte=myClientIds.includes(c.id);

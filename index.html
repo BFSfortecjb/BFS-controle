@@ -530,13 +530,13 @@ tr:hover td{background:#fafafa}
           <button class="ag-tab" onclick="navigate('commandes')">📦 Commandes à prévoir</button>
         </div>
         <div id="stock-ag-tabs" style="display:flex;gap:8px;margin-bottom:14px"></div>
-        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-          <button class="btn btn-s btn-sm" onclick="scrollToSection('sec-pieces')">🧩 Pièces</button>
-          <button class="btn btn-s btn-sm" onclick="scrollToSection('sec-neufs')">🧯 Neufs</button>
-          <button class="btn btn-s btn-sm" onclick="scrollToSection('sec-atelier')">🔄 Atelier</button>
-          <button class="btn btn-s btn-sm" onclick="scrollToSection('sec-previsionnel')">🔮 Prévisionnel</button>
-          <button class="btn btn-s btn-sm" onclick="scrollToSection('sec-inventaires')">📑 Inventaires</button>
-          <button class="btn btn-s btn-sm" onclick="scrollToSection('sec-mouvements')">🔀 Mouvements</button>
+        <div class="ag-tabs" style="margin-bottom:14px;flex-wrap:wrap">
+          <button class="ag-tab" onclick="scrollToSection('sec-pieces')">🧩 Pièces</button>
+          <button class="ag-tab" onclick="scrollToSection('sec-neufs')">🧯 Neufs</button>
+          <button class="ag-tab" onclick="scrollToSection('sec-atelier')">🔄 Atelier</button>
+          <button class="ag-tab" onclick="scrollToSection('sec-previsionnel')">🔮 Prévisionnel</button>
+          <button class="ag-tab" onclick="scrollToSection('sec-inventaires')">📑 Inventaires</button>
+          <button class="ag-tab" onclick="scrollToSection('sec-mouvements')">🔀 Mouvements</button>
         </div>
         <div id="sec-pieces" class="search-bar">
           <input type="text" id="q-stock" placeholder="Rechercher code, désignation, marque…" oninput="renderStock()">

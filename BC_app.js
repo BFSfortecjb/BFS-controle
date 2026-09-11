@@ -164,6 +164,11 @@ async function loadDashAdmin(){
 window.adminSetAgence=function(btn,ag){
   document.querySelectorAll('#admin-tabs .ag-tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');adminAgenceFilter=ag;loadDashAdmin();
+  // Répercute le choix Tout/Briec/Sevremont sur les filtres agence des onglets
+  // Clients et Équipements, qui avaient jusqu'ici leur propre filtre indépendant.
+  ['f-ag-clients','f-ag-equip'].forEach(id=>{const el=$(id);if(el)el.value=ag;});
+  if(clients.length)renderClients();
+  if(equipements.length)renderEquip();
 };
 
 // ============================================================
@@ -591,12 +596,33 @@ async function loadEquipements(){
   const {data}=await db.from('equipements').select('*,clients(raison_sociale),agences(nom,code),profils(nom,prenom),types_equipements(libelle,icone)').neq('statut','en stock').order('created_at',{ascending:false});
   equipements=data||[];renderEquip();
 }
-function renderEquip(){
+// Filtres par colonne (tableau Équipements) — état conservé entre deux rendus
+// pour que la saisie ne soit pas perdue à chaque frappe.
+let _fColEquip={client:'',agence:'',type:'',identification:'',marque:'',technicien:'',localisation:'',statut:''};
+function majFiltreColEquip(champ,val){_fColEquip[champ]=val.toLowerCase();renderEquip(true);}
+function renderEquip(fromColFilter){
   const q=$('q-equip').value.toLowerCase();const ft=$('f-type-equip').value;const ag=$('f-ag-equip').value;
-  const data=equipements.filter(e=>(e.clients?.raison_sociale+e.numero_identification+e.marque+e.modele+e.localisation).toLowerCase().includes(q)&&(!ft||e.type_equipement_code===ft)&&(!ag||e.agences?.code===ag));
+  const fc=_fColEquip;
+  const data=equipements.filter(e=>{
+    if(!(e.clients?.raison_sociale+e.numero_identification+e.marque+e.modele+e.localisation).toLowerCase().includes(q))return false;
+    if(ft&&e.type_equipement_code!==ft)return false;
+    if(ag&&e.agences?.code!==ag)return false;
+    if(fc.client&&!(e.clients?.raison_sociale||'').toLowerCase().includes(fc.client))return false;
+    if(fc.agence&&!(e.agences?.nom||'').toLowerCase().includes(fc.agence))return false;
+    if(fc.type&&!(e.types_equipements?.libelle||'').toLowerCase().includes(fc.type))return false;
+    if(fc.identification&&!((e.numero_identification||'')+' '+(e.numero_entreprise||'')).toLowerCase().includes(fc.identification))return false;
+    if(fc.marque&&!((e.marque||'')+' '+(e.modele||'')).toLowerCase().includes(fc.marque))return false;
+    if(fc.technicien&&!((e.profils?.prenom||'')+' '+(e.profils?.nom||'')).toLowerCase().includes(fc.technicien))return false;
+    if(fc.localisation&&!(e.localisation||'').toLowerCase().includes(fc.localisation))return false;
+    if(fc.statut&&!(e.statut||'').toLowerCase().includes(fc.statut))return false;
+    return true;
+  });
   const el=$('tbl-equip');
-  if(!data.length){el.innerHTML='<div class="t-empty">Aucun équipement</div>';return}
-  el.innerHTML=`<table><thead><tr><th>Client</th><th>Agence</th><th>Type</th><th>Identification</th><th>Marque/Modèle</th><th>Technicien</th><th>Localisation</th><th>Statut</th><th>Actions</th></tr></thead><tbody>${data.map(e=>`<tr>
+  const filtreTh=(champ,placeholder)=>`<th style="padding:4px 6px"><input type="text" value="${fc[champ]||''}" placeholder="${placeholder}" oninput="majFiltreColEquip('${champ}',this.value)" style="width:100%;box-sizing:border-box;padding:4px 6px;font-size:11.5px;border:1px solid #e5e7eb;border-radius:6px"></th>`;
+  const thead=`<thead><tr><th>Client</th><th>Agence</th><th>Type</th><th>Identification</th><th>Marque/Modèle</th><th>Technicien</th><th>Localisation</th><th>Statut</th><th>Actions</th></tr>
+    <tr>${filtreTh('client','Filtrer…')}${filtreTh('agence','Filtrer…')}${filtreTh('type','Filtrer…')}${filtreTh('identification','Filtrer…')}${filtreTh('marque','Filtrer…')}${filtreTh('technicien','Filtrer…')}${filtreTh('localisation','Filtrer…')}${filtreTh('statut','Filtrer…')}<th></th></tr></thead>`;
+  if(!data.length){el.innerHTML=`<table>${thead}</table><div class="t-empty">Aucun équipement</div>`;return}
+  el.innerHTML=`<table>${thead}<tbody>${data.map(e=>`<tr>
     <td><strong>${e.clients?.raison_sociale||'—'}</strong></td><td><span class="badge bg">${e.agences?.nom||'—'}</span></td>
     <td>${e.types_equipements?.icone||''} ${e.types_equipements?.libelle||'—'}</td>
     <td>${e.numero_identification||'—'}${e.numero_entreprise?' / <span style="color:var(--txt-l)">N°'+e.numero_entreprise+'</span>':''}<br><small style='color:var(--txt-l)'>${e.emplacement||''}</small></td><td>${e.marque||'—'}${e.modele?' / '+e.modele:''}</td>
@@ -2004,14 +2030,32 @@ async function loadTarifs(){
 }
 const catTarif=c=>({prestation:'🛠 Prestation',piece:'🔩 Pièce',equipement:'🧯 Équipement neuf',accessoire:'🏷 Accessoire'}[c]||c);
 const eur=v=>v!=null?(+v).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'<span style="font-weight:400;color:var(--txt-l)">—</span>';
+// Filtres par colonne (tableau Tarifs) — état conservé entre deux rendus.
+let _fColTarifs={code:'',designation:'',categorie:'',unite:'',achat:'',vente:'',marge:'',galaxy:'',maj:''};
+function majFiltreColTarifs(champ,val){_fColTarifs[champ]=val.toLowerCase();renderTarifs();}
 function renderTarifs(){
   const q=($('q-tarifs').value||'').toLowerCase();
   const fc=$('f-cat-tarifs').value;
-  const data=tarifs.filter(t=>(!fc||t.categorie===fc)&&(t.code+' '+t.designation).toLowerCase().includes(q));
+  const fCol=_fColTarifs;
+  const data=tarifs.filter(t=>{
+    if(fc&&t.categorie!==fc)return false;
+    if(!(t.code+' '+t.designation).toLowerCase().includes(q))return false;
+    if(fCol.code&&!(t.code||'').toLowerCase().includes(fCol.code))return false;
+    if(fCol.designation&&!(t.designation||'').toLowerCase().includes(fCol.designation))return false;
+    if(fCol.categorie&&!catTarif(t.categorie).toLowerCase().includes(fCol.categorie))return false;
+    if(fCol.unite&&!(t.unite||'').toLowerCase().includes(fCol.unite))return false;
+    if(fCol.achat&&!(t.prix_achat!=null?String(t.prix_achat):'').includes(fCol.achat))return false;
+    if(fCol.vente&&!(t.prix_ht!=null?String(t.prix_ht):'').includes(fCol.vente))return false;
+    if(fCol.galaxy&&!(t.code_galaxy||'').toLowerCase().includes(fCol.galaxy))return false;
+    return true;
+  });
   const el=$('tbl-tarifs');
-  if(!data.length){el.innerHTML='<div class="t-empty">Aucun tarif — importe ta base tarifaire (Excel : Code, Désignation, Catégorie, Unité, Prix HT, Code Galaxy).</div>';return}
   const droit=peutGererTarifs();
-  el.innerHTML=`<table><thead><tr><th>Code</th><th>Désignation</th><th>Catégorie</th><th>Unité</th><th style="text-align:right">Prix d'achat</th><th style="text-align:right">Prix de vente</th><th style="text-align:right">Marge</th><th>Code Galaxy</th><th>Dernière maj</th>${droit?'<th>Actions</th>':''}</tr></thead><tbody>${data.map(t=>{
+  const filtreTh=(champ,align)=>`<th style="padding:4px 6px${align?';text-align:'+align:''}"><input type="text" value="${fCol[champ]||''}" placeholder="Filtrer…" oninput="majFiltreColTarifs('${champ}',this.value)" style="width:100%;box-sizing:border-box;padding:4px 6px;font-size:11.5px;border:1px solid #e5e7eb;border-radius:6px${align?';text-align:'+align:''}"></th>`;
+  const thead=`<thead><tr><th>Code</th><th>Désignation</th><th>Catégorie</th><th>Unité</th><th style="text-align:right">Prix d'achat</th><th style="text-align:right">Prix de vente</th><th style="text-align:right">Marge</th><th>Code Galaxy</th><th>Dernière maj</th>${droit?'<th>Actions</th>':''}</tr>
+    <tr>${filtreTh('code')}${filtreTh('designation')}${filtreTh('categorie')}${filtreTh('unite')}${filtreTh('achat','right')}${filtreTh('vente','right')}<th></th>${filtreTh('galaxy')}<th></th>${droit?'<th></th>':''}</tr></thead>`;
+  if(!data.length){el.innerHTML=`<table>${thead}</table><div class="t-empty">Aucun tarif — importe ta base tarifaire (Excel : Code, Désignation, Catégorie, Unité, Prix HT, Code Galaxy).</div>`;return}
+  el.innerHTML=`<table>${thead}<tbody>${data.map(t=>{
     const marge=(t.prix_achat!=null&&t.prix_ht!=null)?(+t.prix_ht-+t.prix_achat):null;
     const margePct=(marge!=null&&+t.prix_achat>0)?Math.round(marge/(+t.prix_achat)*100):null;
     const photo=t.code?tarifPhotos[t.code]:null;
