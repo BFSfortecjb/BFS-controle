@@ -570,7 +570,10 @@ tr:hover td{background:#fafafa}
               <option value="neuf">🆕 Neuf uniquement</option>
               <option value="echange_location">🔁 Tampon (échange/location) uniquement</option>
             </select>
-            <input type="text" id="q-unites" placeholder="Rechercher identification…" oninput="renderUnitesExtincteurs()">
+            <select id="f-client-unites" onchange="renderUnitesExtincteurs()" style="max-width:220px" title="Filtrer sur le parc d'extincteurs d'un client précis">
+              <option value="">Tous parcs (tous clients)</option>
+            </select>
+            <input type="text" id="q-unites" placeholder="Rechercher identification ou client…" oninput="renderUnitesExtincteurs()">
           </div>
           <div id="tbl-unites-extincteurs"><div class="t-empty">Chargement…</div></div>
         </div>

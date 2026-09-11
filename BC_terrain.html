@@ -676,8 +676,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <button class="btn btn-s" style="color:#b91c1c" onclick="ouvrirCorrectionUnite()">✏️ Ça ne correspond pas — corriger</button>
     </div>
     <div id="af-actions-normales" style="display:flex;flex-direction:column;gap:8px">
-      <button class="btn btn-vert" onclick="validerAtelierOK()">✅ Vérifié — remettre en stock tampon</button>
-      <button class="btn btn-s" style="color:#b91c1c" onclick="validerAtelierReforme()">♻️ Dépollué / réformé pour recyclage</button>
+      <button class="btn btn-vert" onclick="ouvrirVerifAtelier()">🔍 Faire la vérification (annuelle / MAA)</button>
+      <button class="btn btn-s" style="color:#b91c1c" onclick="validerAtelierReforme()">♻️ Dépollué / réformé pour recyclage (sans vérification)</button>
     </div>
   </div>
 </div>
@@ -690,18 +690,37 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
   <div class="content">
     <div class="card" style="margin-bottom:14px"><div style="padding:14px 16px;font-size:13px;color:var(--txt-l)">
-      Corrige les caractéristiques réelles de l'extincteur que tu as sous les yeux. Si le mode, l'agent ou la capacité changent, une nouvelle identification (nouveau QR) sera générée — il faudra imprimer et coller une nouvelle étiquette, puis rescanner pour confirmer.
+      Corrige toutes les caractéristiques réelles de l'extincteur que tu as sous les yeux. Si le mode, l'agent, la capacité ou l'année (fabrication ou mise en service) changent, une nouvelle identification (nouveau QR) sera générée à la place de l'ancienne — il faudra imprimer et coller la nouvelle étiquette (l'ancienne ne doit plus être utilisée), puis rescanner pour confirmer.
     </div></div>
     <div class="fg" style="margin-bottom:12px"><label>Mode de pressurisation</label>
       <select id="ac-mode"><option value="PP">PP — pression permanente</option><option value="PA">PA — pression auxiliaire</option></select></div>
     <div class="fg" style="margin-bottom:12px"><label>Agent extincteur</label><select id="ac-agent"></select></div>
     <div class="fg" style="margin-bottom:12px"><label>Capacité</label><input type="number" id="ac-capacite" step="0.1" min="0"></div>
     <div class="fg" style="margin-bottom:12px"><label>Unité</label><select id="ac-unite"><option value="L">L</option><option value="kg">kg</option></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Année de fabrication</label><input type="number" id="ac-fabrication" min="1990" max="2100" placeholder="Ex. 2021"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Année de mise en service</label><input type="number" id="ac-mes" min="1990" max="2100"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Agence</label><select id="ac-agence"></select></div>
     <div class="fg" style="margin-bottom:12px"><label>Marque</label><input type="text" id="ac-marque"></div>
     <div class="fg" style="margin-bottom:12px"><label>Modèle</label><input type="text" id="ac-modele"></div>
+    <div class="fg" style="margin-bottom:12px"><label>N° de série fabricant</label><input type="text" id="ac-serie"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Notes</label><textarea id="ac-notes" placeholder="Historique, remarques…"></textarea></div>
   </div>
   <div class="footer">
     <button class="btn btn-vert" onclick="enregistrerCorrectionUnite()">💾 Enregistrer la correction</button>
+  </div>
+</div>
+
+<!-- ===== VÉRIFICATION ATELIER (checklist + pièces + sortie de stock) ===== -->
+<div class="screen" id="s-atelier-verif">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-atelier-fiche')">←</button>
+    <h1 id="av-titre">Vérification atelier</h1>
+  </div>
+  <div class="content" id="av-content">
+    <div class="loading"><div class="spin spin-dark"></div></div>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="enregistrerVerifAtelier()">✅ Enregistrer la vérification</button>
   </div>
 </div>
 
@@ -1818,53 +1837,258 @@ async function confirmerIdentiteUnite(){
   await db.from('extincteurs_mouvements').insert({unite_id:u.id,type:'confirmation_identite',technicien_id:ME.id,notes:'Identité confirmée par scan terrain (étiquette ↔ extincteur)'});
   toast('Identité confirmée ✓');goTo('s-atelier');
 }
-function ouvrirCorrectionUnite(){
+async function ouvrirCorrectionUnite(){
   const u=_uniteAtelierCourante;if(!u)return;
   $('ac-agent').innerHTML=AGENTS_EXTINCTEURS_CODES.map(c=>`<option value="${c}">${c}</option>`).join('');
+  const {data:ags}=await db.from('agences').select('id,nom').order('nom');
+  $('ac-agence').innerHTML=(ags||[]).map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
   $('ac-mode').value=u.mode_pressurisation||'PP';
   $('ac-agent').value=u.agent_code||'';
   $('ac-capacite').value=u.capacite_valeur||'';
   $('ac-unite').value=u.capacite_unite||'L';
+  $('ac-fabrication').value=u.date_fabrication?new Date(u.date_fabrication).getFullYear():'';
+  $('ac-mes').value=u.date_mise_en_service?new Date(u.date_mise_en_service).getFullYear():'';
+  $('ac-agence').value=u.agence_id||'';
   $('ac-marque').value=u.marque||'';
   $('ac-modele').value=u.modele||'';
+  $('ac-serie').value=u.numero_serie||'';
+  $('ac-notes').value=u.notes||'';
   goTo('s-atelier-correction');
 }
 async function enregistrerCorrectionUnite(){
   const u=_uniteAtelierCourante;if(!u)return;
   const mode=$('ac-mode').value,agent=$('ac-agent').value,capacite=parseFloat($('ac-capacite').value);
   const uniteCap=$('ac-unite').value,marque=$('ac-marque').value.trim()||null,modele=$('ac-modele').value.trim()||null;
-  if(!agent||isNaN(capacite)){toast('Agent et capacité obligatoires','err');return}
-  const idChange = mode!==u.mode_pressurisation || agent!==u.agent_code || capacite!==+u.capacite_valeur;
-  const p={mode_pressurisation:mode,agent_code:agent,capacite_valeur:capacite,capacite_unite:uniteCap,marque,modele,updated_at:new Date().toISOString()};
+  const serie=$('ac-serie').value.trim()||null,notesSaisies=$('ac-notes').value.trim()||null,agenceId=$('ac-agence').value;
+  const anneeFab=parseInt($('ac-fabrication').value)||null;
+  const anneeMES=parseInt($('ac-mes').value)||null;
+  if(!agent||isNaN(capacite)||!agenceId){toast('Agent, capacité et agence obligatoires','err');return}
+  const fabrication=anneeFab?anneeFab+'-01-01':null;
+  const miseEnService=anneeMES?anneeMES+'-01-01':null;
+  const ancienAnneeFab=u.date_fabrication?new Date(u.date_fabrication).getFullYear():null;
+  const ancienAnneeMES=u.date_mise_en_service?new Date(u.date_mise_en_service).getFullYear():null;
+  // Tout changement qui modifie la valeur encodée dans l'identification (MODE-AGENT-CAPACITE-ANNÉE)
+  // impose une nouvelle étiquette — l'année utilisée est la fabrication si connue, sinon la mise en service.
+  const idChange = mode!==u.mode_pressurisation || agent!==u.agent_code || capacite!==+u.capacite_valeur || anneeFab!==ancienAnneeFab || (!anneeFab && anneeMES!==ancienAnneeMES);
+  const p={mode_pressurisation:mode,agent_code:agent,capacite_valeur:capacite,capacite_unite:uniteCap,
+    date_fabrication:fabrication,date_mise_en_service:miseEnService,agence_id:agenceId,
+    marque,modele,numero_serie:serie,notes:notesSaisies,updated_at:new Date().toISOString()};
+  let idGen=null;
   if(idChange){
-    // Nouvelle identification (nouveau QR) nécessaire — mêmes règles que l'import (année de
-    // fabrication en priorité, sinon mise en service) — reste en attente de confirmation
-    // tant que la nouvelle étiquette n'a pas été imprimée, collée puis rescannée.
-    const annee = u.date_fabrication ? new Date(u.date_fabrication).getFullYear() : (u.date_mise_en_service?new Date(u.date_mise_en_service).getFullYear():new Date().getFullYear());
-    const {data:idGen,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:mode,p_agent_code:agent,p_capacite:capacite,p_annee_mise_en_service:annee});
+    // Nouvelle identification (nouveau QR) — l'ancienne devient caduque et ne doit plus être
+    // utilisée/imprimée ; reste en attente de confirmation tant que la nouvelle étiquette n'a
+    // pas été imprimée, collée puis rescannée.
+    const annee = anneeFab || anneeMES || new Date().getFullYear();
+    const {data,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:mode,p_agent_code:agent,p_capacite:capacite,p_annee_mise_en_service:annee});
     if(eg){toast('Erreur génération identification : '+eg.message,'err');return}
+    idGen=data;
     p.identification=idGen;
     p.en_attente_confirmation=true;
-    p.notes=((u.notes||'')+' | Ancienne réf. incorrecte : '+u.identification+' — nouvelle étiquette à imprimer et coller.').trim();
+    p.notes=((notesSaisies||'')+' | Ancienne étiquette caduque, ne plus utiliser : '+u.identification).trim();
   }
   const {data:maj,error}=await db.from('extincteurs_unites').update(p).eq('id',u.id).select().single();
   if(error){toast('Erreur : '+error.message,'err');return}
-  await db.from('extincteurs_mouvements').insert({unite_id:u.id,type:'correction_identite',technicien_id:ME.id,notes:idChange?('Correction avec nouvelle identification (ancienne : '+u.identification+')'):'Correction sans changement d\'identification'});
+  await db.from('extincteurs_mouvements').insert({unite_id:u.id,type:'correction_identite',technicien_id:ME.id,notes:idChange?('Correction avec nouvelle identification (ancienne étiquette caduque : '+u.identification+')'):'Correction sans changement d\'identification'});
   if(idChange){
-    toast('Corrigé — nouvelle étiquette '+idGen+' à imprimer et coller, puis rescanner pour confirmer');
+    toast('Corrigé — nouvelle étiquette '+idGen+' à imprimer et coller (jette l\'ancienne), puis rescanner pour confirmer');
   } else {
     toast('Corrigé ✓');
   }
   _uniteAtelierCourante=maj;
   goTo('s-atelier');
 }
-async function validerAtelierOK(){
+// ============================================================
+// VÉRIFICATION ATELIER COMPLÈTE (checklist + pièces + sortie de stock),
+// même esprit que ouvrirVerif() côté client mais pour une unité en stock
+// (pas d'equipement/client — persistée via verifications.unite_extincteur_id).
+// ============================================================
+let _avPaliers=[],_avPoints=[],_avPieces={},_avStockDispo=[],_avStockUsage={};
+async function ouvrirVerifAtelier(){
   const u=_uniteAtelierCourante;if(!u)return;
-  if(!confirm('Confirmer : vérification effectuée, unité prête à repartir en stock tampon ?'))return;
-  const {error}=await db.from('extincteurs_unites').update({statut:'en_atelier_revise',date_derniere_revision_atelier:new Date().toISOString().slice(0,10),en_attente_confirmation:false,updated_at:new Date().toISOString()}).eq('id',u.id);
+  $('av-titre').textContent='Vérification — '+u.identification;
+  $('av-content').innerHTML='<div class="loading"><div class="spin spin-dark"></div></div>';
+  goTo('s-atelier-verif');
+
+  const estCO2=(u.agent_code||'').toLowerCase().includes('co2');
+  const estPA=(u.mode_pressurisation||'').toUpperCase()==='PA';
+  const estPP=!estPA&&!estCO2;
+
+  const [{data:paliers},{data:pts},{data:cat}]=await Promise.all([
+    db.from('paliers_maintenance').select('*').eq('type_equipement_code','extincteur').eq('actif',true).order('ordre'),
+    db.from('points_controle').select('*').eq('type_equipement_code','extincteur').eq('actif',true).order('ordre'),
+    db.from('pieces_catalogue').select('*').eq('type_equipement_code','extincteur').eq('actif',true).order('ordre')
+  ]);
+  _avPaliers=paliers||[];
+
+  const marque=(u.marque||'').toLowerCase(),modele=(u.modele||'').toLowerCase();
+  _avPoints=(pts||[]).filter(p=>{
+    if(p.marque||p.modele){
+      if(p.marque&&marque&&p.marque.toLowerCase()!==marque)return false;
+      if(p.modele&&modele&&p.modele.toLowerCase()!==modele)return false;
+    }
+    const lib=(p.libelle||'').toLowerCase();
+    if(lib.includes('[pp_eau_poudre]')&&!estPP)return false;
+    if(lib.includes('[pa]')&&!estPA)return false;
+    if(lib.includes('[co2]')&&!estCO2)return false;
+    if((lib.includes('indicateur de pression')||lib.includes('manomètre'))&&!estPP)return false;
+    if(lib.includes('sparklet')&&!estPA)return false;
+    if((lib.includes('peser')&&lib.includes('extincteur')||lib.includes('poids total'))&&!estCO2)return false;
+    if(lib.includes('[quinquennal]'))return false; // RIA uniquement, jamais pour un extincteur
+    return true;
+  }).map(p=>({...p,libelle:p.libelle.replace(/\s*\[(pp_eau_poudre|pa|co2|quinquennal)\]/gi,'').trim()}));
+
+  // Recommandation (même logique que la fiche) pour présélectionner le palier
+  const notesLower=(u.notes||'').toLowerCase();
+  let codeReco='simple';
+  if(notesLower.includes('maa'))codeReco='approfondie';
+  else if(!notesLower.includes('annuel')&&u.date_fabrication&&(new Date().getFullYear()-new Date(u.date_fabrication).getFullYear())>=5)codeReco='approfondie';
+
+  _avPieces={};
+  _avStockUsage={};
+  const agId=u.agence_id;
+  const {data:stockPieces}=await db.from('stock_pieces').select('*').gt('quantite',0).eq('agence_id',agId).order('categorie').order('designation');
+  _avStockDispo=(stockPieces||[]).filter(p=>pieceCompatible(p,u));
+  try{await enrichirPhotosPieces(_avStockDispo)}catch(e){}
+
+  $('av-content').innerHTML=`
+    <div class="sec">Type d'opération</div>
+    <div class="fg" style="margin-bottom:14px">
+      <select id="av-palier" style="width:100%;padding:11px 13px;border:1.5px solid var(--rouge);border-radius:10px;font-size:14px;font-weight:600">
+        ${_avPaliers.map(p=>`<option value="${p.id}" data-code="${p.code}" ${p.code===codeReco?'selected':''}>${p.libelle}</option>`).join('')}
+      </select>
+    </div>
+    <div class="sec">Points de contrôle</div>
+    <div id="av-pc-container">
+      ${_avPoints.map(p=>{
+        if(p.type_reponse==='oui_non'){
+          return`<div class="pc-item" id="av-pci-${p.id}">
+            <div class="pc-label${p.obligatoire?' req':''}">${p.libelle}</div>
+            <div class="pc-btns">
+              <button class="pc-btn" onclick="avSelectPC('${p.id}',true)">✓ OK</button>
+              <button class="pc-btn" onclick="avSelectPC('${p.id}',false)">✗ NON</button>
+            </div>
+          </div>`;
+        } else if(p.type_reponse==='numerique'){
+          return`<div class="pc-item" id="av-pci-${p.id}">
+            <div class="pc-label${p.obligatoire?' req':''}">${p.libelle}${p.unite?' ('+p.unite+')':''}</div>
+            <input type="number" class="pc-val-input" id="av-pcv-${p.id}" step="0.01" placeholder="Valeur…">
+          </div>`;
+        } else if(p.type_reponse==='texte'){
+          return`<div class="pc-item" id="av-pci-${p.id}">
+            <div class="pc-label${p.obligatoire?' req':''}">${p.libelle}</div>
+            <input type="text" class="pc-val-input" id="av-pcv-${p.id}" placeholder="Saisir…">
+          </div>`;
+        } else if(p.type_reponse==='date'){
+          return`<div class="pc-item" id="av-pci-${p.id}">
+            <div class="pc-label${p.obligatoire?' req':''}">${p.libelle}</div>
+            <input type="date" class="pc-val-input" id="av-pcv-${p.id}">
+          </div>`;
+        }
+        return'';
+      }).join('')}
+    </div>
+    <div class="sec">Pièces</div>
+    <div id="av-pieces-catalogue">
+      ${(cat||[]).map(p=>`<div class="piece-item" id="av-pi-${p.id}">
+        <div class="piece-label">${p.libelle}</div>
+        <div class="piece-actions">
+          <button class="piece-action-btn" style="background:var(--vert-l);color:var(--vert)" onclick="avTogglePiece('${p.id}','${p.libelle}','changée')">✓</button>
+          <button class="piece-action-btn" style="background:var(--orange-l);color:var(--orange)" onclick="avTogglePiece('${p.id}','${p.libelle}','à_remplacer')">⚠</button>
+        </div>
+      </div>`).join('')}
+    </div>
+    <div class="sec">🧰 Sortie du stock</div>
+    <div id="av-stock-usage"></div>
+    <div class="sec">Statut final</div>
+    <div class="statut-grid">
+      <button class="statut-btn" id="av-statut-conforme" onclick="avSetStatut('conforme')"><span class="ico">✅</span>Conforme</button>
+      <button class="statut-btn" id="av-statut-surveiller" onclick="avSetStatut('à surveiller')"><span class="ico">⚡</span>À surveiller</button>
+      <button class="statut-btn" id="av-statut-nc" onclick="avSetStatut('non conforme')"><span class="ico">❌</span>Non conforme</button>
+      <button class="statut-btn" id="av-statut-hs" onclick="avSetStatut('hors service')"><span class="ico">⛔</span>HS — Réformer</button>
+    </div>
+    <div class="fg" style="margin-top:14px">
+      <label>Observations</label>
+      <textarea id="av-obs" placeholder="Anomalies, remarques…"></textarea>
+    </div>
+  `;
+  avRenderStockUsage();
+}
+function avSelectPC(id,val){
+  const el=$('av-pci-'+id);if(!el)return;
+  el.dataset.val=val;
+  el.classList.toggle('ok',val===true);el.classList.toggle('nok',val===false);
+  el.querySelectorAll('.pc-btn').forEach((b,i)=>b.classList.toggle(i===0?'ok-sel':'nok-sel',(i===0)===val));
+}
+function avTogglePiece(id,libelle,action){
+  const el=$('av-pi-'+id);if(!el)return;
+  const cur=_avPieces[id]?.type_action;
+  if(cur===action){delete _avPieces[id];el.className='piece-item'}
+  else{_avPieces[id]={piece_catalogue_id:id,libelle,type_action:action};el.className='piece-item '+(action==='changée'?'checked':'to-replace')}
+}
+function avRenderStockUsage(){
+  const el=$('av-stock-usage');if(!el)return;
+  if(!_avStockDispo.length){el.innerHTML='<div style="font-size:12px;color:var(--txt-l);padding:4px 0">Aucune pièce compatible en stock pour cette agence.</div>';return}
+  const lignes=_avStockDispo.map(p=>{
+    const q=_avStockUsage[p.id]||0;
+    return `<div style="display:flex;align-items:center;gap:10px;background:${q>0?'#f0fdf4':'#fff'};border:1.5px solid ${q>0?'#86efac':'#e5e7eb'};border-radius:10px;padding:9px 12px;margin-bottom:6px">
+      ${p.photo_url?`<img src="${p.photo_url}" style="width:38px;height:38px;object-fit:cover;border-radius:6px;flex-shrink:0">`:''}
+      <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">${p.designation}</div><div style="font-size:11px;color:var(--txt-l)">${p.code} · stock : ${p.quantite}</div></div>
+      <button onclick="avMajUsage('${p.id}',-1)" style="width:34px;height:34px;border:none;border-radius:8px;background:#f3f4f6;font-size:18px">−</button>
+      <div style="width:26px;text-align:center;font-weight:700;font-size:16px">${q}</div>
+      <button onclick="avMajUsage('${p.id}',1)" style="width:34px;height:34px;border:none;border-radius:8px;background:var(--vert-l);color:var(--vert);font-size:18px">+</button>
+    </div>`;
+  }).join('');
+  el.innerHTML=lignes;
+}
+function avMajUsage(id,delta){
+  const p=_avStockDispo.find(x=>x.id===id);if(!p)return;
+  const q=Math.max(0,Math.min(+p.quantite,(_avStockUsage[id]||0)+delta));
+  if(q===0)delete _avStockUsage[id];else _avStockUsage[id]=q;
+  avRenderStockUsage();
+}
+let _avStatut='';
+function avSetStatut(s){
+  _avStatut=s;
+  ['conforme','surveiller','nc','hs'].forEach(k=>$('av-statut-'+k)?.classList.remove('sel-conforme','sel-surveiller','sel-nc','sel-hs'));
+  const map={conforme:'av-statut-conforme','à surveiller':'av-statut-surveiller','non conforme':'av-statut-nc','hors service':'av-statut-hs'};
+  const cls={conforme:'sel-conforme','à surveiller':'sel-surveiller','non conforme':'sel-nc','hors service':'sel-hs'};
+  $(map[s])?.classList.add(cls[s]);
+}
+async function enregistrerVerifAtelier(){
+  const u=_uniteAtelierCourante;if(!u)return;
+  if(!_avStatut){toast('Sélectionne un statut final','err');return}
+  const palierSel=$('av-palier');const palierId=palierSel.value;const palierCode=palierSel.selectedOptions[0]?.dataset.code||null;
+  const obs=$('av-obs').value.trim();
+  const {data:vIns,error}=await db.from('verifications').insert({
+    unite_extincteur_id:u.id,type_equipement_code:'extincteur',palier_id:palierId,palier_code:palierCode,
+    date_verification:new Date().toISOString().slice(0,10),technicien_id:ME.id,technicien:(ME.prenom||'')+' '+(ME.nom||''),
+    agence_id:u.agence_id,resultat:_avStatut,observations:obs||null,realisee_par_bfs:true
+  }).select().single();
   if(error){toast('Erreur : '+error.message,'err');return}
-  await db.from('extincteurs_mouvements').insert({unite_id:u.id,type:'revision_atelier',technicien_id:ME.id,notes:'Contrôle atelier (terrain)'});
-  toast('Unité vérifiée ✓');goTo('s-atelier');
+
+  // Sortie de stock (même mécanique que côté client, motif dédié atelier)
+  let nbSorties=0;
+  const utilisees=[];
+  for(const [pid,q] of Object.entries(_avStockUsage)){
+    const p=_avStockDispo.find(x=>x.id===pid);if(!p||!q)continue;
+    const maj={quantite:Math.max(0,(+p.quantite)-q),updated_at:new Date().toISOString()};
+    const {error:eStock}=await db.from('stock_pieces').update(maj).eq('id',p.id);
+    if(eStock){toast('Stock non décrémenté ('+p.code+') : '+eStock.message,'err');continue}
+    await db.from('stock_mouvements').insert({piece_id:p.id,type:'utilisation',quantite_avant:p.quantite,quantite_apres:maj.quantite,delta:-q,motif:'Contrôle atelier '+u.identification,par:ME.id,agence_id:p.agence_id});
+    utilisees.push({piece_id:p.id,code:p.code,designation:p.designation,quantite:q,accessoire:p.categorie==='accessoire'});
+    nbSorties++;
+  }
+  if(utilisees.length)await db.from('verifications').update({pieces_utilisees:utilisees}).eq('id',vIns.id);
+
+  // Bascule le statut atelier selon le résultat de la vérification
+  const nouveauStatut=_avStatut==='hors service'?'reforme':'en_atelier_revise';
+  const majUnite={statut:nouveauStatut,en_attente_confirmation:false,updated_at:new Date().toISOString()};
+  if(nouveauStatut==='en_atelier_revise')majUnite.date_derniere_revision_atelier=new Date().toISOString().slice(0,10);
+  await db.from('extincteurs_unites').update(majUnite).eq('id',u.id);
+  await db.from('extincteurs_mouvements').insert({unite_id:u.id,type:nouveauStatut==='reforme'?'mise_au_rebut':'revision_atelier',technicien_id:ME.id,notes:'Vérification atelier terrain — '+_avStatut+(nbSorties?' · '+nbSorties+' pièce(s) sortie(s)':'')});
+
+  toast('Vérification enregistrée ✓'+(nbSorties?' · '+nbSorties+' pièce(s) sortie(s) du stock':''));
+  goTo('s-atelier');
 }
 async function validerAtelierReforme(){
   const u=_uniteAtelierCourante;if(!u)return;

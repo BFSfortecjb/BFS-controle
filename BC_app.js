@@ -2221,6 +2221,20 @@ async function chargerUnitesExtincteurs(){
   uniteExtincteurs=data||[];agentsExtincteurs=agents||[];
   const selAgent=$('ue-agent');if(selAgent)selAgent.innerHTML=agentsExtincteurs.map(a=>`<option value="${a.code}">${a.libelle}</option>`).join('');
   const selAgence=$('ue-agence');if(selAgence)selAgence.innerHTML=(_stockAgences||[]).map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
+  // Filtre "parc" — un client par unité actuellement en service (posée) chez lui, pour
+  // pouvoir isoler tout le parc d'extincteurs d'un client donné dans ce même tableau atelier.
+  const selClient=$('f-client-unites');
+  if(selClient){
+    const valAvant=selClient.value;
+    const clientsParc=new Map();
+    uniteExtincteurs.forEach(u=>{
+      const c=u.equipements?.clients,cid=u.equipements?.client_id;
+      if(cid&&c?.raison_sociale)clientsParc.set(cid,c.raison_sociale);
+    });
+    const options=[...clientsParc.entries()].sort((a,b)=>a[1].localeCompare(b[1]));
+    selClient.innerHTML='<option value="">Tous parcs (tous clients)</option>'+options.map(([id,nom])=>`<option value="${id}">${nom}</option>`).join('');
+    if(options.some(([id])=>id===valAvant))selClient.value=valAvant;
+  }
   renderUnitesExtincteurs();
 }
 const statutUnite=s=>({en_service:'🟢 En service (client)',en_atelier_a_reviser:'🟠 À réviser',en_atelier_revise:'🔵 Révisé — prêt',reforme:'⚫ Réformé'}[s]||s);
@@ -2244,8 +2258,10 @@ function renderUnitesExtincteurs(){
   const el=$('tbl-unites-extincteurs');if(!el)return;
   const fs=$('f-statut-unites')?.value||'';
   const fp=$('f-pool-unites')?.value||'';
+  const fc=$('f-client-unites')?.value||'';
   const q=($('q-unites')?.value||'').toLowerCase();
-  const data=uniteExtincteurs.filter(u=>(!fs||u.statut===fs)&&(!fp||poolUnite(u)===fp)&&u.identification.toLowerCase().includes(q));
+  const data=uniteExtincteurs.filter(u=>(!fs||u.statut===fs)&&(!fp||poolUnite(u)===fp)&&(!fc||u.equipements?.client_id===fc)
+    &&(u.identification.toLowerCase().includes(q)||(u.equipements?.clients?.raison_sociale||'').toLowerCase().includes(q)));
   if(!data.length){el.innerHTML='<div class="t-empty">Aucune unité d\'extincteur pour ce filtre.</div>';return}
   el.innerHTML=`<table><thead><tr><th>Identification</th><th>Mode</th><th>Capacité</th><th>Statut</th><th>Stock</th><th>Emplacement / Agence</th><th>Fabrication</th><th>Dernière révision</th><th>Actions</th></tr></thead><tbody>${data.map(u=>{const pool=poolUnite(u);return `<tr>
     <td><strong>${u.identification}</strong>${u.marque?'<br><small style="color:var(--txt-l)">'+u.marque+(u.modele?' '+u.modele:'')+'</small>':''}</td>
@@ -2537,7 +2553,15 @@ async function importUnitesTamponExcel(input){
     }
     if(!_stockAgences||!_stockAgences.length){const {data:ag}=await db.from('agences').select('*');_stockAgences=ag||[];}
     const {data:agentsData}=await db.from('agents_extincteurs').select('code');
-    const col=(r,...noms)=>{for(const n of noms){for(const k of Object.keys(r)){if(k.toLowerCase().trim().replace('*','')===n)return r[k]}}return ''};
+    // Matching exact d'abord, puis repli en "commence par" — tolère les anciens modèles déjà
+    // téléchargés avant un changement de libellé de colonne (ex. "Date fabrication (JJ/MM/AAAA)"
+    // avant renommage en "Année de fabrication" : un match exact seul aurait fait échouer
+    // silencieusement toute la colonne, sans erreur visible pour l'utilisateur).
+    const col=(r,...noms)=>{
+      for(const n of noms){for(const k of Object.keys(r)){if(k.toLowerCase().trim().replace('*','')===n)return r[k]}}
+      for(const n of noms){for(const k of Object.keys(r)){if(k.toLowerCase().trim().replace('*','').startsWith(n))return r[k]}}
+      return '';
+    };
     let crees=0,err=0;const erreurs=[],creees=[];
     for(let i=0;i<rows.length;i++){
       const r=rows[i];const ligne=i+2;
