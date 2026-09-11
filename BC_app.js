@@ -2367,7 +2367,7 @@ function openUniteExtincteurModal(prefill=null){
   if(prefill){
     $('ue-id').value=prefill.id;$('ue-mode').value=prefill.mode_pressurisation;$('ue-agent').value=prefill.agent_code||'';
     $('ue-capacite').value=prefill.capacite_valeur||'';$('ue-capacite-unite').value=prefill.capacite_unite||'L';
-    $('ue-fabrication').value=prefill.date_fabrication||'';
+    $('ue-fabrication').value=prefill.date_fabrication?new Date(prefill.date_fabrication).getFullYear():'';
     $('ue-annee').value=prefill.date_mise_en_service?new Date(prefill.date_mise_en_service).getFullYear():new Date().getFullYear();
     $('ue-agence').value=prefill.agence_id||'';$('ue-marque').value=prefill.marque||'';$('ue-modele').value=prefill.modele||'';
     $('ue-serie').value=prefill.numero_serie||'';$('ue-statut').value=prefill.statut;$('ue-notes').value=prefill.notes||'';
@@ -2378,7 +2378,9 @@ function openUniteExtincteurModal(prefill=null){
 async function saveUniteExtincteur(){
   const id=$('ue-id').value;
   const mode=$('ue-mode').value,agent=$('ue-agent').value,capacite=parseFloat($('ue-capacite').value);
-  const fabrication=$('ue-fabrication').value||null;
+  // Seule l'année de fabrication est connue (marquée sur l'extincteur, pas de jour/mois) — stockée au 1er janvier.
+  const anneeFab=parseInt($('ue-fabrication').value);
+  const fabrication=anneeFab?anneeFab+'-01-01':null;
   const annee=parseInt($('ue-annee').value),agenceId=$('ue-agence').value;
   if(!agent||isNaN(capacite)||!annee||!agenceId){toast('Agent, capacité, année de mise en service et agence sont obligatoires','err');return}
   const p={mode_pressurisation:mode,agent_code:agent,capacite_valeur:capacite,capacite_unite:$('ue-capacite-unite').value,
@@ -2391,7 +2393,7 @@ async function saveUniteExtincteur(){
   }else{
     // Numérotation basée sur l'année de fabrication si connue (cohérent avec la création terrain,
     // cf. "Année de numérotation = fabrication, pas mise en service"), sinon repli sur la mise en service.
-    const anneeIdentification=fabrication?new Date(fabrication).getFullYear():annee;
+    const anneeIdentification=anneeFab||annee;
     const {data:idGen,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:mode,p_agent_code:agent,p_capacite:capacite,p_annee_mise_en_service:anneeIdentification});
     if(eg){toast('Erreur génération identification : '+eg.message,'err');return}
     p.identification=idGen;p.date_mise_en_service=annee+'-01-01';
@@ -2428,7 +2430,7 @@ async function exporterModeleImportUnites(){
   ]);
   wsNum['!cols']=[{wch:10},{wch:18}];
   XLSX.utils.book_append_sheet(wb,wsNum,'Numérotation');
-  const headers=['Agent*','Capacité*','Unité (L/kg)','Mode (PP/PA)*','Marque','Modèle','N° série','Date fabrication (JJ/MM/AAAA)','Année mise en service*','Agence*','Statut*','Vérification requise','Notes'];
+  const headers=['Agent*','Capacité*','Unité (L/kg)','Mode (PP/PA)*','Marque','Modèle','N° série','Année de fabrication','Année mise en service*','Agence*','Statut*','Vérification requise','Notes'];
   const wsImport=XLSX.utils.aoa_to_sheet([headers]);
   wsImport['!cols']=headers.map(h=>({wch:Math.max(16,h.length)}));
   XLSX.utils.book_append_sheet(wb,wsImport,'Import');
@@ -2453,14 +2455,17 @@ async function exporterModeleImportUnites(){
   XLSX.utils.book_append_sheet(wb,wsLeg,'Légende');
   XLSX.writeFile(wb,'BFS_modele_import_extincteurs_tampon.xlsx');
 }
+// Seule l'année de fabrication est connue pour un extincteur (marquée sur l'appareil,
+// jamais de jour/mois) — accepte une année seule ("2021") ou, par tolérance, une date
+// complète déjà saisie (Excel peut la convertir en objet Date) dont on ne garde que l'année.
 function parseDateFabrication(v){
   if(v==null||v==='')return null;
-  if(v instanceof Date&&!isNaN(v))return v.toISOString().slice(0,10);
+  if(v instanceof Date&&!isNaN(v))return v.getFullYear()+'-01-01';
   const s=String(v).trim();
-  let m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if(m)return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
-  m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if(m)return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  let m=s.match(/^(\d{4})$/);
+  if(m)return `${m[1]}-01-01`;
+  m=s.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-](\d{4})$/)||s.match(/^(\d{4})-\d{1,2}-\d{1,2}$/);
+  if(m)return `${m[1]}-01-01`;
   return null;
 }
 // Génère une image QR (data URL) sans l'afficher à l'écran, en réutilisant la même
@@ -2544,7 +2549,7 @@ async function importUnitesTamponExcel(input){
         :verifRaw.startsWith('annuel')?'Vérification requise à l\'entrée : annuelle.':'';
       const notesSaisies=String(col(r,'notes')).trim();
       const notesFinales=[noteVerif,notesSaisies].filter(Boolean).join(' ')||null;
-      const fabrication=parseDateFabrication(col(r,'date fabrication (jj/mm/aaaa)','date fabrication','date de fabrication'));
+      const fabrication=parseDateFabrication(col(r,'année de fabrication','annee de fabrication','date fabrication','date de fabrication'));
       const anneeIdentification=fabrication?new Date(fabrication).getFullYear():anneeMES;
       const {data:idGen,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:mode,p_agent_code:agentMatch.code,p_capacite:capacite,p_annee_mise_en_service:anneeIdentification});
       if(eg){erreurs.push(`Ligne ${ligne} : ${eg.message}`);err++;continue}
@@ -2565,7 +2570,10 @@ async function importUnitesTamponExcel(input){
     if(creees.length)genererPdfEtiquettesUnites(creees);
     const resume=`Import : ${crees} unité(s) créée(s) en stock tampon${err?`, ${err} ligne(s) en erreur`:''}`;
     toast(resume,err&&!crees?'err':undefined);
-    if(erreurs.length)console.warn('Erreurs import unités tampon :\n'+erreurs.join('\n'));
+    if(erreurs.length){
+      console.warn('Erreurs import unités tampon :\n'+erreurs.join('\n'));
+      alert('Lignes en erreur :\n\n'+erreurs.join('\n'));
+    }
   }catch(e){toast('Fichier illisible : '+e.message,'err')}
 }
 
