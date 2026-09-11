@@ -2251,7 +2251,7 @@ function renderUnitesExtincteurs(){
     <td><strong>${u.identification}</strong>${u.marque?'<br><small style="color:var(--txt-l)">'+u.marque+(u.modele?' '+u.modele:'')+'</small>':''}</td>
     <td>${u.mode_pressurisation}</td>
     <td>${u.capacite_valeur||'?'}${u.capacite_unite||''} · ${u.agent_code}</td>
-    <td>${statutUnite(u.statut)}</td>
+    <td>${statutUnite(u.statut)}${u.en_attente_confirmation?' <span class="badge" style="background:#fef3c7;color:#92400e">🟡 À confirmer</span>':''}</td>
     <td>${pool?`<span class="badge bg">${poolLabel(pool)}</span>`:'<span style="color:var(--txt-l)">—</span>'}</td>
     <td style="font-size:12px">${u.equipements?(u.equipements.clients?.raison_sociale||'')+' — '+(u.equipements.numero_identification||''):(u.agences?.nom||'—')}</td>
     <td style="font-size:12px">${u.date_fabrication?fmt(u.date_fabrication):'<span style="color:var(--txt-l)">—</span>'}</td>
@@ -2348,14 +2348,14 @@ async function voirHistoriqueExtincteursClient(clientId){
   OM('mo-hist-client');
 }
 async function marquerUniteRevisee(id){
-  const {error}=await db.from('extincteurs_unites').update({statut:'en_atelier_revise',date_derniere_revision_atelier:new Date().toISOString().slice(0,10),updated_at:new Date().toISOString()}).eq('id',id);
+  const {error}=await db.from('extincteurs_unites').update({statut:'en_atelier_revise',date_derniere_revision_atelier:new Date().toISOString().slice(0,10),en_attente_confirmation:false,updated_at:new Date().toISOString()}).eq('id',id);
   if(error){toast('Erreur : '+error.message,'err');return}
   await db.from('extincteurs_mouvements').insert({unite_id:id,type:'revision_atelier',technicien_id:ME.id});
   toast('Unité marquée révisée ✓');chargerUnitesExtincteurs();
 }
 async function reformerUnite(id){
   if(!confirm('Réformer définitivement cette unité ? Elle ne pourra plus être proposée en échange standard.'))return;
-  const {error}=await db.from('extincteurs_unites').update({statut:'reforme',updated_at:new Date().toISOString()}).eq('id',id);
+  const {error}=await db.from('extincteurs_unites').update({statut:'reforme',en_attente_confirmation:false,updated_at:new Date().toISOString()}).eq('id',id);
   if(error){toast('Erreur : '+error.message,'err');return}
   await db.from('extincteurs_mouvements').insert({unite_id:id,type:'mise_au_rebut',technicien_id:ME.id});
   toast('Unité réformée');chargerUnitesExtincteurs();
@@ -2468,6 +2468,21 @@ function parseDateFabrication(v){
   if(m)return `${m[1]}-01-01`;
   return null;
 }
+// Nom commercial complet de l'agence (utilisé sur les étiquettes) — distinct de
+// agences.nom (Briec/Sevremont, interne à l'appli).
+function agenceLibelleComplet(agenceCode){
+  return {briec:'Bretagne Formation Sécurité',sevremont:'Bocage Formation Sécurité'}[agenceCode]||agenceCode||'';
+}
+// Export Excel pour l'étiqueteuse : juste la liste des codes générés + l'agence en nom
+// complet, à charger tel quel dans le logiciel d'impression d'étiquettes.
+function exporterExcelEtiquettesUnites(unites){
+  const rows=unites.map(u=>({Code:u.identification,Agence:agenceLibelleComplet(u.agence_code)}));
+  const ws=XLSX.utils.json_to_sheet(rows);
+  ws['!cols']=[{wch:22},{wch:32}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Étiquettes');
+  XLSX.writeFile(wb,'BFS_etiquettes_extincteurs_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
 // Génère une image QR (data URL) sans l'afficher à l'écran, en réutilisant la même
 // librairie que showQR() (rendu synchrone sur un conteneur hors DOM visible).
 function genererQRDataURL(texte){
@@ -2477,7 +2492,7 @@ function genererQRDataURL(texte){
   return el.tagName==='CANVAS'?el.toDataURL('image/png'):el.src;
 }
 // Planche d'étiquettes A4 (grille de rectangles 40×30mm, QR + texte) pour impression
-// directe — même format que l'étiquette unitaire (voir imprimerEtiquette/telechargerEtiquette).
+// directe — en complément de l'export Excel (destiné au logiciel d'étiqueteuse externe).
 function genererPdfEtiquettesUnites(unites){
   const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});
   const labelW=40,labelH=30,marginX=10,marginY=10,gap=2;
@@ -2496,8 +2511,7 @@ function genererPdfEtiquettesUnites(unites){
     doc.setFontSize(7.5);doc.setFont(undefined,'bold');
     doc.text(u.identification,tx,y+9,{maxWidth:tw});
     doc.setFontSize(6.5);doc.setFont(undefined,'normal');
-    doc.text(`${u.agent_code||''} ${u.capacite_valeur||''}${u.capacite_unite||''}`.trim(),tx,y+15,{maxWidth:tw});
-    doc.text(u.mode_pressurisation||'',tx,y+20,{maxWidth:tw});
+    doc.text(agenceLibelleComplet(u.agence_code),tx,y+15,{maxWidth:tw});
   });
   doc.save('BFS_etiquettes_extincteurs_'+new Date().toISOString().slice(0,10)+'.pdf');
 }
@@ -2558,16 +2572,16 @@ async function importUnitesTamponExcel(input){
         marque:String(col(r,'marque')).trim()||null,modele:String(col(r,'modèle','modele')).trim()||null,
         numero_serie:String(col(r,'n° série','n serie','numero de serie')).trim()||null,
         date_fabrication:fabrication,date_mise_en_service:anneeMES+'-01-01',
-        agence_id:agence.id,statut,usage_stock:'echange_location',
+        agence_id:agence.id,statut,usage_stock:'echange_location',en_attente_confirmation:true,
         date_derniere_revision_atelier:statut==='en_atelier_revise'?new Date().toISOString().slice(0,10):null,
         notes:notesFinales,updated_at:new Date().toISOString()};
       const {data:nu,error}=await db.from('extincteurs_unites').insert(p).select().single();
       if(error){erreurs.push(`Ligne ${ligne} : ${error.message}`);err++;continue}
       await db.from('extincteurs_mouvements').insert({unite_id:nu.id,type:'remise_en_stock',technicien_id:ME.id,agence_id:agence.id,notes:'Import en masse — stock tampon'});
-      crees++;creees.push(nu);
+      crees++;creees.push({identification:nu.identification,agence_code:agence.code});
     }
     chargerUnitesExtincteurs();
-    if(creees.length)genererPdfEtiquettesUnites(creees);
+    if(creees.length){exporterExcelEtiquettesUnites(creees);genererPdfEtiquettesUnites(creees);}
     const resume=`Import : ${crees} unité(s) créée(s) en stock tampon${err?`, ${err} ligne(s) en erreur`:''}`;
     toast(resume,err&&!crees?'err':undefined);
     if(erreurs.length){

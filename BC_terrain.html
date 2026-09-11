@@ -614,6 +614,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <h1>Inventaire du stock</h1>
   </div>
   <div style="padding:8px 12px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;gap:6px" id="stock-ag-sel"></div>
+  <div style="padding:8px 12px;background:#fff;border-bottom:1px solid #e5e7eb">
+    <button class="btn btn-s" style="width:100%" onclick="ouvrirControleAtelier()">🔧 Contrôle atelier (extincteurs tampon)</button>
+  </div>
   <div class="content" id="stock-content">
     <div class="loading"><div class="spin spin-dark"></div></div>
   </div>
@@ -621,6 +624,84 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button class="btn btn-p" onclick="ouvrirScannerStock()">📷 Scanner une pièce</button>
     <button class="btn btn-s" onclick="ouvrirNouvellePiece()">➕ Créer une pièce</button>
     <button class="btn btn-vert" onclick="terminerInventaire()">✅ Terminer l'inventaire</button>
+  </div>
+</div>
+
+<!-- ===== CONTRÔLE ATELIER EXTINCTEURS (stock tampon) ===== -->
+<div class="screen" id="s-atelier">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-stock')">←</button>
+    <h1>Contrôle atelier</h1>
+  </div>
+  <div class="content">
+    <div class="card" style="margin-bottom:14px"><div style="padding:14px 16px;font-size:13px;color:var(--txt-l)">
+      Scanne le QR d'un extincteur (stock tampon) pour voir ses infos et enregistrer sa vérification.
+    </div></div>
+    <div class="fg" style="margin-bottom:12px">
+      <label>Ou saisis l'identification manuellement</label>
+      <input type="text" id="atelier-manuel" placeholder="Ex : PP-AB-6-2025-0001" style="text-transform:uppercase">
+    </div>
+    <button class="btn btn-p" style="width:100%" onclick="chercherUniteAtelier($('atelier-manuel').value)">🔍 Rechercher</button>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="ouvrirScanner('atelier')">📷 Scanner un extincteur</button>
+  </div>
+</div>
+
+<!-- ===== FICHE UNITÉ — CONTRÔLE ATELIER ===== -->
+<div class="screen" id="s-atelier-fiche">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-atelier')">←</button>
+    <h1>Extincteur</h1>
+  </div>
+  <div class="content">
+    <div id="af-confirmation-bloc" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:#92400e">
+      ⚠️ Identité pas encore confirmée (import en masse) — vérifie que l'étiquette collée sur cet extincteur correspond bien aux infos ci-dessous.
+    </div>
+    <div class="card" style="margin-bottom:14px"><div style="padding:14px 16px">
+      <div id="af-identification" style="font-weight:700;font-size:18px;margin-bottom:4px"></div>
+      <div id="af-detail" style="font-size:13px;color:var(--txt-l);margin-bottom:8px"></div>
+      <div id="af-statut" style="font-size:13px;margin-bottom:4px"></div>
+      <div id="af-notes" style="font-size:13px;color:#d97706"></div>
+    </div></div>
+    <div class="card" style="margin-bottom:14px" id="af-reco-bloc">
+      <div style="padding:14px 16px">
+      <div class="sec" style="margin-top:0">Vérification recommandée</div>
+      <div id="af-recommandation" style="font-size:15px;font-weight:700"></div>
+    </div></div>
+  </div>
+  <div class="footer" style="flex-direction:column;gap:8px">
+    <div id="af-actions-confirmation" style="display:none;flex-direction:column;gap:8px">
+      <button class="btn btn-vert" onclick="confirmerIdentiteUnite()">✅ Confirmer — l'étiquette correspond bien</button>
+      <button class="btn btn-s" style="color:#b91c1c" onclick="ouvrirCorrectionUnite()">✏️ Ça ne correspond pas — corriger</button>
+    </div>
+    <div id="af-actions-normales" style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn btn-vert" onclick="validerAtelierOK()">✅ Vérifié — remettre en stock tampon</button>
+      <button class="btn btn-s" style="color:#b91c1c" onclick="validerAtelierReforme()">♻️ Dépollué / réformé pour recyclage</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CORRECTION IDENTITÉ UNITÉ (décalage étiquette) ===== -->
+<div class="screen" id="s-atelier-correction">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-atelier-fiche')">←</button>
+    <h1>Corriger l'identité</h1>
+  </div>
+  <div class="content">
+    <div class="card" style="margin-bottom:14px"><div style="padding:14px 16px;font-size:13px;color:var(--txt-l)">
+      Corrige les caractéristiques réelles de l'extincteur que tu as sous les yeux. Si le mode, l'agent ou la capacité changent, une nouvelle identification (nouveau QR) sera générée — il faudra imprimer et coller une nouvelle étiquette, puis rescanner pour confirmer.
+    </div></div>
+    <div class="fg" style="margin-bottom:12px"><label>Mode de pressurisation</label>
+      <select id="ac-mode"><option value="PP">PP — pression permanente</option><option value="PA">PA — pression auxiliaire</option></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Agent extincteur</label><select id="ac-agent"></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Capacité</label><input type="number" id="ac-capacite" step="0.1" min="0"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Unité</label><select id="ac-unite"><option value="L">L</option><option value="kg">kg</option></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Marque</label><input type="text" id="ac-marque"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Modèle</label><input type="text" id="ac-modele"></div>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="enregistrerCorrectionUnite()">💾 Enregistrer la correction</button>
   </div>
 </div>
 
@@ -1632,6 +1713,7 @@ async function ouvrirScanner(mode){
         }
         if(_scanMode==='stock')traiterScanPiece(numeroId);
         else if(_scanMode==='echange-sortant'||_scanMode==='echange-entrant')traiterScanUniteEchange(numeroId,_scanMode);
+        else if(_scanMode==='atelier')chercherUniteAtelier(numeroId);
         else traiterScanEquip(numeroId);
       }
     },200);
@@ -1644,6 +1726,7 @@ async function ouvrirScanner(mode){
 function _ecranRetourScan(){
   if(_scanMode==='stock')return 's-stock';
   if(_scanMode==='echange-sortant'||_scanMode==='echange-entrant')return 's-verif';
+  if(_scanMode==='atelier')return 's-atelier';
   return 's-session';
 }
 
@@ -1678,6 +1761,118 @@ async function traiterScanEquip(numeroId){
     if(!currentEquipements.find(e=>e.id===equip.id))currentEquipements.push(equip);
   }
   ouvrirVerif(equip.id);
+}
+
+// ============================================================
+// CONTRÔLE ATELIER — extincteurs en stock (principalement le stock tampon,
+// échange standard/location) : scan ou saisie manuelle de l'identification,
+// affichage des infos + vérification recommandée, puis validation (vérifié /
+// remis en stock) ou réforme (dépollution/recyclage). Ne concerne pas les
+// extincteurs posés chez un client (voir ouvrirVerif() pour ce cas).
+// ============================================================
+let _uniteAtelierCourante=null;
+function ouvrirControleAtelier(){
+  if($('atelier-manuel'))$('atelier-manuel').value='';
+  goTo('s-atelier');
+}
+async function chercherUniteAtelier(identification){
+  const id=(identification||'').trim().toUpperCase();
+  if(!id){toast('Saisis ou scanne une identification','err');return}
+  const {data,error}=await db.from('extincteurs_unites').select('*').ilike('identification',id).maybeSingle();
+  if(error||!data){toast('Extincteur introuvable : '+id,'err');return}
+  _uniteAtelierCourante=data;
+  afficherFicheUniteAtelier(data);
+  goTo('s-atelier-fiche');
+}
+const AGENTS_EXTINCTEURS_CODES=['CO2','BC','ABC','D','A','AB','ABF','A lith','Autre'];
+function afficherFicheUniteAtelier(u){
+  $('af-identification').textContent=u.identification;
+  $('af-detail').textContent=[u.mode_pressurisation,u.agent_code,(u.capacite_valeur!=null?u.capacite_valeur+(u.capacite_unite||''):''),u.marque,u.modele].filter(Boolean).join(' · ');
+  const statutLabels={en_atelier_a_reviser:'🟠 À réviser',en_atelier_revise:'🔵 Révisé — prêt',en_service:'🟢 En service (client)',reforme:'⚫ Réformé'};
+  $('af-statut').innerHTML='Statut actuel : <strong>'+(statutLabels[u.statut]||u.statut)+'</strong>';
+  $('af-notes').textContent=u.notes||'';
+  // Recommandation : d'abord la note laissée à l'entrée en stock ("Vérification requise :
+  // Annuelle/MAA", cf. import en masse), sinon repli sur l'âge depuis la fabrication
+  // (MAA tous les 5 ans, cf. cadence retenue pour la base tarifaire pièces détachées).
+  const notesLower=(u.notes||'').toLowerCase();
+  let reco='Vérification annuelle (visuelle + fonctionnelle)';
+  if(notesLower.includes('maa')){
+    reco='Maintenance approfondie (MAA)';
+  } else if(!notesLower.includes('annuel') && u.date_fabrication){
+    const age=new Date().getFullYear()-new Date(u.date_fabrication).getFullYear();
+    if(age>=5)reco='Maintenance approfondie (MAA) — '+age+' ans depuis fabrication';
+  }
+  $('af-recommandation').textContent=reco;
+  // Import en masse = risque de décalage étiquette/extincteur physique tant que personne n'a
+  // scanné physiquement l'unité pour confirmer que le QR collé correspond bien à cet appareil.
+  const enAttente=!!u.en_attente_confirmation;
+  $('af-confirmation-bloc').style.display=enAttente?'block':'none';
+  $('af-reco-bloc').style.display=enAttente?'none':'block';
+  $('af-actions-confirmation').style.display=enAttente?'flex':'none';
+  $('af-actions-normales').style.display=enAttente?'none':'flex';
+}
+async function confirmerIdentiteUnite(){
+  const u=_uniteAtelierCourante;if(!u)return;
+  const {error}=await db.from('extincteurs_unites').update({en_attente_confirmation:false,updated_at:new Date().toISOString()}).eq('id',u.id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  await db.from('extincteurs_mouvements').insert({unite_id:u.id,type:'confirmation_identite',technicien_id:ME.id,notes:'Identité confirmée par scan terrain (étiquette ↔ extincteur)'});
+  toast('Identité confirmée ✓');goTo('s-atelier');
+}
+function ouvrirCorrectionUnite(){
+  const u=_uniteAtelierCourante;if(!u)return;
+  $('ac-agent').innerHTML=AGENTS_EXTINCTEURS_CODES.map(c=>`<option value="${c}">${c}</option>`).join('');
+  $('ac-mode').value=u.mode_pressurisation||'PP';
+  $('ac-agent').value=u.agent_code||'';
+  $('ac-capacite').value=u.capacite_valeur||'';
+  $('ac-unite').value=u.capacite_unite||'L';
+  $('ac-marque').value=u.marque||'';
+  $('ac-modele').value=u.modele||'';
+  goTo('s-atelier-correction');
+}
+async function enregistrerCorrectionUnite(){
+  const u=_uniteAtelierCourante;if(!u)return;
+  const mode=$('ac-mode').value,agent=$('ac-agent').value,capacite=parseFloat($('ac-capacite').value);
+  const uniteCap=$('ac-unite').value,marque=$('ac-marque').value.trim()||null,modele=$('ac-modele').value.trim()||null;
+  if(!agent||isNaN(capacite)){toast('Agent et capacité obligatoires','err');return}
+  const idChange = mode!==u.mode_pressurisation || agent!==u.agent_code || capacite!==+u.capacite_valeur;
+  const p={mode_pressurisation:mode,agent_code:agent,capacite_valeur:capacite,capacite_unite:uniteCap,marque,modele,updated_at:new Date().toISOString()};
+  if(idChange){
+    // Nouvelle identification (nouveau QR) nécessaire — mêmes règles que l'import (année de
+    // fabrication en priorité, sinon mise en service) — reste en attente de confirmation
+    // tant que la nouvelle étiquette n'a pas été imprimée, collée puis rescannée.
+    const annee = u.date_fabrication ? new Date(u.date_fabrication).getFullYear() : (u.date_mise_en_service?new Date(u.date_mise_en_service).getFullYear():new Date().getFullYear());
+    const {data:idGen,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:mode,p_agent_code:agent,p_capacite:capacite,p_annee_mise_en_service:annee});
+    if(eg){toast('Erreur génération identification : '+eg.message,'err');return}
+    p.identification=idGen;
+    p.en_attente_confirmation=true;
+    p.notes=((u.notes||'')+' | Ancienne réf. incorrecte : '+u.identification+' — nouvelle étiquette à imprimer et coller.').trim();
+  }
+  const {data:maj,error}=await db.from('extincteurs_unites').update(p).eq('id',u.id).select().single();
+  if(error){toast('Erreur : '+error.message,'err');return}
+  await db.from('extincteurs_mouvements').insert({unite_id:u.id,type:'correction_identite',technicien_id:ME.id,notes:idChange?('Correction avec nouvelle identification (ancienne : '+u.identification+')'):'Correction sans changement d\'identification'});
+  if(idChange){
+    toast('Corrigé — nouvelle étiquette '+idGen+' à imprimer et coller, puis rescanner pour confirmer');
+  } else {
+    toast('Corrigé ✓');
+  }
+  _uniteAtelierCourante=maj;
+  goTo('s-atelier');
+}
+async function validerAtelierOK(){
+  const u=_uniteAtelierCourante;if(!u)return;
+  if(!confirm('Confirmer : vérification effectuée, unité prête à repartir en stock tampon ?'))return;
+  const {error}=await db.from('extincteurs_unites').update({statut:'en_atelier_revise',date_derniere_revision_atelier:new Date().toISOString().slice(0,10),en_attente_confirmation:false,updated_at:new Date().toISOString()}).eq('id',u.id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  await db.from('extincteurs_mouvements').insert({unite_id:u.id,type:'revision_atelier',technicien_id:ME.id,notes:'Contrôle atelier (terrain)'});
+  toast('Unité vérifiée ✓');goTo('s-atelier');
+}
+async function validerAtelierReforme(){
+  const u=_uniteAtelierCourante;if(!u)return;
+  if(!confirm('Confirmer la réforme (dépollution/recyclage) de cette unité ? Irréversible.'))return;
+  const {error}=await db.from('extincteurs_unites').update({statut:'reforme',en_attente_confirmation:false,updated_at:new Date().toISOString()}).eq('id',u.id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  await db.from('extincteurs_mouvements').insert({unite_id:u.id,type:'mise_au_rebut',technicien_id:ME.id,notes:'Contrôle atelier (terrain) — dépollué pour recyclage'});
+  toast('Unité réformée');goTo('s-atelier');
 }
 
 // ============================================================
