@@ -549,7 +549,12 @@ tr:hover td{background:#fafafa}
 
         <div class="card" style="margin-top:16px">
           <div class="card-header"><h2>🔄 Atelier — échange standard extincteurs PP</h2>
-            <button class="btn btn-p btn-sm" onclick="openUniteExtincteurModal()">+ Unité</button>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-s btn-sm" onclick="exporterModeleImportUnites()" title="Fichier Excel à remplir pour un import en masse">📋 Modèle import</button>
+              <button class="btn btn-s btn-sm" onclick="$('input-import-unites').click()" title="Importer le fichier rempli">📥 Importer</button>
+              <input type="file" id="input-import-unites" accept=".xlsx,.xls" style="display:none" onchange="importUnitesTamponExcel(this)">
+              <button class="btn btn-p btn-sm" onclick="openUniteExtincteurModal()">+ Unité</button>
+            </div>
           </div>
           <div style="font-size:12px;color:var(--txt-l);margin-bottom:10px">Extincteurs à pression permanente sortis du parc client pour la maintenance approfondie (5 ans) — cycle atelier avant remise en stock pour un futur échange standard.</div>
           <div class="search-bar" style="margin-bottom:10px">

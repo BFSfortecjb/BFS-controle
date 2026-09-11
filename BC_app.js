@@ -2404,6 +2404,171 @@ async function saveUniteExtincteur(){
   CM('mo-unite-ext');chargerUnitesExtincteurs();
 }
 
+// ============================================================
+// IMPORT EN MASSE — STOCK TAMPON D'EXTINCTEURS (échange standard / location)
+// Fichier Excel avec 3 feuilles : "Numérotation" (départ optionnel du compteur, PAR
+// ANNÉE — chaque année a son propre compteur qui repart à 0001, cf.
+// generer_identification_extincteur()/compteurs_identification_extincteurs), "Import"
+// (une ligne par extincteur à créer), "Légende" (codes valides, indicatif).
+// La numérotation (identification) et les QR codes sont générés automatiquement par
+// l'appli après import — Jeremy n'a qu'à remplir les caractéristiques physiques.
+// ============================================================
+async function exporterModeleImportUnites(){
+  if(!_stockAgences||!_stockAgences.length){const {data:ag}=await db.from('agences').select('*').order('nom');_stockAgences=ag||[];}
+  const {data:agentsData}=await db.from('agents_extincteurs').select('code,libelle').eq('actif',true).order('code');
+  const wb=XLSX.utils.book_new();
+  const wsNum=XLSX.utils.aoa_to_sheet([
+    ['Année','Départ (optionnel)'],
+    ['', ''],
+    ['', ''],
+    ['', ''],
+    ['Chaque année a son propre compteur (repart à 0001). Laisse une ligne vide pour continuer automatiquement à la suite du dernier numéro déjà utilisé CETTE année-là.'],
+    ['Si tu remplis un départ pour une année, il doit être supérieur au dernier numéro déjà utilisé pour cette année précise (l\'appli vérifie et refuse sinon).'],
+    ['Une ligne par année à forcer uniquement — les années non listées ici continuent automatiquement.']
+  ]);
+  wsNum['!cols']=[{wch:10},{wch:18}];
+  XLSX.utils.book_append_sheet(wb,wsNum,'Numérotation');
+  const headers=['Agent*','Capacité*','Unité (L/kg)','Mode (PP/PA)*','Marque','Modèle','N° série','Date fabrication (JJ/MM/AAAA)','Année mise en service*','Agence*','Statut*','Vérification requise','Notes'];
+  const wsImport=XLSX.utils.aoa_to_sheet([headers]);
+  wsImport['!cols']=headers.map(h=>({wch:Math.max(16,h.length)}));
+  XLSX.utils.book_append_sheet(wb,wsImport,'Import');
+  const legende=[
+    ['Codes agent valides (colonne Agent)',''],
+    ...(agentsData||[]).map(a=>[a.code,a.libelle]),
+    ['',''],
+    ['Agences valides (colonne Agence)',''],
+    ...(_stockAgences||[]).map(a=>[a.nom,'']),
+    ['',''],
+    ['Statuts valides (colonne Statut)',''],
+    ['À réviser','Doit encore passer par l\'atelier avant d\'être réutilisable (cas le plus courant à l\'entrée d\'un stock existant)'],
+    ['Révisé','Déjà révisé, prêt à poser immédiatement'],
+    ['Réformé',''],
+    ['',''],
+    ['Vérification requise (optionnel, colonne Vérification requise)',''],
+    ['Annuelle','Ajouté en note sur la fiche, à titre indicatif pour l\'atelier'],
+    ['MAA','Maintenance approfondie (5 ans) — idem, note indicative']
+  ];
+  const wsLeg=XLSX.utils.aoa_to_sheet(legende);
+  wsLeg['!cols']=[{wch:35},{wch:35}];
+  XLSX.utils.book_append_sheet(wb,wsLeg,'Légende');
+  XLSX.writeFile(wb,'BFS_modele_import_extincteurs_tampon.xlsx');
+}
+function parseDateFabrication(v){
+  if(v==null||v==='')return null;
+  if(v instanceof Date&&!isNaN(v))return v.toISOString().slice(0,10);
+  const s=String(v).trim();
+  let m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m)return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(m)return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  return null;
+}
+// Génère une image QR (data URL) sans l'afficher à l'écran, en réutilisant la même
+// librairie que showQR() (rendu synchrone sur un conteneur hors DOM visible).
+function genererQRDataURL(texte){
+  const div=document.createElement('div');
+  new QRCode(div,{text:String(texte),width:220,height:220,correctLevel:QRCode.CorrectLevel.M});
+  const el=div.querySelector('canvas')||div.querySelector('img');
+  return el.tagName==='CANVAS'?el.toDataURL('image/png'):el.src;
+}
+// Planche d'étiquettes A4 (grille de rectangles 40×30mm, QR + texte) pour impression
+// directe — même format que l'étiquette unitaire (voir imprimerEtiquette/telechargerEtiquette).
+function genererPdfEtiquettesUnites(unites){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});
+  const labelW=40,labelH=30,marginX=10,marginY=10,gap=2;
+  const cols=Math.floor((210-2*marginX+gap)/(labelW+gap));
+  const rows=Math.floor((297-2*marginY+gap)/(labelH+gap));
+  const parPage=cols*rows;
+  unites.forEach((u,i)=>{
+    if(i>0&&i%parPage===0)doc.addPage();
+    const idx=i%parPage;const col=idx%cols,row=Math.floor(idx/cols);
+    const x=marginX+col*(labelW+gap),y=marginY+row*(labelH+gap);
+    doc.setDrawColor(200);doc.rect(x,y,labelW,labelH);
+    const qr=genererQRDataURL(u.identification);
+    const qrSize=labelH-4;
+    doc.addImage(qr,'PNG',x+2,y+2,qrSize,qrSize);
+    const tx=x+labelH+1,tw=labelW-labelH-3;
+    doc.setFontSize(7.5);doc.setFont(undefined,'bold');
+    doc.text(u.identification,tx,y+9,{maxWidth:tw});
+    doc.setFontSize(6.5);doc.setFont(undefined,'normal');
+    doc.text(`${u.agent_code||''} ${u.capacite_valeur||''}${u.capacite_unite||''}`.trim(),tx,y+15,{maxWidth:tw});
+    doc.text(u.mode_pressurisation||'',tx,y+20,{maxWidth:tw});
+  });
+  doc.save('BFS_etiquettes_extincteurs_'+new Date().toISOString().slice(0,10)+'.pdf');
+}
+async function importUnitesTamponExcel(input){
+  const file=input.files[0];if(!file)return;input.value='';
+  toast('Import en cours…');
+  try{
+    const wb=XLSX.read(await file.arrayBuffer(),{cellDates:true});
+    const wsImport=wb.Sheets['Import'];
+    if(!wsImport){toast('Feuille "Import" introuvable — utilise le modèle fourni (bouton 📋 Modèle import)','err');return}
+    const rows=XLSX.utils.sheet_to_json(wsImport,{defval:''});
+    if(!rows.length){toast('Aucune ligne à importer','err');return}
+    const wsNum=wb.Sheets['Numérotation'];
+    if(wsNum){
+      const lignesNum=XLSX.utils.sheet_to_json(wsNum,{defval:''});
+      for(const ln of lignesNum){
+        const annee=parseInt(ln['Année']);
+        const depart=parseInt(ln['Départ (optionnel)']);
+        if(!annee||isNaN(depart))continue; // ligne vide ou incomplète, ignorée
+        const {error:eDep}=await db.rpc('definir_depart_numerotation_extincteurs',{p_annee:annee,p_depart:depart});
+        if(eDep){toast(`Erreur numérotation ${annee} : `+eDep.message,'err');return}
+      }
+    }
+    if(!_stockAgences||!_stockAgences.length){const {data:ag}=await db.from('agences').select('*');_stockAgences=ag||[];}
+    const {data:agentsData}=await db.from('agents_extincteurs').select('code');
+    const col=(r,...noms)=>{for(const n of noms){for(const k of Object.keys(r)){if(k.toLowerCase().trim().replace('*','')===n)return r[k]}}return ''};
+    let crees=0,err=0;const erreurs=[],creees=[];
+    for(let i=0;i<rows.length;i++){
+      const r=rows[i];const ligne=i+2;
+      const agentRaw=String(col(r,'agent')).trim();
+      const agentMatch=(agentsData||[]).find(a=>a.code.toLowerCase()===agentRaw.toLowerCase());
+      const capacite=parseFloat(String(col(r,'capacité','capacite')).replace(',','.'));
+      const mode=String(col(r,'mode (pp/pa)','mode')).trim().toUpperCase();
+      const anneeMES=parseInt(col(r,'année mise en service','annee mise en service'));
+      const agenceNom=String(col(r,'agence')).trim();
+      const agence=(_stockAgences||[]).find(a=>a.nom.toLowerCase()===agenceNom.toLowerCase());
+      if(!agentRaw&&!capacite&&!mode&&!agenceNom)continue; // ligne vide
+      if(!agentMatch){erreurs.push(`Ligne ${ligne} : agent "${agentRaw}" inconnu (voir onglet Légende)`);err++;continue}
+      if(isNaN(capacite)||capacite<=0){erreurs.push(`Ligne ${ligne} : capacité invalide`);err++;continue}
+      if(mode!=='PP'&&mode!=='PA'){erreurs.push(`Ligne ${ligne} : mode "${mode}" invalide (PP ou PA)`);err++;continue}
+      if(!anneeMES){erreurs.push(`Ligne ${ligne} : année de mise en service manquante`);err++;continue}
+      if(!agence){erreurs.push(`Ligne ${ligne} : agence "${agenceNom}" inconnue (voir onglet Légende)`);err++;continue}
+      const statutRaw=String(col(r,'statut')).trim().toLowerCase();
+      const statut=statutRaw.startsWith('révis')||statutRaw.startsWith('revis')?'en_atelier_revise'
+        :statutRaw.startsWith('réform')||statutRaw.startsWith('reform')?'reforme'
+        :'en_atelier_a_reviser'; // défaut : la plupart des unités reprises doivent repasser par l'atelier
+      const verifRaw=String(col(r,'vérification requise','verification requise')).trim().toLowerCase();
+      const noteVerif=verifRaw.startsWith('maa')?'Vérification requise à l\'entrée : MAA (maintenance approfondie 5 ans).'
+        :verifRaw.startsWith('annuel')?'Vérification requise à l\'entrée : annuelle.':'';
+      const notesSaisies=String(col(r,'notes')).trim();
+      const notesFinales=[noteVerif,notesSaisies].filter(Boolean).join(' ')||null;
+      const fabrication=parseDateFabrication(col(r,'date fabrication (jj/mm/aaaa)','date fabrication','date de fabrication'));
+      const anneeIdentification=fabrication?new Date(fabrication).getFullYear():anneeMES;
+      const {data:idGen,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:mode,p_agent_code:agentMatch.code,p_capacite:capacite,p_annee_mise_en_service:anneeIdentification});
+      if(eg){erreurs.push(`Ligne ${ligne} : ${eg.message}`);err++;continue}
+      const p={identification:idGen,mode_pressurisation:mode,agent_code:agentMatch.code,capacite_valeur:capacite,
+        capacite_unite:String(col(r,'unité (l/kg)','unite','unité')).trim()||'L',
+        marque:String(col(r,'marque')).trim()||null,modele:String(col(r,'modèle','modele')).trim()||null,
+        numero_serie:String(col(r,'n° série','n serie','numero de serie')).trim()||null,
+        date_fabrication:fabrication,date_mise_en_service:anneeMES+'-01-01',
+        agence_id:agence.id,statut,usage_stock:'echange_location',
+        date_derniere_revision_atelier:statut==='en_atelier_revise'?new Date().toISOString().slice(0,10):null,
+        notes:notesFinales,updated_at:new Date().toISOString()};
+      const {data:nu,error}=await db.from('extincteurs_unites').insert(p).select().single();
+      if(error){erreurs.push(`Ligne ${ligne} : ${error.message}`);err++;continue}
+      await db.from('extincteurs_mouvements').insert({unite_id:nu.id,type:'remise_en_stock',technicien_id:ME.id,agence_id:agence.id,notes:'Import en masse — stock tampon'});
+      crees++;creees.push(nu);
+    }
+    chargerUnitesExtincteurs();
+    if(creees.length)genererPdfEtiquettesUnites(creees);
+    const resume=`Import : ${crees} unité(s) créée(s) en stock tampon${err?`, ${err} ligne(s) en erreur`:''}`;
+    toast(resume,err&&!crees?'err':undefined);
+    if(erreurs.length)console.warn('Erreurs import unités tampon :\n'+erreurs.join('\n'));
+  }catch(e){toast('Fichier illisible : '+e.message,'err')}
+}
+
 // ---- Matériovigilance : recherche d'un n° de lot signalé défectueux ----
 function ouvrirMaterioVigilance(){
   $('mv-lot').value='';
