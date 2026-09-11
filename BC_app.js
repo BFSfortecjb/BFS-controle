@@ -2259,8 +2259,9 @@ function renderUnitesExtincteurs(){
   const fs=$('f-statut-unites')?.value||'';
   const fp=$('f-pool-unites')?.value||'';
   const fc=$('f-client-unites')?.value||'';
+  const faConf=$('f-aconfirmer-unites')?.checked||false;
   const q=($('q-unites')?.value||'').toLowerCase();
-  const data=uniteExtincteurs.filter(u=>(!fs||u.statut===fs)&&(!fp||poolUnite(u)===fp)&&(!fc||u.equipements?.client_id===fc)
+  const data=uniteExtincteurs.filter(u=>(!fs||u.statut===fs)&&(!fp||poolUnite(u)===fp)&&(!fc||u.equipements?.client_id===fc)&&(!faConf||u.en_attente_confirmation)
     &&(u.identification.toLowerCase().includes(q)||(u.equipements?.clients?.raison_sociale||'').toLowerCase().includes(q)));
   if(!data.length){el.innerHTML='<div class="t-empty">Aucune unité d\'extincteur pour ce filtre.</div>';return}
   el.innerHTML=`<table><thead><tr><th>Identification</th><th>Mode</th><th>Capacité</th><th>Statut</th><th>Stock</th><th>Emplacement / Agence</th><th>Fabrication</th><th>Dernière révision</th><th>Actions</th></tr></thead><tbody>${data.map(u=>{const pool=poolUnite(u);return `<tr>

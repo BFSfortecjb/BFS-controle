@@ -574,6 +574,9 @@ tr:hover td{background:#fafafa}
               <option value="">Tous parcs (tous clients)</option>
             </select>
             <input type="text" id="q-unites" placeholder="Rechercher identification ou client…" oninput="renderUnitesExtincteurs()">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap">
+              <input type="checkbox" id="f-aconfirmer-unites" onchange="renderUnitesExtincteurs()"> 🟡 Étiquette à réimprimer uniquement
+            </label>
           </div>
           <div id="tbl-unites-extincteurs"><div class="t-empty">Chargement…</div></div>
         </div>

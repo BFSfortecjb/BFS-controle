@@ -677,6 +677,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     </div>
     <div id="af-actions-normales" style="display:flex;flex-direction:column;gap:8px">
       <button class="btn btn-vert" onclick="ouvrirVerifAtelier()">🔍 Faire la vérification (annuelle / MAA)</button>
+      <button class="btn btn-s" onclick="ouvrirCorrectionUnite()">✏️ Modifier les informations</button>
       <button class="btn btn-s" style="color:#b91c1c" onclick="validerAtelierReforme()">♻️ Dépollué / réformé pour recyclage (sans vérification)</button>
     </div>
   </div>
@@ -707,6 +708,25 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
   <div class="footer">
     <button class="btn btn-vert" onclick="enregistrerCorrectionUnite()">💾 Enregistrer la correction</button>
+  </div>
+</div>
+
+<!-- ===== NOUVELLE ÉTIQUETTE À IMPRIMER (après correction changeant l'identification) ===== -->
+<div class="screen" id="s-atelier-nouvelle-id">
+  <div class="hdr">
+    <h1>Nouvelle étiquette</h1>
+  </div>
+  <div class="content">
+    <div class="card" style="margin-bottom:14px"><div style="padding:14px 16px;font-size:13px;color:var(--txt-l)">
+      L'identification a changé. Copie le nouveau numéro pour l'imprimer, colle la nouvelle étiquette sur l'extincteur (jette l'ancienne), puis rescanne pour confirmer.
+    </div></div>
+    <div class="card" style="margin-bottom:14px"><div style="padding:20px 16px;text-align:center">
+      <div id="an-identification" style="font-weight:700;font-size:24px;letter-spacing:0.5px;word-break:break-all;margin-bottom:14px"></div>
+      <button class="btn btn-p" onclick="copierIdEquip($('an-identification').textContent)">📋 Copier le numéro</button>
+    </div></div>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" onclick="goTo('s-atelier')">Terminé</button>
   </div>
 </div>
 
@@ -1889,13 +1909,15 @@ async function enregistrerCorrectionUnite(){
   const {data:maj,error}=await db.from('extincteurs_unites').update(p).eq('id',u.id).select().single();
   if(error){toast('Erreur : '+error.message,'err');return}
   await db.from('extincteurs_mouvements').insert({unite_id:u.id,type:'correction_identite',technicien_id:ME.id,notes:idChange?('Correction avec nouvelle identification (ancienne étiquette caduque : '+u.identification+')'):'Correction sans changement d\'identification'});
+  _uniteAtelierCourante=maj;
   if(idChange){
-    toast('Corrigé — nouvelle étiquette '+idGen+' à imprimer et coller (jette l\'ancienne), puis rescanner pour confirmer');
+    toast('Corrigé — nouvelle identification générée');
+    $('an-identification').textContent=idGen;
+    goTo('s-atelier-nouvelle-id');
   } else {
     toast('Corrigé ✓');
+    goTo('s-atelier');
   }
-  _uniteAtelierCourante=maj;
-  goTo('s-atelier');
 }
 // ============================================================
 // VÉRIFICATION ATELIER COMPLÈTE (checklist + pièces + sortie de stock),
