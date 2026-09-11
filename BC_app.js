@@ -2261,7 +2261,11 @@ function renderUnitesExtincteurs(){
   const fc=$('f-client-unites')?.value||'';
   const faConf=$('f-aconfirmer-unites')?.checked||false;
   const q=($('q-unites')?.value||'').toLowerCase();
-  const data=uniteExtincteurs.filter(u=>(!fs||u.statut===fs)&&(!fp||poolUnite(u)===fp)&&(!fc||u.equipements?.client_id===fc)&&(!faConf||u.en_attente_confirmation)
+  // 'parc' est un pseudo-pool distinct de neuf/echange_location (qui ne concernent que le stock
+  // atelier, cf. poolUnite() qui renvoie null hors atelier) : il désigne les unités actuellement
+  // posées chez un client (statut en_service), donc filtré directement sur le statut plutôt que
+  // sur poolUnite().
+  const data=uniteExtincteurs.filter(u=>(!fs||u.statut===fs)&&(!fp||(fp==='parc'?u.statut==='en_service':poolUnite(u)===fp))&&(!fc||u.equipements?.client_id===fc)&&(!faConf||u.en_attente_confirmation)
     &&(u.identification.toLowerCase().includes(q)||(u.equipements?.clients?.raison_sociale||'').toLowerCase().includes(q)));
   if(!data.length){el.innerHTML='<div class="t-empty">Aucune unité d\'extincteur pour ce filtre.</div>';return}
   el.innerHTML=`<table><thead><tr><th>Identification</th><th>Mode</th><th>Capacité</th><th>Statut</th><th>Stock</th><th>Emplacement / Agence</th><th>Fabrication</th><th>Dernière révision</th><th>Actions</th></tr></thead><tbody>${data.map(u=>{const pool=poolUnite(u);return `<tr>

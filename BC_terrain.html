@@ -1885,11 +1885,16 @@ async function enregistrerCorrectionUnite(){
   if(!agent||isNaN(capacite)||!agenceId){toast('Agent, capacité et agence obligatoires','err');return}
   const fabrication=anneeFab?anneeFab+'-01-01':null;
   const miseEnService=anneeMES?anneeMES+'-01-01':null;
-  const ancienAnneeFab=u.date_fabrication?new Date(u.date_fabrication).getFullYear():null;
-  const ancienAnneeMES=u.date_mise_en_service?new Date(u.date_mise_en_service).getFullYear():null;
-  // Tout changement qui modifie la valeur encodée dans l'identification (MODE-AGENT-CAPACITE-ANNÉE)
-  // impose une nouvelle étiquette — l'année utilisée est la fabrication si connue, sinon la mise en service.
-  const idChange = mode!==u.mode_pressurisation || agent!==u.agent_code || capacite!==+u.capacite_valeur || anneeFab!==ancienAnneeFab || (!anneeFab && anneeMES!==ancienAnneeMES);
+  // Ce qui compte pour l'identification, c'est l'ANNÉE EFFECTIVEMENT UTILISÉE (fabrication en
+  // priorité, sinon mise en service) — pas la valeur brute de chaque champ. Ex. : une unité sans
+  // fabrication connue (identification générée sur la mise en service) à qui on ajoute une
+  // fabrication IDENTIQUE à la mise en service ne doit PAS déclencher une nouvelle étiquette.
+  // On compare donc à l'année réellement encodée dans l'identification actuelle (regex), pas aux
+  // champs date_fabrication/date_mise_en_service bruts (qui peuvent diverger sur d'anciennes
+  // unités migrées avant l'existence de ces règles).
+  const anneeActuelleDansId=parseInt((u.identification.match(/-(\d{4})-\d+$/)||[])[1])||null;
+  const anneeApres=anneeFab||anneeMES;
+  const idChange = mode!==u.mode_pressurisation || agent!==u.agent_code || capacite!==+u.capacite_valeur || anneeApres!==anneeActuelleDansId;
   const p={mode_pressurisation:mode,agent_code:agent,capacite_valeur:capacite,capacite_unite:uniteCap,
     date_fabrication:fabrication,date_mise_en_service:miseEnService,agence_id:agenceId,
     marque,modele,numero_serie:serie,notes:notesSaisies,updated_at:new Date().toISOString()};
