@@ -22,6 +22,7 @@ async function exportVerifPDF(verifId){
   const {data:v}=await db.from('verifications').select('*,equipements(*,clients(*)),types_equipements(libelle,icone),agences(nom)').eq('id',verifId).single();
   const {data:res}=await db.from('resultats_controle').select('*').eq('verification_id',verifId).order('libelle_snapshot');
   if(!v){toast('Données introuvables','err');return}
+  if(String(v.type_equipement_code||'').startsWith('vgp_'))return exportVGPPDF(v,res||[]);
   const {jsPDF}=window.jspdf;const doc=new jsPDF();
   const eq=v.equipements;const cl=eq?.clients;
   const raisonSocV='Bretagne Formation Sécurité';
@@ -52,6 +53,175 @@ async function exportVerifPDF(verifId){
   }
   if(v.observations){doc.setFontSize(10);doc.text('Observations: '+v.observations.slice(0,150),14,y);y+=10}
   doc.save(`BFS_verif_${eq?.numero_identification||verifId}_${v.date_verification}.pdf`);toast('PDF généré');
+}
+
+// ============================================================
+// PDF — RAPPORT VGP (vérification générale périodique) : engins de levage / chantier / nacelles
+// Structure : p.1 résumé + avis général, p.2 informations complémentaires, p.3 préambule,
+// p.4+ résultats détaillés par section. Pastille en haut à droite = résultat de la VGP.
+// ============================================================
+async function exportVGPPDF(v,res){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'pt',format:'a4'});
+  const eq=v.equipements||{};const cl=eq.clients||{};const ds=eq.donnees_specifiques||{};
+  const ROUGE=[192,57,43],GRIS=[55,55,60],CLAIR=[247,240,238];
+  const W=595,M=36;
+  const nDoc=`${(v.date_verification||'').replace(/-/g,'').slice(2)}-${String(v.id||'').slice(0,4).toUpperCase()}`;
+  const dateInsp=fmt(v.date_verification);
+  const resultat=(v.resultat||'').toLowerCase();
+  const coulRes=resultat==='conforme'?[22,163,74]:resultat==='à surveiller'?[217,119,6]:resultat==='non conforme'?[220,38,38]:resultat==='hors service'?[26,26,46]:[150,150,150];
+  const avis=resultat==='conforme'?"L'examen de l'état de conservation et les essais de fonctionnement réalisés dans la présente mission n'ont pas fait apparaître de défectuosité, ni d'anomalie."
+    :resultat==='à surveiller'?"L'examen a fait apparaître des points à surveiller, sans défectuosité grave. Voir les réserves et observations du présent rapport."
+    :resultat==='non conforme'?"L'examen a fait apparaître des défectuosités ou anomalies. Les réserves détaillées dans le présent rapport doivent être levées avant remise en service."
+    :resultat==='hors service'?"Le matériel est déclaré hors service. Il ne doit pas être utilisé tant que les défauts relevés n'ont pas été corrigés et le matériel revérifié.":'—';
+  const libResultat=resultat?resultat.charAt(0).toUpperCase()+resultat.slice(1):'—';
+  const titre=`Vérification générale périodique - N° ${nDoc}`;
+  // Périodicité déduite des dates de vérification / prochaine échéance
+  let periodicite='—';
+  if(v.date_verification&&v.date_prochaine_echeance){
+    const a=new Date(v.date_verification),b=new Date(v.date_prochaine_echeance);
+    const m=Math.round((b-a)/(30.4375*864e5));
+    periodicite=m>0?(m%12===0?`Chaque ${m/12===1?'an':(m/12)+' ans'}`:`Chaque ${m} mois`):'—';
+  }
+  const dispositif=[v.types_equipements?.libelle,ds['ef-type-engin']||ds['e-type-engin']].filter(Boolean).join(' — ')||v.types_equipements?.libelle||'';
+  const energies=(v.energies||[]).map(e=>({electrique:'Électrique',diesel:'Diesel',essence:'Essence',gpl:'GPL / gaz'}[e]||e)).join(' + ');
+  const tech=v.technicien||'—';
+
+  // Pied de page + en-tête (ajoutés sur toutes les pages à la fin)
+  const entetePage=(pageNum)=>{
+    doc.setPage(pageNum);
+    doc.setFillColor(...ROUGE);doc.rect(0,0,W,6,'F');
+    try{doc.addImage(LOGO_BFS,'PNG',M,16,40,40)}catch(e){}
+    doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(...GRIS);doc.text('BFS',M+46,34);
+    doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(110);doc.text('Bretagne Formation Sécurité',M+46,45);
+    doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(...GRIS);doc.text(titre,195,30);
+    doc.setFont('helvetica','normal');doc.setFontSize(9);doc.text(`Date de l'inspection : ${dateInsp}`,195,43);
+    doc.text(pageNum===1?"Résumé de l'inspection":pageNum===2?'Informations complémentaires & observations':pageNum===3?'Compte rendu détaillé de la vérification - Préambule':'Compte rendu détaillé de la vérification - Résultats',195,55);
+    // pastille résultat
+    doc.setFillColor(...coulRes);doc.circle(W-M-14,34,14,'F');
+    doc.setDrawColor(255);doc.setLineWidth(2.2);doc.setTextColor(255);
+    if(resultat==='conforme'){doc.line(W-M-21,34,W-M-16,40);doc.line(W-M-16,40,W-M-7,28)}
+    else if(resultat==='à surveiller'){doc.line(W-M-14,26,W-M-14,36);doc.circle(W-M-14,41,1,'F')}
+    else{doc.line(W-M-20,28,W-M-8,40);doc.line(W-M-8,28,W-M-20,40)}
+  };
+  const titreBloc=(txt,x,y,w)=>{doc.setFillColor(...ROUGE);doc.rect(x,y,w,16,'F');doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(255);doc.text(txt,x+6,y+11.5)};
+  const lignes=(rows,x,y,w,lw)=>{doc.setFontSize(8.5);rows.forEach(([k,val])=>{doc.setFont('helvetica','normal');doc.setTextColor(110);doc.text(k,x+4,y);doc.setFont('helvetica','bold');doc.setTextColor(30);const t=doc.splitTextToSize(String(val||'—'),w-lw-8);doc.text(t,x+lw,y);y+=Math.max(13,t.length*11)});return y};
+
+  // ---------- PAGE 1 : RÉSUMÉ ----------
+  const colW=(W-2*M-16)/2,xR=M+colW+16;
+  let y=78;
+  titreBloc('Information matériel',M,y,colW);titreBloc('Informations clients',xR,y,colW);
+  let y1=lignes([['Dispositif',dispositif],['Marque',eq.marque],['Modèle',eq.modele],['N° Série',eq.numero_serie||eq.numero_identification],['Énergie',energies],['Compteur horamètre',ds['ef-horametre']||ds['e-horametre']],['Mise en service',eq.date_mise_en_service?new Date(eq.date_mise_en_service).getFullYear():null]],M,y+30,colW,88);
+  let y2=lignes([['Société',cl.raison_sociale],['Adresse',cl.adresse],['Code postal / Ville',`${cl.code_postal||''} ${cl.ville||''}`.trim()],['Téléphone',cl.telephone],['Email',cl.email]],xR,y+30,colW,88);
+  y=Math.max(y1,y2)+10;
+  titreBloc('Localisation',M,y,colW);titreBloc('Calendrier des inspections',xR,y,colW);
+  y1=lignes([['Emplacement',eq.localisation],['Zone / étage',eq.etage_zone]],M,y+30,colW,88);
+  y2=lignes([['Périodicité des visites',periodicite],["Date de l'inspection",dateInsp],['Prochaine vérification le',fmt(v.date_prochaine_echeance)]],xR,y+30,colW,110);
+  y=Math.max(y1,y2)+10;
+  titreBloc('Avis général',M,y,W-2*M);y+=16;
+  doc.setFillColor(...(resultat==='conforme'?[232,246,238]:resultat==='à surveiller'?[254,243,226]:[253,236,234]));
+  const tav=doc.splitTextToSize(avis,W-2*M-16);doc.rect(M,y,W-2*M,tav.length*12+14,'F');
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(30);doc.text(tav,M+8,y+14);
+  doc.setFont('helvetica','bold');doc.setTextColor(...coulRes);doc.text(`Résultat : ${libResultat}`,W-M-8,y+tav.length*12+8,{align:'right'});
+  y+=tav.length*12+28;
+  titreBloc('Références légales',M,y,W-2*M);y+=28;
+  doc.setFont('helvetica','normal');doc.setFontSize(8.3);doc.setTextColor(50);
+  const leg=doc.splitTextToSize("Visite effectuée conformément aux obligations de vérification fixées par les articles R4323-23 et R4323-24 du Code du travail et l'arrêté du 1er mars 2004 relatif aux vérifications des appareils et accessoires de levage, ainsi que les arrêtés applicables aux équipements de travail mobiles. Les vérifications sont effectuées par des personnes qualifiées dont la liste est tenue à disposition de l'inspecteur du travail, du contrôleur du travail, des agents des services de prévention des organismes de sécurité sociale ainsi que de l'organisme professionnel d'hygiène, de sécurité et des conditions de travail.",W-2*M-8);
+  doc.text(leg,M+4,y);y+=leg.length*10.5+12;
+  titreBloc('Bureau de contrôle',M,y,colW);titreBloc('Contrôleur',xR,y,colW);
+  y1=lignes([['Société','BFS'],['Adresse','ZAE de l\'Epaud, Saint Michel Mont Mercure, 85700 Sévremont'],['Téléphone','02 51 57 75 65'],['Email','contact@bfs-prevention.fr']],M,y+30,colW,60);
+  y2=lignes([['Contrôle effectué par',tech],['Agence',v.agences?.nom]],xR,y+30,colW,100);
+  y=Math.max(y1,y2)+8;
+  titreBloc('Signature client',M,y,W-2*M);y+=28;
+  doc.setFont('helvetica','italic');doc.setFontSize(7.8);doc.setTextColor(90);
+  const sg=doc.splitTextToSize("En signant ce rapport, le client déclare avoir pris connaissance de son contenu et des défauts éventuellement constatés pendant l'inspection.",W-2*M-190);doc.text(sg,M+4,y);
+  doc.setDrawColor(190);doc.setLineWidth(.6);doc.rect(W-M-170,y-8,170,48);doc.setFont('helvetica','normal');doc.setFontSize(7);doc.text('Nom, date et signature',W-M-166,y+36);
+
+  // ---------- PAGE 2 : INFORMATIONS COMPLÉMENTAIRES ----------
+  doc.addPage();y=78;
+  titreBloc('Information matériel',M,y,colW);titreBloc('Déroulement de l\'inspection',xR,y,colW);
+  y1=lignes([['Dispositif',dispositif],['Marque',eq.marque],['Modèle',eq.modele],['N° Série',eq.numero_serie||eq.numero_identification]],M,y+30,colW,88);
+  y2=lignes([["Date de l'inspection",dateInsp],['Lieu de la vérification',[eq.localisation,eq.etage_zone].filter(Boolean).join(' / ')||cl.ville],['Inspection effectuée par',tech]],xR,y+30,colW,110);
+  y=Math.max(y1,y2)+14;
+  const nonConf=res.filter(r=>r.type_reponse==='oui_non'&&r.valeur_oui_non===false);
+  titreBloc('Conclusions & observations',M,y,W-2*M);y+=30;
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(30);
+  const concl=v.observations||(nonConf.length?'Voir les réserves ci-dessous.':'Rien à signaler');
+  const tc=doc.splitTextToSize(concl,W-2*M-8);doc.text(tc,M+4,y);y+=tc.length*11+14;
+  if(nonConf.length){
+    titreBloc('Réserves relevées',M,y,W-2*M);y+=22;
+    doc.autoTable({startY:y,margin:{left:M,right:M},head:[['Section','Point','Réserve']],body:nonConf.map(r=>[r.section_snapshot||'—',r.libelle_snapshot,'À corriger']),styles:{fontSize:8.5,cellPadding:3},headStyles:{fillColor:ROUGE},theme:'grid'});
+    y=doc.lastAutoTable.finalY+14;
+  }
+  const pieces=Array.isArray(v.pieces_utilisees)?v.pieces_utilisees:[];
+  if(pieces.length){
+    titreBloc('Pièces / interventions',M,y,W-2*M);y+=22;
+    doc.autoTable({startY:y,margin:{left:M,right:M},head:[['Pièce','Action']],body:pieces.map(p=>[p.libelle||p.nom||'—',p.type_action||'—']),styles:{fontSize:8.5,cellPadding:3},headStyles:{fillColor:ROUGE},theme:'grid'});
+  }
+
+  // ---------- PAGE 3 : PRÉAMBULE ----------
+  doc.addPage();y=84;
+  doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...ROUGE);doc.text('IMPORTANT',M,y);y+=14;
+  doc.setFont('helvetica','normal');doc.setFontSize(8.6);doc.setTextColor(40);
+  const pre=["L'état de conservation visuel est réalisé sans démontage ni nettoyage de l'appareil par le vérificateur. Les accès doivent être facilités pour la vérification, par des moyens adaptés mis à disposition par le client.",
+   "Les essais en charge sont réalisés à partir des charges amenées à pied d'œuvre par le client. En outre, si ces charges le permettent, le vérificateur procède à la vérification des limiteurs de charge.",
+   "Le personnel nécessaire à la conduite et à la manipulation des engins ou appareils est mis à disposition par le chef d'établissement.",
+   "Les résultats de cette vérification devront être consignés sur le registre de sécurité par le chef d'établissement.",
+   "Au vu du rapport, il appartient au chef d'établissement de décider des mesures à prendre concernant le dispositif vérifié et de prescrire le maintien ou non en service de ce dernier et/ou les réparations à effectuer.",
+   "Sont exclues des missions de base la vérification des règles techniques mises en œuvre par les constructeurs ainsi que la vérification des aptitudes des personnes accompagnantes et le respect des consignes."];
+  pre.forEach(p=>{const t=doc.splitTextToSize(p,W-2*M);doc.text(t,M,y);y+=t.length*11+6});
+  y+=6;doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...ROUGE);doc.text('Légende du rapport',M,y);y+=6;
+  doc.autoTable({startY:y,margin:{left:M,right:M},head:[],body:[['Conforme','Le point examiné ne présente pas d\'anomalie.'],['Réserve','Anomalie constatée : le point est à corriger avant remise en conformité.'],['Valeur / Texte / Date','Mesure ou information relevée par le contrôleur.']],styles:{fontSize:8.5,cellPadding:4},columnStyles:{0:{fontStyle:'bold',cellWidth:120}},theme:'grid'});
+  y=doc.lastAutoTable.finalY+16;
+  doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...ROUGE);doc.text('Liste des points examinés',M,y);y+=12;
+  const sections=[];res.forEach(r=>{const s=r.section_snapshot||'Divers';if(!sections.includes(s))sections.push(s)});
+  doc.setFont('helvetica','normal');doc.setFontSize(8.8);doc.setTextColor(40);
+  sections.forEach(s=>{doc.text('•  '+s.toUpperCase(),M+6,y);y+=12});
+
+  // ---------- PAGES 4+ : RÉSULTATS ----------
+  doc.addPage();
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...GRIS);doc.text('RÉSULTAT DE L\'INSPECTION',M,82);
+  y=92;
+  // Ordre des points = ordre du template quand disponible
+  let ordreMap={};
+  try{const ids=res.map(r=>r.point_controle_id).filter(Boolean);if(ids.length){const {data:pc}=await db.from('points_controle').select('id,ordre').in('id',ids);(pc||[]).forEach(p=>ordreMap[p.id]=p.ordre)}}catch(e){}
+  const rang=r=>ordreMap[r.point_controle_id]??9999;
+  sections.forEach(s=>{
+    const rows=res.filter(r=>(r.section_snapshot||'Divers')===s).sort((a,b)=>rang(a)-rang(b));
+    doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...GRIS);
+    if(y>760){doc.addPage();y=84}
+    doc.text(s.toUpperCase(),M,y+8);
+    doc.autoTable({startY:y+14,margin:{left:M,right:M,top:84},theme:'grid',
+      head:[['','Libellé','Mesure / information','État','Réserve']],
+      body:rows.map(r=>{
+        let mesure='',etat='Conforme',reserve='';
+        if(r.type_reponse==='oui_non'){if(r.valeur_oui_non===false){etat='Non conforme';reserve='Réserve'}else if(r.valeur_oui_non==null)etat='—'}
+        else{etat='Relevé';mesure=r.type_reponse==='numerique'?(r.valeur_numerique!=null?String(r.valeur_numerique):'—'):r.type_reponse==='texte'?(r.valeur_texte||'—'):fmt(r.valeur_date)}
+        return['',r.libelle_snapshot,mesure,etat,reserve];
+      }),
+      styles:{fontSize:8.3,cellPadding:3,lineColor:[210,210,210],lineWidth:.4,textColor:[30,30,30]},
+      headStyles:{fillColor:ROUGE,textColor:255,fontSize:8},
+      columnStyles:{0:{cellWidth:20},2:{cellWidth:90,halign:'center'},3:{cellWidth:72,halign:'center'},4:{cellWidth:56,halign:'center'}},
+      didParseCell:d=>{if(d.section==='body'&&d.column.index===3){const t=d.cell.text[0];if(t==='Non conforme')d.cell.styles.textColor=[220,38,38];else if(t==='Conforme')d.cell.styles.textColor=[22,120,60]}},
+      didDrawCell:d=>{
+        if(d.section==='body'&&d.column.index===0){
+          const nok=d.row.raw[3]==='Non conforme';const cx=d.cell.x+10,cy=d.cell.y+d.cell.height/2;
+          if(d.row.raw[3]==='Relevé')return;
+          doc.setLineWidth(1.6);
+          if(nok){doc.setDrawColor(220,38,38);doc.line(cx-3,cy-3,cx+3,cy+3);doc.line(cx+3,cy-3,cx-3,cy+3)}
+          else{doc.setDrawColor(22,163,74);doc.line(cx-4,cy,cx-1,cy+3.5);doc.line(cx-1,cy+3.5,cx+4.5,cy-4)}
+        }}
+    });
+    y=doc.lastAutoTable.finalY+16;
+  });
+
+  // En-tête + pied de page sur toutes les pages
+  const n=doc.getNumberOfPages();
+  for(let i=1;i<=n;i++){
+    entetePage(i);
+    doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(100);
+    doc.text(`Destinataire: ${cl.raison_sociale||'—'} | Inspection N° ${nDoc} | Date Inspection: ${dateInsp} | page ${i} / ${n}`,W/2,825,{align:'center'});
+  }
+  doc.save(`BFS_VGP_${(eq.numero_identification||'').replace(/[^\w-]/g,'_')}_${v.date_verification}.pdf`);toast('Rapport VGP généré');
 }
 
 // ============================================================
