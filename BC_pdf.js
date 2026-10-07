@@ -52,7 +52,53 @@ async function exportVerifPDF(verifId){
     });y=doc.lastAutoTable.finalY+8;
   }
   if(v.observations){doc.setFontSize(10);doc.text('Observations: '+v.observations.slice(0,150),14,y);y+=10}
+  const photosS=await chargerPhotosVerifPDF(verifId);
+  if(photosS.length){doc.setTextColor(0);ajouterPhotosPDF(doc,photosS,{M:14,y:y+4,u:0.3528,top:15})}
   doc.save(`BFS_verif_${eq?.numero_identification||verifId}_${v.date_verification}.pdf`);toast('PDF généré');
+}
+
+// ============================================================
+// PHOTOS D'ANOMALIE dans les rapports PDF (tous types d'équipement)
+// Les photos sont dans un bucket privé : URL signée courte durée → data URL pour jsPDF.
+// ============================================================
+async function chargerPhotosVerifPDF(verifId){
+  const out=[];
+  try{
+    const {data}=await db.from('photos_verification').select('photo_path,legende,created_at').eq('verification_id',verifId).order('created_at');
+    for(const p of (data||[])){
+      try{
+        const {data:s}=await db.storage.from('photos-verification').createSignedUrl(p.photo_path,300);
+        if(!s?.signedUrl)continue;
+        const blob=await (await fetch(s.signedUrl)).blob();
+        const du=await new Promise((ok,ko)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=ko;r.readAsDataURL(blob)});
+        const dim=await new Promise(ok=>{const im=new Image();im.onload=()=>ok({w:im.width,h:im.height});im.onerror=()=>ok({w:4,h:3});im.src=du});
+        out.push({legende:p.legende||'',du,...dim});
+      }catch(e){}
+    }
+  }catch(e){}
+  return out;
+}
+// Photos en grille 2 colonnes avec légende. u = unité de la page (1 = pt, 0.3528 = mm), top = marge haute après en-tête.
+function ajouterPhotosPDF(doc,photos,{M,y,u=1,top=84,titre='Photos des anomalies',couleur=[192,57,43]}){
+  if(!photos.length)return y;
+  const pw=doc.internal.pageSize.getWidth(),ph=doc.internal.pageSize.getHeight();
+  const colW=(pw-2*M-12*u)/2,boxH=colW*0.75,cell=boxH+16*u;
+  if(y+cell+24*u>ph-40*u){doc.addPage();y=top}
+  doc.setFillColor(...couleur);doc.rect(M,y,pw-2*M,16*u,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(255);doc.text(titre,M+6*u,y+11.5*u);
+  y+=24*u;
+  photos.forEach((p,i)=>{
+    const col=i%2;
+    if(col===0&&i>0)y+=cell;
+    if(col===0&&y+cell>ph-40*u){doc.addPage();y=top}
+    const x=M+col*(colW+12*u);
+    const r=Math.min(colW/p.w,boxH/p.h),w=p.w*r,h=p.h*r;
+    try{doc.addImage(p.du,'JPEG',x+(colW-w)/2,y+(boxH-h)/2,w,h)}catch(e){}
+    doc.setDrawColor(210);doc.setLineWidth(.4);doc.rect(x,y,colW,boxH);
+    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(60);
+    doc.text(doc.splitTextToSize(p.legende||'Photo générale',colW)[0],x,y+boxH+10*u);
+  });
+  return y+cell;
 }
 
 // ============================================================
@@ -213,6 +259,10 @@ async function exportVGPPDF(v,res){
     });
     y=doc.lastAutoTable.finalY+16;
   });
+
+  // Photos d'anomalie (nouvelle page)
+  const photosV=await chargerPhotosVerifPDF(v.id);
+  if(photosV.length){doc.addPage();ajouterPhotosPDF(doc,photosV,{M,y:84,top:84})}
 
   // En-tête + pied de page sur toutes les pages
   const n=doc.getNumberOfPages();

@@ -2334,7 +2334,8 @@ function vgpItemHtml(p){
   else if(p.type_reponse==='texte')corps=`<input type="text" class="pc-val-input" id="pcv-${p.id}" value="${sv??''}" placeholder="Saisir…">`;
   else if(p.type_reponse==='date')corps=`<input type="date" class="pc-val-input" id="pcv-${p.id}" value="${sv??''}">`;
   const sec=(p.section||'').replace(/"/g,'&quot;');
-  return`<div class="pc-item${sv===true?' ok':sv===false?' nok':''}" id="pci-${p.id}" data-section="${sec}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div class="pc-label${p.obligatoire?' req':''}" style="flex:1">${p.libelle}</div>${x}</div>${corps}</div>`;
+  const ph=p.type_reponse==='oui_non'?btnPhotoPointHtml(p.id):'';
+  return`<div class="pc-item${sv===true?' ok':sv===false?' nok':''}" id="pci-${p.id}" data-section="${sec}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div class="pc-label${p.obligatoire?' req':''}" style="flex:1">${p.libelle}</div>${x}</div>${corps}${ph}</div>`;
 }
 function vgpRender(){
   const el=$('vgp-sections');if(!el||!_vgp)return;
@@ -2534,6 +2535,7 @@ async function ouvrirVerif(equipId){
               <button class="pc-btn ${okSel}" onclick="selectPC('${p.id}',true)">✓ OK</button>
               <button class="pc-btn ${nokSel}" onclick="selectPC('${p.id}',false)">✗ NON</button>
             </div>
+            ${btnPhotoPointHtml(p.id)}
           </div>`;
         } else if(p.type_reponse==='numerique'){
           return`<div class="pc-item" id="pci-${p.id}">
@@ -3129,7 +3131,7 @@ async function enregistrerVerifHorsLigne(verifPayload,points,obs,echeance){
   // Photos (2 max pour rester dans les limites de stockage local)
   const photos=[];
   for(const ph of currentPhotosVerif.slice(0,2)){
-    try{photos.push(await blobVersDataUrl(ph.blob))}catch(e){}
+    try{photos.push({du:await blobVersDataUrl(ph.blob),legende:ph.legende||null})}catch(e){}
   }
   if(currentPhotosVerif.length>2)toast('Hors-ligne : seules 2 photos sont conservées','err');
   const item={
@@ -3186,14 +3188,15 @@ async function syncVerifsHorsLigne(){
       }
       if(utilisees.length)await db.from('verifications').update({pieces_utilisees:utilisees}).eq('id',vData.id);
       // Photos
-      for(const du of (item.photos||[])){
+      for(const ph of (item.photos||[])){
         try{
+          const du=typeof ph==='string'?ph:ph.du;const legende=typeof ph==='string'?null:(ph.legende||null);
           const blob=dataUrlVersBlob(du);
           const fileName=`photo_${vData.id}_${Date.now()}_${Math.random().toString(36).slice(2,7)}.jpg`;
           const {error:upErr}=await db.storage.from('photos-verification').upload(fileName,blob,{contentType:'image/jpeg'});
           if(!upErr){
             const {data:urlData}=db.storage.from('photos-verification').getPublicUrl(fileName);
-            await db.from('photos_verification').insert({verification_id:vData.id,equipement_id:item.equipement_id,photo_url:urlData.publicUrl,photo_path:fileName,pris_par:ME?.id||item.verifPayload.technicien_id});
+            await db.from('photos_verification').insert({verification_id:vData.id,equipement_id:item.equipement_id,photo_url:urlData.publicUrl,photo_path:fileName,legende,pris_par:ME?.id||item.verifPayload.technicien_id});
           }
         }catch(e){}
       }
@@ -3306,6 +3309,7 @@ async function _validerVerifInterne(equip){
         equipement_id: currentEquipId,
         photo_url: urlData.publicUrl,
         photo_path: fileName,
+        legende: photo.legende||null,
         pris_par: ME.id
       });
       photosUploadees.push(urlData.publicUrl);
@@ -4980,13 +4984,34 @@ async function ensureTypesTerrain(){
 // ============================================================
 let currentPhotosVerif = [];
 
+let _photoCible=null; // {pid, libelle} si la photo est prise depuis un point de contrôle
 function prendrePhotoAnomalie(){
+  _photoCible=null;
   $('verif-photo-input').click();
+}
+// Photo rattachée à un point de contrôle (légende = libellé du point, reprise dans le rapport PDF)
+function photoPoint(pid){
+  const it=$('pci-'+pid);
+  const lib=it?.querySelector('.pc-label')?.textContent?.trim()||'';
+  _photoCible={pid,libelle:lib};
+  $('verif-photo-input').click();
+}
+function majCompteursPhotosPoints(){
+  document.querySelectorAll('[id^="pph-"]').forEach(el=>{
+    const pid=el.id.slice(4);
+    const n=currentPhotosVerif.filter(p=>p.pid===pid).length;
+    el.textContent=n?`${n} photo${n>1?'s':''}`:'';
+  });
+}
+function btnPhotoPointHtml(pid){
+  const n=currentPhotosVerif.filter(p=>p.pid===pid).length;
+  return`<div style="margin-top:6px;display:flex;align-items:center;gap:8px"><button type="button" class="btn btn-s btn-sm" style="padding:4px 10px;font-size:12px" onclick="photoPoint('${pid}')">📷 Photo</button><span id="pph-${pid}" style="font-size:11px;color:var(--txt-l)">${n?`${n} photo${n>1?'s':''}`:''}</span></div>`;
 }
 
 function onPhotoSelected(input){
   const file = input.files[0];
   if(!file) return;
+  const cible=_photoCible;_photoCible=null;
   // Compresser l'image avant stockage (limite ~1200px de large)
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -5001,8 +5026,8 @@ function onPhotoSelected(input){
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       canvas.toBlob((blob) => {
         const previewUrl = URL.createObjectURL(blob);
-        currentPhotosVerif.push({blob, previewUrl});
-        renderPhotosVerif();
+        currentPhotosVerif.push({blob, previewUrl, pid:cible?.pid||null, legende:cible?.libelle||null});
+        renderPhotosVerif();majCompteursPhotosPoints();
       }, 'image/jpeg', 0.75);
     };
     img.src = e.target.result;
@@ -5021,6 +5046,7 @@ function renderPhotosVerif(){
   el.innerHTML = currentPhotosVerif.map((p,i)=>`
     <div style="position:relative;width:84px;height:84px">
       <img src="${p.previewUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:10px;border:1.5px solid #e5e7eb">
+      ${p.legende?`<div style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;line-height:1.1;padding:2px 4px;border-radius:0 0 10px 10px;overflow:hidden;max-height:26px">${p.legende}</div>`:''}
       <button type="button" onclick="supprimerPhotoVerif(${i})" style="position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;background:#dc2626;color:#fff;border:2px solid #fff;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>
     </div>
   `).join('');
@@ -5028,7 +5054,7 @@ function renderPhotosVerif(){
 
 function supprimerPhotoVerif(idx){
   currentPhotosVerif.splice(idx,1);
-  renderPhotosVerif();
+  renderPhotosVerif();majCompteursPhotosPoints();
 }
 
 // ============================================================
