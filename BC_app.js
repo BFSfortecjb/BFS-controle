@@ -56,6 +56,7 @@ async function saveChangePwd(){
 // DASHBOARD TECHNICIEN
 // ============================================================
 async function loadDashTech(){
+  chargerMissions().then(renderMissionsTech);
   const vis=ME.visibilite||'perso';
   const tabs=$('dash-tech-tabs');tabs.innerHTML='';tabs.style.display='none';
   let q=db.from('vue_echeances').select('*').order('date_prochaine_echeance');
@@ -260,6 +261,7 @@ async function loadCaMarge(){
 // DASHBOARD SECRÉTARIAT
 // ============================================================
 async function loadDashSec(){
+  chargerMissions().then(renderMissionsSec);
   const [{data:ec},{data:rdvSem}]=await Promise.all([
     db.from('vue_echeances').select('*'),
     db.from('vue_planning').select('*').gte('date_rdv',dateLocale(new Date())).lte('date_rdv',dateLocale(new Date(Date.now()+7*86400000)))
@@ -411,7 +413,11 @@ async function loadPlanningPage(){
 // ============================================================
 // RDV
 // ============================================================
+// Quand un RDV est créé depuis une mission (voir planifierMission ci-dessous), on retient
+// l'id de la mission ici pour la faire passer en "planifiee" et la lier au RDV une fois créé.
+let _missionEnPlanification=null;
 async function openRdvModal(prefill=null){
+  _missionEnPlanification=null;
   if(!clients.length)await loadClients();
   $('rdv-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
   $('rdv-tech').innerHTML=profils.map(p=>`<option value="${p.id}">${p.prenom||''} ${p.nom}</option>`).join('');
@@ -430,10 +436,17 @@ async function saveRdv(){
   const id=$('rdv-id').value;
   const p={client_id:$('rdv-client').value,technicien_id:$('rdv-tech').value||null,date_rdv:$('rdv-date').value,heure_debut:$('rdv-heure').value||null,duree_minutes:parseInt($('rdv-duree').value)||60,type_intervention:$('rdv-type-int').value,statut:$('rdv-statut').value,notes:$('rdv-notes').value.trim(),cree_par:ME.id,updated_at:new Date().toISOString()};
   if(!p.client_id||!p.date_rdv){toast('Client et date obligatoires','err');return}
-  const {error}=id?await db.from('rdv').update(p).eq('id',id):await db.from('rdv').insert(p);
+  const {data:rdvSauve,error}=id?await db.from('rdv').update(p).eq('id',id).select().single():await db.from('rdv').insert(p).select().single();
   if(error){toast('Erreur: '+error.message,'err');return}
+  const missionId=_missionEnPlanification;_missionEnPlanification=null;
+  if(missionId&&rdvSauve){
+    await db.from('missions').update({statut:'planifiee',rdv_id:rdvSauve.id,updated_at:new Date().toISOString()}).eq('id',missionId);
+    if(typeof majBadgeMissionsNav==='function')majBadgeMissionsNav();
+  }
   toast(id?'RDV modifié':'RDV créé');CM('mo-rdv');
-  if($('page-dash-sec').classList.contains('active'))loadDashSec();else loadPlanningPage();
+  if($('page-dash-sec').classList.contains('active'))loadDashSec();
+  else if($('page-dash-tech').classList.contains('active'))loadDashTech();
+  else loadPlanningPage();
 }
 async function deleteRdv(){
   const id=$('rdv-id').value;
@@ -443,6 +456,100 @@ async function deleteRdv(){
   if(error){toast('Erreur: '+error.message,'err');return}
   toast('RDV supprimé');CM('mo-rdv');
   if($('page-dash-sec').classList.contains('active'))loadDashSec();else loadPlanningPage();
+}
+
+// ============================================================
+// MISSIONS — le secrétariat confie une mission à un technicien pour un client
+// (ex : "aller remplir un extincteur"). Le technicien la voit en attente sur son
+// tableau de bord et choisit lui-même quand la planifier (création d'un RDV lié).
+// ============================================================
+async function openMissionModal(clientIdPrefill){
+  if(!clients.length)await loadClients();
+  if(!profils.length){const {data}=await db.from('profils').select('*').eq('actif',true).order('nom');profils=data||[];}
+  $('ms-client').innerHTML=clients.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
+  const techs=profils.filter(p=>p.role==='technicien');
+  $('ms-tech').innerHTML=techs.map(p=>`<option value="${p.id}">${p.prenom||''} ${p.nom}</option>`).join('');
+  $('ms-id').value='';$('ms-titre').value='';$('ms-description').value='';
+  if(clientIdPrefill)$('ms-client').value=clientIdPrefill;
+  OM('mo-mission');
+}
+async function saveMission(){
+  const clientId=$('ms-client').value,techId=$('ms-tech').value,titre=$('ms-titre').value.trim();
+  if(!clientId||!techId||!titre){toast('Client, technicien et titre obligatoires','err');return}
+  const client=clients.find(c=>c.id===clientId);
+  const p={client_id:clientId,technicien_id:techId,agence_id:client?.agence_id||null,titre,description:$('ms-description').value.trim()||null,statut:'a_planifier',cree_par:ME.id};
+  const {error}=await db.from('missions').insert(p);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  toast('Mission envoyée au technicien');CM('mo-mission');
+  if($('page-dash-sec').classList.contains('active'))loadDashSec();
+}
+let _missions=[];
+async function chargerMissions(){
+  const {data,error}=await db.from('missions').select('*,clients(raison_sociale,contact_telephone,contact_nom),profils!technicien_id(nom,prenom)').neq('statut','annulee').order('created_at',{ascending:false});
+  if(error){console.error('Erreur missions:',error);_missions=[];return}
+  _missions=data||[];
+}
+function badgeStatutMission(s){
+  return {a_planifier:'<span class="badge" style="background:#fef3c7;color:#b45309">À planifier</span>',
+    planifiee:'<span class="badge" style="background:#dbeafe;color:#1d4ed8">Planifiée</span>',
+    terminee:'<span class="badge" style="background:#dcfce7;color:#15803d">Terminée</span>'}[s]||s;
+}
+// Carte "Missions à planifier" sur le tableau de bord du technicien — sert de notification :
+// dès qu'il ouvre son tableau de bord (page d'accueil par défaut), il voit ce qui l'attend.
+// Règle imposée par Jeremy : il faut d'abord appeler le client (bouton "📞 Appeler", qui ouvre
+// le composeur d'appel du téléphone/PC ET marque la mission comme contactée) avant que le
+// bouton "📅 Planifier" n'apparaisse — on ne fixe pas de RDV sans avoir prévenu le client.
+function renderMissionsTech(){
+  const mine=_missions.filter(m=>m.technicien_id===ME.id&&m.statut==='a_planifier');
+  const card=$('dash-tech-missions-card'),el=$('dash-tech-missions');
+  if(!mine.length){card.style.display='none';return}
+  card.style.display='block';
+  el.innerHTML=mine.map(m=>{
+    const tel=m.clients?.contact_telephone;
+    const actionHtml=m.contacte_le
+      ?`<button class="btn btn-p btn-sm" onclick="planifierMission('${m.id}')">📅 Planifier</button>`
+      :(tel
+        ?`<a class="btn btn-p btn-sm" href="tel:${tel}" onclick="marquerMissionContactee('${m.id}')" style="text-decoration:none">📞 Appeler ${tel}</a>`
+        :`<button class="btn btn-p btn-sm" onclick="marquerMissionContactee('${m.id}')">✅ Client contacté</button>`);
+    return `<div style="padding:10px 14px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <div><strong>${m.clients?.raison_sociale||'—'}</strong> — ${m.titre}${m.description?`<br><small style="color:var(--txt-l)">${m.description}</small>`:''}${m.contacte_le?`<br><small style="color:#15803d">📞 Client contacté à ${new Date(m.contacte_le).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</small>`:''}</div>
+    <div style="display:flex;gap:6px;flex-shrink:0">${actionHtml}<button class="btn btn-s btn-sm" onclick="terminerMissionSansRdv('${m.id}')" title="Marquer comme faite sans RDV">✅</button></div>
+  </div>`;
+  }).join('');
+}
+window.marquerMissionContactee=async function(id){
+  const {error}=await db.from('missions').update({contacte_le:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  await chargerMissions();renderMissionsTech();
+};
+window.planifierMission=async function(id){
+  const m=_missions.find(x=>x.id===id);if(!m)return;
+  if(!m.contacte_le){toast('Contacte d\'abord le client avant de planifier','err');return}
+  await openRdvModal({client_id:m.client_id,technicien_id:m.technicien_id,notes:m.titre+(m.description?' — '+m.description:'')});
+  _missionEnPlanification=id;
+};
+window.terminerMissionSansRdv=async function(id){
+  if(!confirm('Marquer cette mission comme terminée sans créer de RDV ?'))return;
+  const {error}=await db.from('missions').update({statut:'terminee',updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  toast('Mission terminée');await chargerMissions();renderMissionsTech();
+  if(typeof majBadgeMissionsNav==='function')majBadgeMissionsNav();
+};
+window.annulerMission=async function(id){
+  if(!confirm('Annuler cette mission ?'))return;
+  const {error}=await db.from('missions').update({statut:'annulee',updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  toast('Mission annulée');await chargerMissions();renderMissionsSec();
+};
+// Carte de suivi côté secrétariat — statut de toutes les missions en cours.
+function renderMissionsSec(){
+  const el=$('sec-missions');if(!el)return;
+  const data=_missions.filter(m=>m.statut!=='terminee');
+  if(!data.length){el.innerHTML='<div class="t-empty">Aucune mission en cours</div>';return}
+  el.innerHTML=data.map(m=>`<div style="padding:10px 14px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <div><strong>${m.clients?.raison_sociale||'—'}</strong> — ${m.titre}<br><small style="color:var(--txt-l)">${m.profils?.prenom||''} ${m.profils?.nom||''}</small></div>
+    <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">${badgeStatutMission(m.statut)}${m.statut==='a_planifier'?`<button class="btn btn-s btn-xs" onclick="annulerMission('${m.id}')">🗑</button>`:''}</div>
+  </div>`).join('');
 }
 
 // ============================================================
@@ -471,7 +578,7 @@ function renderClients(){
   el.innerHTML=`<table><thead><tr><th>Raison sociale</th><th>Agence</th><th>Ville</th><th>Contact</th><th>Téléphone</th><th>Actions</th></tr></thead><tbody>${data.map(c=>`<tr${c.actif===false?' style="opacity:.55"':''}>
     <td><strong>${c.raison_sociale}</strong>${c.actif===false?' <span class="badge" style="background:#e5e7eb;color:#6b7280">Inactif</span>':''}${!_clientsAvecContrat.has(c.id)?' <span class="badge" style="background:#fee2e2;color:#b91c1c" title="Aucun contrat en base">⚠ Sans contrat</span>':''}</td><td><span class="badge bg">${c.agences?.nom||'—'}</span></td>
     <td>${c.ville||'—'}</td><td>${c.contact_nom||'—'}</td><td>${c.contact_telephone||'—'}</td>
-    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="voirFicheClient('${c.id}')" title="Consulter la fiche (lecture seule)">👁️</button><button class="btn btn-s btn-xs" onclick="editClient('${c.id}')" title="Modifier">✏️</button><button class="btn btn-s btn-xs" onclick="voirContratsClient('${c.raison_sociale.replace(/'/g,"\\'")}')" title="Voir les contrats de ce client">📋</button><button class="btn btn-s btn-xs" onclick="voirHistoriqueExtincteursClient('${c.id}')" title="Tous les extincteurs passés chez ce client">🧯</button><button class="btn btn-s btn-xs" onclick="deleteClient('${c.id}')">🗑</button></div></td>
+    <td><div class="ia"><button class="btn btn-s btn-xs" onclick="voirFicheClient('${c.id}')" title="Consulter la fiche (lecture seule)">👁️</button><button class="btn btn-s btn-xs" onclick="editClient('${c.id}')" title="Modifier">✏️</button><button class="btn btn-s btn-xs" onclick="openMissionModal('${c.id}')" title="Confier une mission à un technicien pour ce client">🎯</button><button class="btn btn-s btn-xs" onclick="voirContratsClient('${c.raison_sociale.replace(/'/g,"\\'")}')" title="Voir les contrats de ce client">📋</button><button class="btn btn-s btn-xs" onclick="voirHistoriqueExtincteursClient('${c.id}')" title="Tous les extincteurs passés chez ce client">🧯</button><button class="btn btn-s btn-xs" onclick="deleteClient('${c.id}')">🗑</button></div></td>
   </tr>`).join('')}</tbody></table>`;
 }
 // readOnly=true : fiche de consultation (œil) — mêmes champs que la modale d'édition mais
@@ -1085,17 +1192,138 @@ async function onVerifEquipChange(){
     }
   }
 
+  // VGP chariot / nacelle / engin TP : template par sections et énergies (voir plus bas)
+  const catVgp=vgpCategorieB(equip);
+  if(catVgp){vgpInitB(equip,(pts||[]).filter(p=>p.categorie===catVgp));return}
+  _vgpB=null;
+
   const marque=(equip?.marque||'').toLowerCase();const modele=(equip?.modele||'').toLowerCase();
   const filtered=(pts||[]).filter(p=>{if(!p.marque&&!p.modele)return true;if(p.marque&&marque&&p.marque.toLowerCase()===marque){if(!p.modele)return true;if(p.modele&&modele&&p.modele.toLowerCase()===modele)return true;return false}return false});
-  $('pc-list').innerHTML=filtered.map(p=>{
+  $('pc-list').innerHTML=filtered.map((p,i)=>{
+    const entete=(p.section&&p.section!==filtered[i-1]?.section)?`<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-l);margin:${i?14:0}px 0 6px">${p.section}</div>`:'';
     let inp='';
     if(p.type_reponse==='oui_non')inp=`<div class="pc-radio"><label onclick="selPC(this,'ok','pc-${p.id}')"><input type="radio" name="pc-${p.id}" value="oui">✓ OK</label><label onclick="selPC(this,'nok','pc-${p.id}')"><input type="radio" name="pc-${p.id}" value="non">✗ NON</label></div>`;
     else if(p.type_reponse==='numerique')inp=`<input type="number" step="0.01" id="pcv-${p.id}" class="pc-val-input" placeholder="${p.unite||'valeur'}">`;
     else if(p.type_reponse==='texte')inp=`<input type="text" id="pcv-${p.id}" class="pc-val-input" placeholder="Saisir…">`;
     else if(p.type_reponse==='date')inp=`<input type="date" id="pcv-${p.id}" class="pc-val-input">`;
-    return`<div class="pc-item" id="pci-${p.id}" data-id="${p.id}" data-type="${p.type_reponse}"><div class="pc-label">${p.libelle}${p.obligatoire?'<span style="color:var(--rouge)">*</span>':''}</div><div>${inp}</div></div>`;
+    return entete+`<div class="pc-item" id="pci-${p.id}" data-id="${p.id}" data-type="${p.type_reponse}"><div class="pc-label">${p.libelle}${p.obligatoire?'<span style="color:var(--rouge)">*</span>':''}</div><div>${inp}</div></div>`;
   }).join('');
 }
+
+// ============================================================
+// TEMPLATE VGP (chariot élévateur / nacelle / engin TP) — même logique que BC_terrain.html :
+// tous les points de la catégorie, regroupés par section ; l'énergie cochée (plusieurs possibles
+// pour une bi-énergie) masque les blocs des autres énergies ; un point ou un bloc peut être retiré.
+// ============================================================
+const VGP_ENERGIES_B=[['electrique','⚡ Électrique'],['diesel','⛽ Diesel'],['essence','⛽ Essence'],['gpl','🔥 GPL / gaz']];
+let _vgpB=null; // {equipId, pts, energies:Set, removed:Set, answers:{}, sections:[[ids]]}
+function vgpCategorieB(equip){
+  const t=equip?.type_equipement_code;
+  if(t==='vgp_nacelle')return'nacelle';
+  if(t==='vgp_engin'){
+    const typeEngin=String(equip.donnees_specifiques?.['e-type-engin']||'');
+    return /chariot/i.test(typeEngin)?'chariot':'engin_tp';
+  }
+  return null;
+}
+function vgpEnergiesDefautB(equip){
+  const e=String(equip?.donnees_specifiques?.['e-energie']||'').toLowerCase();
+  const s=new Set();
+  if(e.includes('lectr'))s.add('electrique');
+  if(e.includes('diesel')||e.includes('gazole'))s.add('diesel');
+  if(e.includes('essence'))s.add('essence');
+  if(e.includes('gpl')||e.includes('gaz'))s.add('gpl');
+  if(e.includes('hybride')){s.add('electrique');s.add('diesel')}
+  return s;
+}
+function vgpSnapshotB(){
+  const snap={};
+  document.querySelectorAll('#vgp-sections-b .pc-item').forEach(it=>{
+    const pid=it.dataset.id;
+    if(it.dataset.type==='oui_non'){
+      if(it.querySelector('label.ok-sel'))snap[pid]=true;else if(it.querySelector('label.nok-sel'))snap[pid]=false;
+    }else{const inp=it.querySelector('input');if(inp)snap[pid]=inp.value}
+  });
+  return snap;
+}
+function vgpItemHtmlB(p){
+  const sv=_vgpB.answers[p.id];
+  const x=`<button type="button" onclick="vgpRetirerB('${p.id}')" title="Retirer ce point (non applicable)" style="background:none;border:none;color:var(--txt-l);font-size:16px;cursor:pointer;flex-shrink:0;padding:0 2px;line-height:1">✕</button>`;
+  let corps='';
+  if(p.type_reponse==='oui_non')corps=`<div class="pc-radio"><label class="${sv===true?'ok-sel':''}" onclick="selPC(this,'ok','pc-${p.id}')"><input type="radio" name="pc-${p.id}" value="oui" ${sv===true?'checked':''}>✓ OK</label><label class="${sv===false?'nok-sel':''}" onclick="selPC(this,'nok','pc-${p.id}')"><input type="radio" name="pc-${p.id}" value="non" ${sv===false?'checked':''}>✗ NON</label></div>`;
+  else if(p.type_reponse==='numerique')corps=`<input type="number" step="0.01" id="pcv-${p.id}" class="pc-val-input" value="${sv??''}" placeholder="${p.unite||'valeur'}">`;
+  else if(p.type_reponse==='texte')corps=`<input type="text" id="pcv-${p.id}" class="pc-val-input" value="${sv??''}" placeholder="Saisir…">`;
+  else if(p.type_reponse==='date')corps=`<input type="date" id="pcv-${p.id}" class="pc-val-input" value="${sv??''}">`;
+  const sec=(p.section||'').replace(/"/g,'&quot;');
+  return`<div class="pc-item${sv===true?' ok':sv===false?' nc':''}" id="pci-${p.id}" data-id="${p.id}" data-type="${p.type_reponse}" data-section="${sec}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div class="pc-label" style="flex:1">${p.libelle}${p.obligatoire?'<span style="color:var(--rouge)">*</span>':''}</div>${x}</div><div>${corps}</div></div>`;
+}
+function vgpRenderB(){
+  const el=$('vgp-sections-b');if(!el||!_vgpB)return;
+  Object.assign(_vgpB.answers,vgpSnapshotB());
+  const visibles=_vgpB.pts.filter(p=>!_vgpB.removed.has(p.id)&&(!p.energies||p.energies.some(e=>_vgpB.energies.has(e))));
+  const ordre=[],parSection={};
+  visibles.forEach(p=>{const s=p.section||'Divers';if(!parSection[s]){parSection[s]=[];ordre.push(s)}parSection[s].push(p)});
+  _vgpB.sections=ordre.map(s=>parSection[s].map(p=>p.id));
+  el.innerHTML=ordre.map((s,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid #e5e7eb"><strong style="font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--txt-l)">${s}</strong><button type="button" class="btn btn-s btn-xs" onclick="vgpRetirerSectionB(${i})" title="Retirer tout ce bloc">🗑 retirer le bloc</button></div>`+parSection[s].map(vgpItemHtmlB).join('')).join('')
+    ||'<div class="t-empty">Aucun point à afficher — coche une énergie ou remets les points retirés.</div>';
+  const nb=_vgpB.removed.size;
+  const r=$('vgp-restore-b');if(r){r.style.display=nb?'inline-flex':'none';r.textContent=`↺ Remettre les points retirés (${nb})`}
+}
+window.vgpToggleEnergieB=function(c){
+  if(_vgpB.energies.has(c))_vgpB.energies.delete(c);else _vgpB.energies.add(c);
+  const b=$('vgp-eb-'+c);if(b)b.classList.toggle('btn-p',_vgpB.energies.has(c));
+  if(b)b.classList.toggle('btn-s',!_vgpB.energies.has(c));
+  vgpRenderB();
+};
+window.vgpRetirerB=function(pid){Object.assign(_vgpB.answers,vgpSnapshotB());_vgpB.removed.add(pid);vgpRenderB()};
+window.vgpRetirerSectionB=function(i){
+  if(!confirm('Retirer tout ce bloc du contrôle ?'))return;
+  Object.assign(_vgpB.answers,vgpSnapshotB());
+  (_vgpB.sections[i]||[]).forEach(id=>_vgpB.removed.add(id));vgpRenderB();
+};
+window.vgpRestaurerB=function(){_vgpB.removed.clear();vgpRenderB()};
+function vgpInitB(equip,pts){
+  _vgpB={equipId:equip.id,pts,energies:vgpEnergiesDefautB(equip),removed:new Set(),answers:{},sections:[]};
+  $('pc-list').innerHTML=`<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:10px">
+    <div style="font-size:12px;font-weight:700;margin-bottom:6px">Énergie de l'appareil <span style="font-weight:400;color:var(--txt-l)">(plusieurs possibles pour une bi-énergie)</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${VGP_ENERGIES_B.map(([c,l])=>`<button type="button" id="vgp-eb-${c}" class="btn ${_vgpB.energies.has(c)?'btn-p':'btn-s'} btn-sm" onclick="vgpToggleEnergieB('${c}')">${l}</button>`).join('')}
+    <button type="button" id="vgp-restore-b" class="btn btn-s btn-sm" style="display:none" onclick="vgpRestaurerB()"></button></div>
+  </div><div id="vgp-sections-b"></div>
+  <button type="button" class="btn btn-s" style="margin-top:8px" onclick="vgpAjouterOuvrirB()">➕ Ajouter un point absent du template</button>
+  <div id="vgp-add-b" style="display:none;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-top:8px">
+    <div class="fg"><label>Point à contrôler *</label><input type="text" id="vgp-add-lib-b" placeholder="Ex : Rétroviseur côté droit"></div>
+    <div class="fg"><label>Bloc</label><select id="vgp-add-sec-b" onchange="$('vgp-add-newsec-b').style.display=this.value==='__new'?'block':'none'"></select>
+      <input type="text" id="vgp-add-newsec-b" placeholder="Nom du nouveau bloc" style="display:none;margin-top:6px"></div>
+    <div class="fg"><label>Type de réponse</label><select id="vgp-add-type-b"><option value="oui_non">OK / NON</option><option value="numerique">Valeur numérique</option><option value="texte">Texte</option><option value="date">Date</option></select></div>
+    ${ME&&ME.role==='admin'?`<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:10px"><input type="checkbox" id="vgp-add-keep-b" style="width:auto"> Garder dans le template (prochains VGP de cette catégorie)</label>`:''}
+    <div style="display:flex;gap:8px"><button type="button" class="btn btn-s" onclick="$('vgp-add-b').style.display='none'">Annuler</button><button type="button" class="btn btn-p" onclick="vgpAjouterB()">Ajouter</button></div>
+  </div>`;
+  _vgpB.type=equip.type_equipement_code;_vgpB.categorie=vgpCategorieB(equip);
+  vgpRenderB();
+}
+window.vgpAjouterOuvrirB=function(){
+  const secs=[...new Set(_vgpB.pts.map(p=>p.section||'Divers'))];
+  $('vgp-add-sec-b').innerHTML=secs.map(s=>`<option value="${s.replace(/"/g,'&quot;')}">${s}</option>`).join('')+'<option value="__new">➕ Nouveau bloc…</option>';
+  $('vgp-add-newsec-b').style.display='none';$('vgp-add-lib-b').value='';
+  $('vgp-add-b').style.display='block';$('vgp-add-lib-b').focus();
+};
+window.vgpAjouterB=async function(){
+  const libelle=$('vgp-add-lib-b').value.trim();
+  let section=$('vgp-add-sec-b').value;
+  if(section==='__new')section=$('vgp-add-newsec-b').value.trim();
+  if(!libelle||!section){toast('Point et bloc obligatoires','err');return}
+  const type=$('vgp-add-type-b').value;
+  const p={id:'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),libelle,section,energies:null,type_reponse:type,obligatoire:false};
+  if($('vgp-add-keep-b')?.checked){
+    const ordre=Math.max(0,..._vgpB.pts.map(x=>x.ordre||0))+1;
+    const {data,error}=await db.from('points_controle').insert({type_equipement_code:_vgpB.type,categorie:_vgpB.categorie,section,libelle,type_reponse:type,obligatoire:false,ordre,actif:true}).select().single();
+    if(error)toast('Ajouté à ce VGP seulement (template non modifié : '+error.message+')','err');
+    else{p.id=data.id;p.ordre=ordre;toast('Ajouté au template')}
+  }
+  _vgpB.pts.push(p);
+  $('vgp-add-b').style.display='none';
+  vgpRenderB();
+};
 
 function calculerPalierSuggereBureau(equip, paliers){
   if(!paliers || !paliers.length) return null;
@@ -1139,7 +1367,7 @@ async function saveVerif(){
   const palierCode=palierOpt?palierOpt.dataset.code:null;
   const reinitialise=palierOpt?palierOpt.dataset.reinit==='true':false;
 
-  const {data:vData,error}=await db.from('verifications').insert({equipement_id:eid,client_id:cid,type_equipement_code:typeCode,date_verification:date,date_prochaine_echeance:$('v-echeance').value||null,technicien:$('v-tech').value.trim(),technicien_id:ME.id,resultat:$('v-resultat').value,observations:$('v-obs').value.trim(),palier_id:palierId||null,palier_code:palierCode||null,reinitialise_compteur:reinitialise}).select().single();
+  const {data:vData,error}=await db.from('verifications').insert({equipement_id:eid,client_id:cid,type_equipement_code:typeCode,date_verification:date,date_prochaine_echeance:$('v-echeance').value||null,technicien:$('v-tech').value.trim(),technicien_id:ME.id,resultat:$('v-resultat').value,observations:$('v-obs').value.trim(),palier_id:palierId||null,palier_code:palierCode||null,reinitialise_compteur:reinitialise,energies:(_vgpB&&_vgpB.equipId===eid)?[..._vgpB.energies]:null}).select().single();
   if(error){toast('Erreur: '+error.message,'err');return}
 
   if(reinitialise){
@@ -1149,7 +1377,7 @@ async function saveVerif(){
   const items=document.querySelectorAll('.pc-item[data-id]');const resultats=[];
   items.forEach(item=>{
     const pid=item.dataset.id;const tt=item.dataset.type;
-    const r={verification_id:vData.id,point_controle_id:pid,libelle_snapshot:item.querySelector('.pc-label').textContent.replace('*','').trim(),type_reponse:tt};
+    const r={verification_id:vData.id,point_controle_id:(String(pid).startsWith('c_')?null:pid),libelle_snapshot:item.querySelector('.pc-label').textContent.replace('*','').trim(),section_snapshot:item.dataset.section||null,type_reponse:tt};
     if(tt==='oui_non'){const s=item.querySelector('label.ok-sel,label.nok-sel');if(s){r.valeur_oui_non=s.classList.contains('ok-sel');r.conforme=r.valeur_oui_non}}
     else if(tt==='numerique'){const v=item.querySelector('input')?.value;if(v)r.valeur_numerique=parseFloat(v)}
     else if(tt==='texte')r.valeur_texte=item.querySelector('input')?.value||'';
@@ -1894,13 +2122,13 @@ const CHAMPS_TYPE = {
     {id:'e-type-nacelle',label:'Type de nacelle',type:'select',opts:['Ciseaux électrique','Ciseaux diesel','Articulée électrique','Articulée diesel','Télescopique','Sur camion','Sur remorque']},
     {id:'e-hauteur',label:'Hauteur de travail max (m)',type:'number',placeholder:'12',step:'0.5'},
     {id:'e-cap',label:'Charge max (kg)',type:'number',placeholder:'200',step:'10'},
-    {id:'e-energie',label:'Énergie',type:'select',opts:['Électrique','Diesel','Hybride','GPL']},
+    {id:'e-energie',label:'Énergie',type:'select',opts:['Électrique','Diesel','Essence','GPL','Hybride (électrique + diesel)']},
   ],
   vgp_engin: [
-    {id:'e-type-engin',label:"Type d'engin",type:'select',opts:['Chariot élévateur frontal','Chariot télescopique','Pelle hydraulique','Mini-pelle','Chargeuse','Tombereau','Compacteur','Autre']},
+    {id:'e-type-engin',label:"Type d'engin",type:'select',opts:['Chariot élévateur frontal','Chariot télescopique','Pelle hydraulique','Mini-pelle','Chargeuse','Tractopelle','Tombereau','Compacteur','Autre']},
     {id:'e-ptac',label:'PTAC (tonnes)',type:'number',placeholder:'3.5',step:'0.5'},
     {id:'e-cap',label:'Capacité de levage (t)',type:'number',placeholder:'1.5',step:'0.1'},
-    {id:'e-energie',label:'Énergie',type:'select',opts:['Diesel','Électrique','Gaz','Hybride']},
+    {id:'e-energie',label:'Énergie',type:'select',opts:['Diesel','Électrique','Gaz','Essence','Hybride (électrique + diesel)']},
   ],
   vgp_antichute: [
     {id:'e-type-ac',label:"Type d'équipement",type:'select',opts:['Harnais complet','Longe double absorbeur','Longe simple','Absorbeur énergie','Enrouleur rappel auto','Ligne de vie horizontale','Connecteur / Mousqueton']},

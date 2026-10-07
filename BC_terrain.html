@@ -245,6 +245,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <button style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;cursor:pointer" onclick="doLogout()">⎋</button>
     </div>
   </div>
+  <div id="missions-banner"></div>
   <div style="padding:8px 12px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;gap:6px">
     <button id="filtre-mes-clients" class="btn btn-p" style="flex:1;font-size:12px;padding:7px" onclick="setFiltreParc('mes')">Mes clients</button>
     <button id="filtre-tous-clients" class="btn btn-s" style="flex:1;font-size:12px;padding:7px" onclick="setFiltreParc('tous')">Tous</button>
@@ -1286,6 +1287,7 @@ fetch('https://bfsfortecjb.github.io/BFS-controle/icons/icon-512.png')
 // PARC CLIENT
 // ============================================================
 async function loadParc(){
+  chargerMissionsTerrain().then(renderMissionsTerrain);
   const el=$('parc-list');el.innerHTML='<div class="loading"><div class="spin spin-dark"></div></div>';
   const vis=ME.visibilite||'perso';
   // Clients affectés directement à ce technicien via affectations_client
@@ -2281,6 +2283,129 @@ async function validerAtelierReforme(){
 // ============================================================
 // FICHE VÉRIFICATION TERRAIN
 // ============================================================
+// ============================================================
+// TEMPLATE VGP (chariot élévateur / nacelle / engin TP)
+// À l'ouverture du contrôle, tous les points de la catégorie sont proposés, regroupés par
+// section (Documents, Freinage, Moteur thermique…). Le technicien coche l'énergie (plusieurs
+// possibles pour une bi-énergie) : les blocs liés aux autres énergies disparaissent. Il peut
+// aussi retirer un point ou une section entière (✕ / 🗑) — un point retiré n'est pas enregistré.
+// ============================================================
+const VGP_ENERGIES=[['electrique','⚡ Électrique'],['diesel','⛽ Diesel'],['essence','⛽ Essence'],['gpl','🔥 GPL / gaz']];
+let _vgp=null; // {equipId, pts, energies:Set, removed:Set, answers:{}, sections:[[ids]]}
+const _vgpEtat={}; // état conservé par équipement le temps de la session (changement d'écran)
+function vgpCategorie(equip){
+  const t=equip.type_equipement_code;
+  if(t==='vgp_nacelle')return'nacelle';
+  if(t==='vgp_engin'){
+    const ds=equip.donnees_specifiques||{};
+    const typeEngin=String(ds['ef-type-engin']||ds['e-type-engin']||'');
+    return /chariot/i.test(typeEngin)?'chariot':'engin_tp';
+  }
+  return null;
+}
+function vgpEnergiesDefaut(equip){
+  const ds=equip.donnees_specifiques||{};
+  const e=String(ds['ef-energie']||ds['e-energie']||'').toLowerCase();
+  const s=new Set();
+  if(e.includes('lectr'))s.add('electrique');
+  if(e.includes('diesel')||e.includes('gazole'))s.add('diesel');
+  if(e.includes('essence'))s.add('essence');
+  if(e.includes('gpl')||e.includes('gaz'))s.add('gpl');
+  if(e.includes('hybride')){s.add('electrique');s.add('diesel')}
+  return s;
+}
+function vgpSnapshot(){
+  const snap={};
+  document.querySelectorAll('#vgp-sections .pc-item').forEach(it=>{
+    const pid=it.id.replace('pci-','');
+    const inp=it.querySelector('.pc-val-input');
+    if(inp)snap[pid]=inp.value;
+    else if(it.querySelector('.ok-sel'))snap[pid]=true;
+    else if(it.querySelector('.nok-sel'))snap[pid]=false;
+  });
+  return snap;
+}
+function vgpItemHtml(p){
+  const sv=_vgp.answers[p.id];
+  const x=`<button type="button" onclick="vgpRetirer('${p.id}')" title="Retirer ce point (non applicable)" style="background:none;border:none;color:var(--txt-l);font-size:16px;cursor:pointer;flex-shrink:0;padding:0 2px;line-height:1">✕</button>`;
+  let corps='';
+  if(p.type_reponse==='oui_non')corps=`<div class="pc-btns"><button class="pc-btn ${sv===true?'ok-sel':''}" onclick="selectPC('${p.id}',true)">✓ OK</button><button class="pc-btn ${sv===false?'nok-sel':''}" onclick="selectPC('${p.id}',false)">✗ NON</button></div>`;
+  else if(p.type_reponse==='numerique')corps=`<input type="number" class="pc-val-input" id="pcv-${p.id}" value="${sv??''}" step="0.01" placeholder="Valeur…">`;
+  else if(p.type_reponse==='texte')corps=`<input type="text" class="pc-val-input" id="pcv-${p.id}" value="${sv??''}" placeholder="Saisir…">`;
+  else if(p.type_reponse==='date')corps=`<input type="date" class="pc-val-input" id="pcv-${p.id}" value="${sv??''}">`;
+  const sec=(p.section||'').replace(/"/g,'&quot;');
+  return`<div class="pc-item${sv===true?' ok':sv===false?' nok':''}" id="pci-${p.id}" data-section="${sec}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div class="pc-label${p.obligatoire?' req':''}" style="flex:1">${p.libelle}</div>${x}</div>${corps}</div>`;
+}
+function vgpRender(){
+  const el=$('vgp-sections');if(!el||!_vgp)return;
+  Object.assign(_vgp.answers,vgpSnapshot());
+  const visibles=_vgp.pts.filter(p=>!_vgp.removed.has(p.id)&&(!p.energies||p.energies.some(e=>_vgp.energies.has(e))));
+  const ordre=[],parSection={};
+  visibles.forEach(p=>{const s=p.section||'Divers';if(!parSection[s]){parSection[s]=[];ordre.push(s)}parSection[s].push(p)});
+  _vgp.sections=ordre.map(s=>parSection[s].map(p=>p.id));
+  el.innerHTML=ordre.map((s,i)=>`<div class="sec" style="display:flex;justify-content:space-between;align-items:center"><span>${s}</span><button type="button" onclick="vgpRetirerSection(${i})" title="Retirer tout ce bloc" style="background:none;border:none;color:var(--txt-l);font-size:12px;cursor:pointer;text-transform:none;letter-spacing:0">🗑 retirer le bloc</button></div>`+parSection[s].map(vgpItemHtml).join('')).join('')
+    ||'<div style="text-align:center;padding:16px;color:var(--txt-l);font-size:13px">Aucun point à afficher — coche une énergie ou remets les blocs retirés.</div>';
+  const nb=_vgp.removed.size;
+  const r=$('vgp-restore');if(r){r.style.display=nb?'block':'none';r.textContent=`↺ Remettre les points retirés (${nb})`}
+  _vgpEtat[_vgp.equipId]={energies:[..._vgp.energies],removed:[..._vgp.removed]};
+}
+window.vgpToggleEnergie=function(c){
+  if(_vgp.energies.has(c))_vgp.energies.delete(c);else _vgp.energies.add(c);
+  const b=$('vgp-e-'+c);if(b)b.classList.toggle('ok-sel',_vgp.energies.has(c));
+  vgpRender();
+};
+window.vgpRetirer=function(pid){Object.assign(_vgp.answers,vgpSnapshot());_vgp.removed.add(pid);vgpRender()};
+window.vgpRetirerSection=function(i){
+  if(!confirm('Retirer tout ce bloc du contrôle ?'))return;
+  Object.assign(_vgp.answers,vgpSnapshot());
+  (_vgp.sections[i]||[]).forEach(id=>_vgp.removed.add(id));vgpRender();
+};
+window.vgpRestaurer=function(){_vgp.removed.clear();vgpRender()};
+function vgpInit(equip,pts,saved){
+  const st=_vgpEtat[equip.id];
+  _vgp={equipId:equip.id,pts,energies:new Set(st?st.energies:[...vgpEnergiesDefaut(equip)]),removed:new Set(st?st.removed:[]),answers:{...(saved?.points||{})},sections:[]};
+  $('pc-container').innerHTML=`<div style="background:#f8fafc;border:1.5px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:12px">
+    <div style="font-size:12px;font-weight:700;margin-bottom:6px">Énergie de l'appareil <span style="font-weight:400;color:var(--txt-l)">(plusieurs possibles pour une bi-énergie)</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${VGP_ENERGIES.map(([c,l])=>`<button type="button" id="vgp-e-${c}" class="pc-btn${_vgp.energies.has(c)?' ok-sel':''}" style="flex:1;min-width:110px;padding:8px;font-size:13px" onclick="vgpToggleEnergie('${c}')">${l}</button>`).join('')}</div>
+    <button type="button" id="vgp-restore" class="btn btn-s btn-sm" style="display:none;margin-top:8px" onclick="vgpRestaurer()"></button>
+  </div><div id="vgp-sections"></div>
+  <button type="button" class="btn btn-s" style="width:100%;margin-top:6px" onclick="vgpAjouterOuvrir()">➕ Ajouter un point absent du template</button>
+  <div id="vgp-add" style="display:none;background:#f8fafc;border:1.5px solid #e5e7eb;border-radius:10px;padding:12px;margin-top:8px">
+    <div class="fg"><label>Point à contrôler *</label><input type="text" id="vgp-add-lib" placeholder="Ex : Rétroviseur côté droit"></div>
+    <div class="fg"><label>Bloc</label><select id="vgp-add-sec" onchange="$('vgp-add-newsec').style.display=this.value==='__new'?'block':'none'"></select>
+      <input type="text" id="vgp-add-newsec" placeholder="Nom du nouveau bloc" style="display:none;margin-top:6px"></div>
+    <div class="fg"><label>Type de réponse</label><select id="vgp-add-type"><option value="oui_non">OK / NON</option><option value="numerique">Valeur numérique</option><option value="texte">Texte</option><option value="date">Date</option></select></div>
+    ${ME&&ME.role==='admin'?`<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:10px"><input type="checkbox" id="vgp-add-keep"> Garder dans le template (prochains VGP de cette catégorie)</label>`:''}
+    <div style="display:flex;gap:8px"><button type="button" class="btn btn-s" style="flex:1" onclick="$('vgp-add').style.display='none'">Annuler</button><button type="button" class="btn btn-p" style="flex:1" onclick="vgpAjouter()">Ajouter</button></div>
+  </div>`;
+  _vgp.type=equip.type_equipement_code;_vgp.categorie=vgpCategorie(equip);
+  vgpRender();
+}
+window.vgpAjouterOuvrir=function(){
+  const secs=[...new Set(_vgp.pts.map(p=>p.section||'Divers'))];
+  $('vgp-add-sec').innerHTML=secs.map(s=>`<option value="${s.replace(/"/g,'&quot;')}">${s}</option>`).join('')+'<option value="__new">➕ Nouveau bloc…</option>';
+  $('vgp-add-newsec').style.display='none';$('vgp-add-lib').value='';
+  $('vgp-add').style.display='block';$('vgp-add-lib').focus();
+};
+window.vgpAjouter=async function(){
+  const libelle=$('vgp-add-lib').value.trim();
+  let section=$('vgp-add-sec').value;
+  if(section==='__new')section=$('vgp-add-newsec').value.trim();
+  if(!libelle||!section){toast('Point et bloc obligatoires','err');return}
+  const type=$('vgp-add-type').value;
+  const p={id:'c_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),libelle,section,energies:null,type_reponse:type,obligatoire:false};
+  if($('vgp-add-keep')?.checked){
+    const ordre=Math.max(0,..._vgp.pts.map(x=>x.ordre||0))+1;
+    const {data,error}=await db.from('points_controle').insert({type_equipement_code:_vgp.type,categorie:_vgp.categorie,section,libelle,type_reponse:type,obligatoire:false,ordre,actif:true}).select().single();
+    if(error)toast('Ajouté à ce VGP seulement (template non modifié : '+error.message+')','err');
+    else{p.id=data.id;p.ordre=ordre;toast('Ajouté au template ✓')}
+  }
+  _vgp.pts.push(p);
+  $('vgp-add').style.display='none';
+  vgpRender();
+};
+function vgpEnergiesCourantes(){return _vgp?[..._vgp.energies]:null}
+
 async function ouvrirVerif(equipId){
   currentEquipId=equipId;
   currentPieces=sessionVerifs[equipId]?.pieces||[];
@@ -2318,7 +2443,10 @@ async function ouvrirVerif(equipId){
   window._equipEchangeCourant = equip;
   window._estPPEchangeCourant = estPP;
 
+  const catVgp=vgpCategorie(equip); // chariot / nacelle / engin_tp, sinon null
+  if(!catVgp)_vgp=null;
   const points=(pts||[]).filter(p=>{
+    if(catVgp&&p.categorie!==catVgp)return false; // vgp_engin regroupe chariot + engin TP
     // Filtre marque/modèle standard
     if(p.marque||p.modele){
       if(p.marque&&marque&&p.marque.toLowerCase()!==marque) return false;
@@ -2342,7 +2470,9 @@ async function ouvrirVerif(equipId){
   });
 
   // Nettoyer les libellés (retirer les balises de condition [xxx])
-  const pointsAffiches = points.map(p=>({...p, libelle: p.libelle.replace(/\s*\[(pp_eau_poudre|pa|co2|quinquennal)\]/gi,'').trim()}));
+  const pointsAffichesTous = points.map(p=>({...p, libelle: p.libelle.replace(/\s*\[(pp_eau_poudre|pa|co2|quinquennal)\]/gi,'').trim()}));
+  // Pour un VGP, l'affichage est géré par le template (sections / énergies) : vgpInit() plus bas.
+  const pointsAffiches = catVgp ? [] : pointsAffichesTous;
 
   // Charger pièces catalogue
   const cat=await reqCache('cat_'+equip.type_equipement_code,()=>db.from('pieces_catalogue').select('*').eq('type_equipement_code',equip.type_equipement_code).eq('actif',true).order('ordre'));
@@ -2392,8 +2522,10 @@ async function ouvrirVerif(equipId){
 
     <div class="sec">Points de contrôle</div>
     <div id="pc-container">
-      ${pointsAffiches.map(p=>{
+      ${pointsAffiches.map((p,i)=>{
         const sv=savedPts[p.id];
+        const entete=(p.section&&p.section!==(pointsAffiches[i-1]?.section))?`<div class="sec" style="margin-top:${i?14:0}px">${p.section}</div>`:'';
+        return entete+(()=>{
         if(p.type_reponse==='oui_non'){
           const okSel=sv===true?'ok-sel':'';const nokSel=sv===false?'nok-sel':'';
           return`<div class="pc-item${sv===true?' ok':sv===false?' nok':''}" id="pci-${p.id}">
@@ -2420,6 +2552,7 @@ async function ouvrirVerif(equipId){
           </div>`;
         }
         return'';
+        })();
       }).join('')}
     </div>
 
@@ -2477,6 +2610,8 @@ async function ouvrirVerif(equipId){
       <textarea id="verif-obs" placeholder="Anomalies, remarques…">${savedObs}</textarea>
     </div>
   `;
+
+  if(catVgp)vgpInit(equip,pointsAffichesTous,savedState);
 
   // Réinitialiser et afficher les photos déjà prises pour cette session de vérif
   currentPhotosVerif = [];
@@ -2981,7 +3116,7 @@ async function enregistrerVerifHorsLigne(verifPayload,points,obs,echeance){
     const label=item.querySelector('.pc-label')?.textContent?.replace('*','').trim()||'';
     const okSel=item.querySelector('.ok-sel');const nokSel=item.querySelector('.nok-sel');
     const numInp=item.querySelector(`#pcv-${pid}`);
-    let r={point_controle_id:pid,libelle_snapshot:label,type_reponse:'oui_non'};
+    let r={point_controle_id:(String(pid).startsWith('c_')?null:pid),libelle_snapshot:label,section_snapshot:item.dataset.section||null,type_reponse:'oui_non'};
     if(okSel){r.valeur_oui_non=true;r.conforme=true}
     else if(nokSel){r.valeur_oui_non=false;r.conforme=false}
     else if(numInp){r.type_reponse=numInp.type==='date'?'date':numInp.type==='number'?'numerique':'texte';
@@ -3130,6 +3265,9 @@ async function _validerVerifInterne(equip){
     unite_extincteur_id:equip.unite_extincteur_actuelle_id||null,
     updated_at:new Date().toISOString()
   };
+  // VGP : énergies cochées (bi-énergie possible), pour la traçabilité du rapport
+  const energiesVgp=vgpCategorie(equip)?vgpEnergiesCourantes():null;
+  if(energiesVgp)verifPayload.energies=energiesVgp;
 
   // === HORS-LIGNE : mise en file d'attente, synchronisation au retour du réseau ===
   if(!navigator.onLine){
@@ -3186,7 +3324,7 @@ async function _validerVerifInterne(equip){
     const label=item.querySelector('.pc-label')?.textContent?.replace('*','').trim()||'';
     const okSel=item.querySelector('.ok-sel');const nokSel=item.querySelector('.nok-sel');
     const numInp=item.querySelector(`#pcv-${pid}`);
-    let r={verification_id:vData.id,point_controle_id:pid,libelle_snapshot:label,type_reponse:'oui_non'};
+    let r={verification_id:vData.id,point_controle_id:(String(pid).startsWith('c_')?null:pid),libelle_snapshot:label,section_snapshot:item.dataset.section||null,type_reponse:'oui_non'};
     if(okSel){r.valeur_oui_non=true;r.conforme=true}
     else if(nokSel){r.valeur_oui_non=false;r.conforme=false}
     else if(numInp){r.type_reponse=numInp.type==='date'?'date':numInp.type==='number'?'numerique':'texte';
@@ -4302,13 +4440,13 @@ const CHAMPS_TYPE_TERRAIN = {
     {id:'ef-type-nacelle',label:'Type nacelle',type:'select',opts:['Ciseaux électrique','Ciseaux diesel','Articulée électrique','Articulée diesel','Télescopique']},
     {id:'ef-hauteur',label:'Hauteur max (m)',type:'number',placeholder:'12',step:'0.5'},
     {id:'ef-cap',label:'Charge max (kg)',type:'number',placeholder:'200',step:'10'},
-    {id:'ef-energie',label:'Énergie',type:'select',opts:['Électrique','Diesel','Hybride','GPL']},
+    {id:'ef-energie',label:'Énergie',type:'select',opts:['Électrique','Diesel','Essence','GPL','Hybride (électrique + diesel)']},
   ],
   vgp_engin: [
-    {id:'ef-type-engin',label:"Type d'engin",type:'select',opts:['Chariot élévateur','Chariot télescopique','Pelle hydraulique','Mini-pelle','Chargeuse','Tombereau','Autre']},
+    {id:'ef-type-engin',label:"Type d'engin",type:'select',opts:['Chariot élévateur','Chariot télescopique','Pelle hydraulique','Mini-pelle','Chargeuse','Tractopelle','Compacteur','Tombereau','Autre']},
     {id:'ef-ptac',label:'PTAC (tonnes)',type:'number',placeholder:'3.5',step:'0.5'},
     {id:'ef-cap',label:'Charge (t)',type:'number',placeholder:'1.5',step:'0.1'},
-    {id:'ef-energie',label:'Énergie',type:'select',opts:['Diesel','Électrique','Gaz','Hybride']},
+    {id:'ef-energie',label:'Énergie',type:'select',opts:['Diesel','Électrique','Gaz','Essence','Hybride (électrique + diesel)']},
   ],
   vgp_antichute: [
     {id:'ef-type-ac',label:"Type",type:'select',opts:['Harnais complet','Longe double','Longe simple','Absorbeur énergie','Enrouleur auto','Ligne de vie','Connecteur']},
@@ -5297,7 +5435,11 @@ function planNav(dir){
   chargerPlanning();
 }
 
+// Quand un RDV est créé depuis une mission (voir planifierMissionTerrain), on retient
+// l'id de la mission ici pour la faire passer en "planifiee" et la lier au RDV une fois créé.
+let _missionEnPlanificationTerrain=null;
 async function openRdvFormTerrain(prefill){
+  _missionEnPlanificationTerrain=null;
   if(!clientsPourRdv.length) await chargerClientsPourRdv();
   $('rf-client').innerHTML = clientsPourRdv.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
   $('rf-id').value='';
@@ -5361,14 +5503,62 @@ async function saveRdvTerrain(){
     updated_at: new Date().toISOString()
   };
 
-  const {error} = id
-    ? await db.from('rdv').update(payload).eq('id', id)
-    : await db.from('rdv').insert(payload);
+  const {data:rdvSauve,error} = id
+    ? await db.from('rdv').update(payload).eq('id', id).select().single()
+    : await db.from('rdv').insert(payload).select().single();
 
   if(error){toast('Erreur: '+error.message,'err');return}
+  const missionId=_missionEnPlanificationTerrain;_missionEnPlanificationTerrain=null;
+  if(missionId&&rdvSauve){
+    await db.from('missions').update({statut:'planifiee',rdv_id:rdvSauve.id,updated_at:new Date().toISOString()}).eq('id',missionId);
+    chargerMissionsTerrain().then(renderMissionsTerrain);
+  }
   toast(id ? 'RDV modifié ✓' : 'RDV créé ✓');
   goTo('s-planning');
   await chargerPlanning();
+}
+
+// ============================================================
+// MISSIONS — confiées par le secrétariat, vues en notification sur "Mon parc"
+// (écran d'accueil du technicien). Règle imposée par Jeremy : il faut d'abord
+// appeler le client (bouton tel:) avant que le bouton Planifier n'apparaisse.
+// ============================================================
+let _missionsTerrain=[];
+async function chargerMissionsTerrain(){
+  const {data,error}=await db.from('missions').select('*,clients(raison_sociale,contact_telephone)')
+    .eq('technicien_id',ME.id).eq('statut','a_planifier').order('created_at',{ascending:false});
+  if(error){console.error('Erreur missions terrain:',error);_missionsTerrain=[];return}
+  _missionsTerrain=data||[];
+}
+function renderMissionsTerrain(){
+  const el=$('missions-banner');
+  if(!_missionsTerrain.length){el.innerHTML='';return}
+  el.innerHTML=`<div style="padding:10px 12px 4px;background:#fffbeb;border-bottom:1px solid #fde68a">
+    <div style="font-size:12px;font-weight:700;color:#b45309;margin-bottom:8px">🎯 Mission${_missionsTerrain.length>1?'s':''} à planifier</div>
+    ${_missionsTerrain.map(m=>{
+      const tel=m.clients?.contact_telephone;
+      const actionHtml=m.contacte_le
+        ?`<button class="btn btn-p btn-sm" onclick="planifierMissionTerrain('${m.id}')">📅 Planifier</button>`
+        :(tel
+          ?`<a class="btn btn-p btn-sm" href="tel:${tel}" onclick="marquerMissionContacteeTerrain('${m.id}')" style="text-decoration:none">📞 Appeler</a>`
+          :`<button class="btn btn-p btn-sm" onclick="marquerMissionContacteeTerrain('${m.id}')">✅ Contacté</button>`);
+      return `<div style="background:#fff;border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="font-size:13px"><strong>${m.clients?.raison_sociale||'—'}</strong> — ${m.titre}${m.description?`<br><small style="color:var(--txt-l)">${m.description}</small>`:''}${m.contacte_le?'<br><small style="color:#15803d">📞 Client contacté</small>':''}</div>
+        <div style="flex-shrink:0">${actionHtml}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+async function marquerMissionContacteeTerrain(id){
+  const {error}=await db.from('missions').update({contacte_le:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Erreur: '+error.message,'err');return}
+  await chargerMissionsTerrain();renderMissionsTerrain();
+}
+async function planifierMissionTerrain(id){
+  const m=_missionsTerrain.find(x=>x.id===id);if(!m)return;
+  if(!m.contacte_le){toast('Appelle d\'abord le client avant de planifier','err');return}
+  await openRdvFormTerrain({client_id:m.client_id,notes:m.titre+(m.description?' — '+m.description:'')});
+  _missionEnPlanificationTerrain=id;
 }
 
 async function deleteRdvTerrain(){
