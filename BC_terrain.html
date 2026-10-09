@@ -109,6 +109,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .pc-item{background:var(--bg);border-radius:10px;padding:12px 14px;margin-bottom:8px;border:1.5px solid #e5e7eb}
 .pc-item.ok{border-color:var(--vert);background:var(--vert-l)}
 .pc-item.nok{border-color:var(--rouge);background:var(--rouge-l)}
+.pc-item.na{border-color:#9ca3af;background:#f3f4f6}
+.pc-btn.na-sel{background:#6b7280;color:#fff;border-color:#6b7280}
 .pc-label{font-size:14px;font-weight:500;margin-bottom:10px}
 .pc-label.req::after{content:'*';color:var(--rouge);margin-left:3px}
 .pc-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -2301,8 +2303,33 @@ function vgpCategorie(equip){
     const typeEngin=String(ds['ef-type-engin']||ds['e-type-engin']||'');
     return /chariot/i.test(typeEngin)?'chariot':'engin_tp';
   }
+  const ds=equip.donnees_specifiques||{};
+  if(t==='vgp_echelle')return /escabeau|pirl|plateforme/i.test(String(ds['ef-type-ech']||''))?'escabeau':'echelle';
+  if(t==='vgp_antichute'){
+    const x=String(ds['ef-type-ac']||'').toLowerCase();
+    if(!x)return null; // anciens équipements : trame générale
+    if(/harnais/.test(x))return'harnais';
+    if(/longe/.test(x))return'longe';
+    if(/enrouleur|stop|rappel/.test(x))return'stop_chute';
+    if(/absorb/.test(x))return'absorbeur';
+    if(/connecteur|mousqueton/.test(x))return'connecteur';
+    if(/ligne|ancrage/.test(x))return'ancrage';
+    return null;
+  }
+  if(t==='vgp_levage_acc'){
+    const x=String(ds['ef-type-lev']||'').toLowerCase();
+    if(/cha[iî]ne/.test(x))return'elingue_chaine';
+    if(/c[aâ]ble/.test(x))return'elingue_cable';
+    if(/textile|sangle/.test(x))return'elingue_textile';
+    if(/manille/.test(x))return'manille';
+    if(/palan|treuil/.test(x))return'palan';
+    return'accessoire';
+  }
+  if(t==='vgp_gants')return'gants_isolants';
   return null;
 }
+// Matériel à énergie (chariot, nacelle, engin TP) : énergie, compteurs et charges d'essai
+function vgpEstEngin(cat){return cat==='chariot'||cat==='nacelle'||cat==='engin_tp'}
 function vgpEnergiesDefaut(equip){
   const ds=equip.donnees_specifiques||{};
   const e=String(ds['ef-energie']||ds['e-energie']||'').toLowerCase();
@@ -2322,20 +2349,69 @@ function vgpSnapshot(){
     if(inp)snap[pid]=inp.value;
     else if(it.querySelector('.ok-sel'))snap[pid]=true;
     else if(it.querySelector('.nok-sel'))snap[pid]=false;
+    else if(it.querySelector('.na-sel'))snap[pid]='na';
+    if(_vgp){ // détail d'une non-conformité (gravité, réserve, observation)
+      const g=it.querySelector('.pc-grav'),r=it.querySelector('.pc-res'),o=it.querySelector('.pc-obs');
+      if(g||r||o)(_vgp.detail=_vgp.detail||{})[pid]={g:g?.value||'',r:r?.value||'',o:o?.value||''};
+    }
   });
   return snap;
 }
+// Détail d'un point (non-conformité) lu dans le DOM pour l'enregistrement
+function vgpDetailPoint(item){
+  const g=item.querySelector('.pc-grav')?.value||null,r=item.querySelector('.pc-res')?.value?.trim()||null,o=item.querySelector('.pc-obs')?.value?.trim()||null;
+  const d={};if(g)d.gravite=g;if(r)d.reserve=r;if(o)d.observation=o;return d;
+}
+window.majDetailPoint=function(pid,val){
+  // NON : gravité + réserve + commentaire ouverts ; sinon seul le commentaire reste accessible (💬)
+  const n=document.getElementById('pcn-'+pid);if(n)n.style.display=val===false?'block':'none';
+  const c=document.getElementById('pcc-'+pid);if(c&&val===false)c.style.display='block';
+};
+window.basculerCommentaire=function(pid){
+  const c=document.getElementById('pcc-'+pid);if(!c)return;
+  c.style.display=c.style.display==='block'?'none':'block';
+  if(c.style.display==='block')c.querySelector('textarea')?.focus();
+};
+function vgpDetailHtml(p,sv,det){
+  det=det||{};
+  const aCom=!!det.o,nok=sv===false;
+  const gravites=[['','Gravité…'],['G1','G1 — sans gravité'],['G2','G2 — gravité moyenne'],['G3','G3 — gravité élevée']];
+  return`<div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${btnPhotoPointHtml(p.id).replace('<div style="margin-top:6px;display:flex;align-items:center;gap:8px">','<div style="display:flex;align-items:center;gap:8px">')}<button type="button" class="btn btn-s btn-sm" style="padding:4px 10px;font-size:12px" onclick="basculerCommentaire('${p.id}')">💬 Commentaire</button></div>
+  <div id="pcn-${p.id}" style="display:${nok?'block':'none'};margin-top:8px"><select class="pc-grav" style="width:100%;padding:8px;border:1.5px solid var(--rouge);border-radius:8px;font-size:13px;margin-bottom:6px">${gravites.map(([v,l])=>`<option value="${v}"${det.g===v?' selected':''}>${l}</option>`).join('')}</select><input type="text" class="pc-res" value="${(det.r||'').replace(/"/g,'&quot;')}" placeholder="Réserve (ce qui doit être corrigé)" style="width:100%;padding:8px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px"></div>
+  <div id="pcc-${p.id}" style="display:${(nok||aCom)?'block':'none'};margin-top:8px;position:relative"><textarea class="pc-obs" id="pco-${p.id}" rows="2" placeholder="Commentaire / observation…" style="width:100%;padding:8px 36px 8px 8px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px">${(det.o||'').replace(/</g,'&lt;')}</textarea><button type="button" onclick="dicterVers('pco-${p.id}')" title="Dicter" style="position:absolute;right:6px;top:6px;background:none;border:none;font-size:18px;cursor:pointer">🎤</button></div>`;
+}
+window.selectPCNA=function(pid){
+  const item=document.getElementById('pci-'+pid);if(!item)return;
+  item.className='pc-item na';
+  item.querySelectorAll('.pc-btn').forEach((b,i)=>{b.className='pc-btn'+(i===2?' na-sel':'')});
+  if(!sessionVerifs[currentEquipId])sessionVerifs[currentEquipId]={points:{},pieces:[],resultat:'',obs:'',echeance:getDefaultEcheance()};
+  sessionVerifs[currentEquipId].points[pid]='na';
+  majDetailPoint(pid,null);
+};
+// Dictée vocale (Web Speech API) pour les observations
+window.dicterVers=function(id){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const el=document.getElementById(id);if(!el)return;
+  if(!SR){toast('Dictée vocale non disponible sur ce navigateur','err');return}
+  const rec=new SR();rec.lang='fr-FR';rec.interimResults=false;
+  rec.onresult=e=>{const t=[...e.results].map(r=>r[0].transcript).join(' ');el.value=(el.value?el.value+' ':'')+t};
+  rec.onerror=()=>toast('Dictée interrompue','err');
+  toast('🎤 Parle maintenant…');rec.start();
+};
 function vgpItemHtml(p){
   const sv=_vgp.answers[p.id];
   const x=`<button type="button" onclick="vgpRetirer('${p.id}')" title="Retirer ce point (non applicable)" style="background:none;border:none;color:var(--txt-l);font-size:16px;cursor:pointer;flex-shrink:0;padding:0 2px;line-height:1">✕</button>`;
   let corps='';
-  if(p.type_reponse==='oui_non')corps=`<div class="pc-btns"><button class="pc-btn ${sv===true?'ok-sel':''}" onclick="selectPC('${p.id}',true)">✓ OK</button><button class="pc-btn ${sv===false?'nok-sel':''}" onclick="selectPC('${p.id}',false)">✗ NON</button></div>`;
+  if(p.type_reponse==='oui_non')corps=`<div class="pc-btns"><button class="pc-btn ${sv===true?'ok-sel':''}" onclick="selectPC('${p.id}',true)">✓ OK</button><button class="pc-btn ${sv===false?'nok-sel':''}" onclick="selectPC('${p.id}',false)">✗ NON</button><button class="pc-btn ${sv==='na'?'na-sel':''}" onclick="selectPCNA('${p.id}')" title="Non applicable / non équipé">N.A</button></div>`;
   else if(p.type_reponse==='numerique')corps=`<input type="number" class="pc-val-input" id="pcv-${p.id}" value="${sv??''}" step="0.01" placeholder="Valeur…">`;
   else if(p.type_reponse==='texte')corps=`<input type="text" class="pc-val-input" id="pcv-${p.id}" value="${sv??''}" placeholder="Saisir…">`;
   else if(p.type_reponse==='date')corps=`<input type="date" class="pc-val-input" id="pcv-${p.id}" value="${sv??''}">`;
   const sec=(p.section||'').replace(/"/g,'&quot;');
-  const ph=p.type_reponse==='oui_non'?btnPhotoPointHtml(p.id):'';
-  return`<div class="pc-item${sv===true?' ok':sv===false?' nok':''}" id="pci-${p.id}" data-section="${sec}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div class="pc-label${p.obligatoire?' req':''}" style="flex:1">${p.libelle}</div>${x}</div>${corps}${ph}</div>`;
+  const ph=p.type_reponse==='oui_non'?vgpDetailHtml(p,sv,_vgp.detail?.[p.id]):'';
+  const VFE={V:'Visuel',F:'Fonctionnement',E:'Essai'};
+  const tv=(p.types_verif||[]).map(t=>VFE[t]).filter(Boolean).join(' · ');
+  const tag=tv?`<div style="font-size:10px;color:var(--txt-l);margin:-2px 0 6px">${tv}</div>`:'';
+  return`<div class="pc-item${sv===true?' ok':sv===false?' nok':sv==='na'?' na':''}" id="pci-${p.id}" data-section="${sec}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div class="pc-label${p.obligatoire?' req':''}" style="flex:1">${p.libelle}</div>${x}</div>${tag}${corps}${ph}</div>`;
 }
 function vgpRender(){
   const el=$('vgp-sections');if(!el||!_vgp)return;
@@ -2348,7 +2424,7 @@ function vgpRender(){
     ||'<div style="text-align:center;padding:16px;color:var(--txt-l);font-size:13px">Aucun point à afficher — coche une énergie ou remets les blocs retirés.</div>';
   const nb=_vgp.removed.size;
   const r=$('vgp-restore');if(r){r.style.display=nb?'block':'none';r.textContent=`↺ Remettre les points retirés (${nb})`}
-  _vgpEtat[_vgp.equipId]={energies:[..._vgp.energies],removed:[..._vgp.removed]};
+  _vgpEtat[_vgp.equipId]={energies:[..._vgp.energies],removed:[..._vgp.removed],infos:vgpLireInfos()||_vgpEtat[_vgp.equipId]?.infos||null};
 }
 window.vgpToggleEnergie=function(c){
   if(_vgp.energies.has(c))_vgp.energies.delete(c);else _vgp.energies.add(c);
@@ -2365,12 +2441,13 @@ window.vgpRestaurer=function(){_vgp.removed.clear();vgpRender()};
 function vgpInit(equip,pts,saved){
   const st=_vgpEtat[equip.id];
   _vgp={equipId:equip.id,pts,energies:new Set(st?st.energies:[...vgpEnergiesDefaut(equip)]),removed:new Set(st?st.removed:[]),answers:{...(saved?.points||{})},sections:[]};
-  $('pc-container').innerHTML=`<div style="background:#f8fafc;border:1.5px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:12px">
+  $('pc-container').innerHTML=`<div style="${vgpEstEngin(vgpCategorie(equip))?'':'display:none;'}background:#f8fafc;border:1.5px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:12px">
     <div style="font-size:12px;font-weight:700;margin-bottom:6px">Énergie de l'appareil <span style="font-weight:400;color:var(--txt-l)">(plusieurs possibles pour une bi-énergie)</span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">${VGP_ENERGIES.map(([c,l])=>`<button type="button" id="vgp-e-${c}" class="pc-btn${_vgp.energies.has(c)?' ok-sel':''}" style="flex:1;min-width:110px;padding:8px;font-size:13px" onclick="vgpToggleEnergie('${c}')">${l}</button>`).join('')}</div>
     <button type="button" id="vgp-restore" class="btn btn-s btn-sm" style="display:none;margin-top:8px" onclick="vgpRestaurer()"></button>
-  </div><div id="vgp-sections"></div>
+  </div>${vgpInfosHtml(equip,st)}<div id="vgp-sections"></div>
   <button type="button" class="btn btn-s" style="width:100%;margin-top:6px" onclick="vgpAjouterOuvrir()">➕ Ajouter un point absent du template</button>
+  <div class="sec" style="margin-top:16px">Texte réglementaire</div><div id="vgp-mention" style="font-size:12px;color:var(--txt-l)">Chargement…</div>
   <div id="vgp-add" style="display:none;background:#f8fafc;border:1.5px solid #e5e7eb;border-radius:10px;padding:12px;margin-top:8px">
     <div class="fg"><label>Point à contrôler *</label><input type="text" id="vgp-add-lib" placeholder="Ex : Rétroviseur côté droit"></div>
     <div class="fg"><label>Bloc</label><select id="vgp-add-sec" onchange="$('vgp-add-newsec').style.display=this.value==='__new'?'block':'none'"></select>
@@ -2380,8 +2457,97 @@ function vgpInit(equip,pts,saved){
     <div style="display:flex;gap:8px"><button type="button" class="btn btn-s" style="flex:1" onclick="$('vgp-add').style.display='none'">Annuler</button><button type="button" class="btn btn-p" style="flex:1" onclick="vgpAjouter()">Ajouter</button></div>
   </div>`;
   _vgp.type=equip.type_equipement_code;_vgp.categorie=vgpCategorie(equip);
+  _vgp.infosSaved=st?.infos||null;
   vgpRender();
+  vgpPreparerConclusions();
+  vgpChargerMention(st?.infos?.mention_code);
 }
+
+// ---------- Informations générales du VGP (lieu, personne présente, documents, compteurs, charges) ----------
+function vgpInfosHtml(equip,st){
+  const ds=equip.donnees_specifiques||{};const s=st?.infos||{};
+  const v=(k,def)=>String(s[k]??def??'').replace(/"/g,'&quot;');
+  const cref=s.cref??ds['ef-charge-ref']??ds['e-charge-ref']??equip.capacite_valeur??'';
+  const horo=s.horametre??ds['ef-horametre']??ds['e-horametre']??'';
+  const lieuType=s.lieu_type||'parc';
+  const eng=vgpEstEngin(vgpCategorie(equip));
+  const docs=[['carnet','Présence du carnet de maintenance'],['notice','Présence des notices techniques'],['ce','Certificat CE présent et visible'],['propre','Matériel propre pour l\'inspection'],['rapport','Rapport de dernière inspection présent']];
+  const inp=(id,l,val,type='text',extra='')=>`<div class="fg" style="margin-bottom:8px"><label style="font-size:12px">${l}</label><input type="${type}" id="${id}" value="${val}" ${extra} style="width:100%;padding:9px 11px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px"></div>`;
+  return`<div class="sec" style="margin-top:4px">Informations générales</div>
+  <div style="background:#f8fafc;border:1.5px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:12px">
+    ${inp('vi-ref','Référence interne (n° OR, BDC…)',v('ref'))}
+    ${inp('vi-lieu','Lieu d\'inspection',v('lieu',currentClient?.ville||''))}
+    <div class="fg" style="margin-bottom:8px"><label style="font-size:12px">Inspection réalisée</label><select id="vi-lieutype" style="width:100%;padding:9px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px">${[['parc','Dans le parc du client'],['chantier','Sur chantier'],['agence','En agence']].map(([k,l])=>`<option value="${k}"${lieuType===k?' selected':''}>${l}</option>`).join('')}</select></div>
+    ${inp('vi-pers','Personnel présent à l\'inspection',v('personnel'))}
+    ${inp('vi-fonc','Fonction de la personne présente',v('fonction'))}
+    <div style="margin:10px 0 4px;font-size:12px;font-weight:700">État du matériel</div>
+    ${docs.map(([k,l])=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><div style="flex:1;font-size:13px">${l}</div><select id="vi-doc-${k}" style="padding:7px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px">${[['oui','Oui'],['non','Non'],['na','N.A']].map(([a,b])=>`<option value="${a}"${(s['doc_'+k]||'oui')===a?' selected':''}>${b}</option>`).join('')}</select></div>`).join('')}
+    <div style="display:flex;align-items:center;gap:8px;margin:8px 0"><div style="flex:1;font-size:13px">Visite dans le cadre d'une maintenance préventive ?</div><select id="vi-prev" style="padding:7px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px"><option value="non">Non</option><option value="oui"${s.preventive==='oui'?' selected':''}>Oui</option></select></div>
+    <div style="display:${eng?'flex':'none'};gap:8px">${inp('vi-km','Compteur km',v('km',0),'number','inputmode="decimal" step="any"')}${inp('vi-horo','Horamètre',v('horametre',horo),'number','inputmode="decimal" step="any"')}</div>
+    <div style="display:${vgpCategorie(equip)==='palan'||eng?'block':'none'}"><div style="margin:8px 0 4px;font-size:12px;font-weight:700">Charges (kg) <span style="font-weight:400;color:var(--txt-l)">— contrôle = référence × 1,1, modifiable</span></div>
+    <div style="display:flex;gap:8px">${inp('vi-cref','Charge de référence',v('cref',cref),'number','inputmode="decimal" step="any" oninput="vgpCalculCharges()"')}${inp('vi-cmu','CMU',v('cmu',cref),'number','inputmode="decimal" step="any" oninput="vgpAlerteCMU()"')}</div>
+    <div style="display:flex;gap:8px">${inp('vi-cctl','Charge de contrôle',v('cctl'),'number','inputmode="decimal" step="any"')}${inp('vi-cessai','Charge d\'essai',v('cessai'),'number','inputmode="decimal" step="any" oninput="vgpAlerteCMU()"')}</div>
+    ${inp('vi-cport','Charge / portée (texte libre)',v('charge_portee'))}</div>
+    <label id="vi-cmuok-box" style="display:${(+s.cessai&&+s.cmu&&+s.cessai<+s.cmu)?'flex':'none'};gap:8px;align-items:flex-start;font-size:12px;background:#fff7ed;border:1.5px solid #fdba74;border-radius:8px;padding:8px;margin-top:6px"><input type="checkbox" id="vi-cmuok"${s.cmu_restreinte?' checked':''}> Si la charge d'essai est inférieure à la CMU, le chef d'établissement doit prendre des mesures organisationnelles et techniques afin de restreindre la CMU à la charge d'essai et ce jusqu'au prochain essai en charge.</label>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-top:8px"><input type="checkbox" id="vi-sigreq"${s.signature_requise?' checked':''}> Signature du client requise sur le rapport</label>
+  </div>`;
+}
+window.vgpCalculCharges=function(){
+  const r=parseFloat($('vi-cref')?.value)||0;if(!r)return;
+  if(!$('vi-cctl').dataset.manuel){$('vi-cctl').value=Math.round(r*1.1)}
+  if(!$('vi-cessai').dataset.manuel){$('vi-cessai').value=Math.round(r*1.1)}
+  if(!$('vi-cmu').dataset.manuel&&!$('vi-cmu').value)$('vi-cmu').value=r;
+  vgpAlerteCMU();
+};
+window.vgpAlerteCMU=function(){
+  const e=parseFloat($('vi-cessai')?.value),m=parseFloat($('vi-cmu')?.value);
+  const b=$('vi-cmuok-box');if(b)b.style.display=(e&&m&&e<m)?'flex':'none';
+};
+function vgpLireInfos(){
+  if(!$('vi-lieu'))return null;
+  const g=id=>$(id)?.value?.trim()||'';const n=id=>{const x=parseFloat($(id)?.value);return isNaN(x)?null:x};
+  const o={ref:g('vi-ref'),lieu:g('vi-lieu'),lieu_type:g('vi-lieutype'),personnel:g('vi-pers'),fonction:g('vi-fonc'),preventive:g('vi-prev'),
+    km:n('vi-km'),horametre:n('vi-horo'),cref:n('vi-cref'),cmu:n('vi-cmu'),cctl:n('vi-cctl'),cessai:n('vi-cessai'),charge_portee:g('vi-cport'),
+    cmu_restreinte:!!$('vi-cmuok')?.checked,signature_requise:!!$('vi-sigreq')?.checked,remarques:g('vi-rem'),mention_code:$('vgp-mention-sel')?.value||_vgp?.mention||null};
+  ['carnet','notice','ce','propre','rapport'].forEach(k=>o['doc_'+k]=g('vi-doc-'+k)||'oui');
+  return o;
+}
+// Texte réglementaire : choisi automatiquement selon la catégorie, modifiable
+async function vgpChargerMention(codeSauve){
+  const el=$('vgp-mention');if(!el||!_vgp)return;
+  let ms=[];
+  try{ms=await reqCache('mentions_reg',()=>db.from('mentions_reglementaires').select('code,titre,texte,categories').eq('actif',true).order('titre'))||[]}catch(e){}
+  if(!ms.length){el.textContent='Texte réglementaire par défaut (bibliothèque indisponible)';return}
+  const auto=ms.find(m=>(m.categories||[]).includes(_vgp.categorie));
+  _vgp.mention=codeSauve||auto?.code||ms[0].code;
+  const aff=()=>{const m=ms.find(x=>x.code===_vgp.mention)||ms[0];$('vgp-mention-txt').textContent=(m.texte||'').slice(0,220)+((m.texte||'').length>220?'…':'')};
+  el.innerHTML=`<select id="vgp-mention-sel" style="width:100%;padding:9px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;margin-bottom:4px">${ms.map(m=>`<option value="${m.code}"${m.code===_vgp.mention?' selected':''}>${m.titre}${m.code===auto?.code?' (automatique)':''}</option>`).join('')}</select><div id="vgp-mention-txt"></div>`;
+  $('vgp-mention-sel').onchange=e=>{_vgp.mention=e.target.value;aff()};aff();
+}
+// Conclusions : boutons « Rien à signaler » / « Rappel des non-conformités » + remarques
+function vgpPreparerConclusions(){
+  const o=$('verif-obs');if(!o||$('vgp-concl-btns'))return;
+  const lab=o.previousElementSibling;if(lab&&lab.tagName==='LABEL')lab.textContent='Conclusions';
+  o.insertAdjacentHTML('beforebegin',`<div id="vgp-concl-btns" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"><button type="button" class="btn btn-s btn-sm" onclick="vgpRienASignaler()">Rien à signaler</button><button type="button" class="btn btn-s btn-sm" onclick="vgpRappelObservations()">Rappel des non-conformités</button><button type="button" class="btn btn-s btn-sm" onclick="dicterVers('verif-obs')">🎤</button></div>`);
+  const rem=_vgp?.infosSaved?.remarques||'';
+  o.insertAdjacentHTML('afterend',`<div class="fg" style="margin-top:10px"><label>Remarques <span style="font-weight:400;color:var(--txt-l)">(non liées à des non-conformités)</span></label><textarea id="vi-rem" placeholder="Remarques générales…">${rem.replace(/</g,'&lt;')}</textarea></div>`);
+}
+window.vgpRienASignaler=function(){
+  $('verif-obs').value='Rien à signaler';
+  if(!document.querySelector('.pc-item.nok')&&!currentStatut)setStatut('conforme');
+};
+window.vgpRappelObservations=function(){
+  const lignes=[];let g3=false;
+  document.querySelectorAll('#vgp-sections .pc-item.nok').forEach(it=>{
+    const lib=it.querySelector('.pc-label')?.textContent?.replace('*','').trim();
+    const gr=it.querySelector('.pc-grav')?.value,re=it.querySelector('.pc-res')?.value?.trim(),ob=it.querySelector('.pc-obs')?.value?.trim();
+    if(gr==='G3')g3=true;
+    lignes.push(`${it.dataset.section?it.dataset.section+' — ':''}${lib}${gr?' ['+gr+']':''}${re?' : '+re:''}${ob?' ('+ob+')':''}`);
+  });
+  if(!lignes.length){toast('Aucune non-conformité relevée');return}
+  $('verif-obs').value=lignes.join('\n');
+  if(!currentStatut)setStatut(g3?'non conforme':'à surveiller');
+};
 window.vgpAjouterOuvrir=function(){
   const secs=[...new Set(_vgp.pts.map(p=>p.section||'Divers'))];
   $('vgp-add-sec').innerHTML=secs.map(s=>`<option value="${s.replace(/"/g,'&quot;')}">${s}</option>`).join('')+'<option value="__new">➕ Nouveau bloc…</option>';
@@ -2696,6 +2862,7 @@ window.selectPC=function(pid,val){
   item.querySelectorAll('.pc-btn').forEach((b,i)=>{b.className='pc-btn'+(i===(val?0:1)?val?' ok-sel':' nok-sel':'')});
   if(!sessionVerifs[currentEquipId])sessionVerifs[currentEquipId]={points:{},pieces:[],resultat:'',obs:'',echeance:getDefaultEcheance()};
   sessionVerifs[currentEquipId].points[pid]=val;
+  if(typeof majDetailPoint==='function')majDetailPoint(pid,val);
 };
 
 // Pièces catalogue
@@ -3119,8 +3286,9 @@ async function enregistrerVerifHorsLigne(verifPayload,points,obs,echeance){
     const okSel=item.querySelector('.ok-sel');const nokSel=item.querySelector('.nok-sel');
     const numInp=item.querySelector(`#pcv-${pid}`);
     let r={point_controle_id:(String(pid).startsWith('c_')?null:pid),libelle_snapshot:label,section_snapshot:item.dataset.section||null,type_reponse:'oui_non'};
-    if(okSel){r.valeur_oui_non=true;r.conforme=true}
-    else if(nokSel){r.valeur_oui_non=false;r.conforme=false}
+    if(okSel){r.valeur_oui_non=true;r.conforme=true;Object.assign(r,vgpDetailPoint(item))}
+    else if(nokSel){r.valeur_oui_non=false;r.conforme=false;Object.assign(r,vgpDetailPoint(item))}
+    else if(item.querySelector('.na-sel')){r.valeur_oui_non=null;r.conforme=null;r.non_applicable=true}
     else if(numInp){r.type_reponse=numInp.type==='date'?'date':numInp.type==='number'?'numerique':'texte';
       if(numInp.type==='number')r.valeur_numerique=parseFloat(numInp.value)||null;
       else if(numInp.type==='date')r.valeur_date=numInp.value||null;
@@ -3270,7 +3438,11 @@ async function _validerVerifInterne(equip){
   };
   // VGP : énergies cochées (bi-énergie possible), pour la traçabilité du rapport
   const energiesVgp=vgpCategorie(equip)?vgpEnergiesCourantes():null;
-  if(energiesVgp)verifPayload.energies=energiesVgp;
+  if(energiesVgp){
+    verifPayload.energies=energiesVgp;
+    const infosVgp=vgpLireInfos();
+    if(infosVgp){verifPayload.vgp_infos=infosVgp;verifPayload.mention_code=infosVgp.mention_code||null}
+  }
 
   // === HORS-LIGNE : mise en file d'attente, synchronisation au retour du réseau ===
   if(!navigator.onLine){
@@ -3329,8 +3501,9 @@ async function _validerVerifInterne(equip){
     const okSel=item.querySelector('.ok-sel');const nokSel=item.querySelector('.nok-sel');
     const numInp=item.querySelector(`#pcv-${pid}`);
     let r={verification_id:vData.id,point_controle_id:(String(pid).startsWith('c_')?null:pid),libelle_snapshot:label,section_snapshot:item.dataset.section||null,type_reponse:'oui_non'};
-    if(okSel){r.valeur_oui_non=true;r.conforme=true}
-    else if(nokSel){r.valeur_oui_non=false;r.conforme=false}
+    if(okSel){r.valeur_oui_non=true;r.conforme=true;Object.assign(r,vgpDetailPoint(item))}
+    else if(nokSel){r.valeur_oui_non=false;r.conforme=false;Object.assign(r,vgpDetailPoint(item))}
+    else if(item.querySelector('.na-sel')){r.valeur_oui_non=null;r.conforme=null;r.non_applicable=true}
     else if(numInp){r.type_reponse=numInp.type==='date'?'date':numInp.type==='number'?'numerique':'texte';
       if(numInp.type==='number')r.valeur_numerique=parseFloat(numInp.value)||null;
       else if(numInp.type==='date')r.valeur_date=numInp.value||null;
@@ -4452,8 +4625,23 @@ const CHAMPS_TYPE_TERRAIN = {
     {id:'ef-cap',label:'Charge (t)',type:'number',placeholder:'1.5',step:'0.1'},
     {id:'ef-energie',label:'Énergie',type:'select',opts:['Diesel','Électrique','Gaz','Essence','Hybride (électrique + diesel)']},
   ],
+  vgp_echelle: [
+    {id:'ef-type-ech',label:'Type',type:'select',opts:['Échelle simple','Échelle coulissante','Échelle transformable','Escabeau','Escabeau sécurisé / PIRL','Plateforme roulante']},
+    {id:'ef-hauteur',label:'Hauteur max (m)',type:'number',placeholder:'3',step:'0.1'},
+    {id:'ef-cap',label:'Charge max admissible (kg)',type:'number',placeholder:'150',step:'10'},
+  ],
+  vgp_levage_acc: [
+    {id:'ef-type-lev',label:'Type',type:'select',opts:['Élingue chaîne','Élingue câble','Élingue textile (sangle)','Manille','Crochet','Anneau / main de levage','Palonnier / pince / griffe','Palan / treuil manuel','Palan électrique']},
+    {id:'ef-cap',label:'CMU (kg)',type:'number',placeholder:'1000',step:'10'},
+    {id:'ef-longueur',label:'Longueur (m)',type:'number',placeholder:'2',step:'0.1'},
+  ],
+  vgp_gants: [
+    {id:'ef-classe-gant',label:'Classe',type:'select',opts:['00 (500 V)','0 (1 000 V)','1 (7 500 V)','2 (17 000 V)','3 (26 500 V)','4 (36 000 V)']},
+    {id:'ef-taille-gant',label:'Taille',type:'text',placeholder:'10'},
+    {id:'ef-date-fab',label:'Date de fabrication',type:'date'},
+  ],
   vgp_antichute: [
-    {id:'ef-type-ac',label:"Type",type:'select',opts:['Harnais complet','Longe double','Longe simple','Absorbeur énergie','Enrouleur auto','Ligne de vie','Connecteur']},
+    {id:'ef-type-ac',label:"Type",type:'select',opts:['Harnais complet','Longe double','Longe simple','Absorbeur énergie','Enrouleur auto / stop-chute','Ligne de vie / ancrage','Connecteur / mousqueton']},
     {id:'ef-norme',label:'Norme CE',type:'select',opts:['EN 361','EN 358','EN 354','EN 355','EN 360','EN 362','EN 363']},
     {id:'ef-date-limite',label:'Date limite utilisation',type:'date'},
   ],

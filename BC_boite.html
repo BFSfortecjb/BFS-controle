@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Boîte à documents — BFS</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#f3f4f6;color:#1f2937}
+header{background:#c8102e;color:#fff;padding:16px}header h1{margin:0;font-size:18px}
+main{max-width:640px;margin:0 auto;padding:16px}
+.card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px #0001}
+.card h2{font-size:14px;margin:0 0 8px;color:#c8102e;text-transform:uppercase}
+a.doc{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid #e5e7eb;color:#111;text-decoration:none;font-size:14px}
+a.doc:first-of-type{border-top:0}small{color:#6b7280}
+.ok{color:#15803d;font-weight:700}.ko{color:#b91c1c;font-weight:700}
+</style></head><body>
+<header><h1>Boîte à documents du matériel</h1></header>
+<main id="m">Chargement…</main>
+<script>
+const FN='https://dqraobwozowtnrieitkp.supabase.co/functions/v1/boite-documents';
+const TYPES={notice:'Notice',certificat_conformite:'Certificat de conformité',rapport_vgp:'Rapport de VGP',rapport_verification:'Rapport de vérification',fiche_technique:'Fiche technique',photo:'Photo',autre:'Autre'};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fd=d=>d?new Date(d).toLocaleDateString('fr-FR'):'—';
+(async()=>{
+  const t=new URLSearchParams(location.search).get('t');const m=document.getElementById('m');
+  try{
+    const r=await fetch(FN+'?t='+encodeURIComponent(t||''));const j=await r.json();
+    if(j.error){m.innerHTML='<div class="card">'+esc(j.error)+'</div>';return}
+    const e=j.equipement;
+    let h='<div class="card"><h2>'+esc(e.libelle||'Matériel')+'</h2>'+[['N°',e.numero],['N° de série',e.serie],['Marque',e.marque],['Modèle',e.modele],['Mise en service',fd(e.mise_en_service)]].filter(x=>x[1]&&x[1]!=='—').map(x=>'<div><small>'+x[0]+'</small> '+esc(x[1])+'</div>').join('')+'</div>';
+    h+='<div class="card"><h2>Documents</h2>'+(j.documents.length?j.documents.map(d=>'<a class="doc" '+(d.url?'href="'+esc(d.url)+'" target="_blank" rel="noopener"':'')+'><span>'+esc(d.titre)+'<br><small>'+esc(TYPES[d.type]||d.type)+' · '+fd(d.date)+'</small></span><span>⬇</span></a>').join(''):'<small>Aucun document disponible.</small>')+'</div>';
+    h+='<div class="card"><h2>Derniers contrôles</h2>'+(j.controles.length?j.controles.map(c=>'<div style="padding:6px 0;border-top:1px solid #e5e7eb">'+fd(c.date_verification)+' — <span class="'+(/conforme/i.test(c.resultat||'')&&!/non/i.test(c.resultat||'')?'ok':'ko')+'">'+esc(c.resultat||'—')+'</span><br><small>Prochaine échéance : '+fd(c.date_prochaine_echeance)+'</small></div>').join(''):'<small>Aucun contrôle enregistré.</small>')+'</div>';
+    m.innerHTML=h;
+  }catch(x){m.innerHTML='<div class="card">Service indisponible.</div>'}
+})();
+</script></body></html>

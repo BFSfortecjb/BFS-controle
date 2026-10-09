@@ -289,6 +289,10 @@ tr:hover td{background:#fafafa}
       <div class="page" id="page-dash-tech">
         <div class="ag-tabs" id="dash-tech-tabs" style="display:none"></div>
         <div class="stats-grid" id="dash-tech-stats"></div>
+        <div class="card" id="dash-tech-missions-card" style="display:none">
+          <div class="card-header"><h2>🎯 Missions à planifier</h2></div>
+          <div id="dash-tech-missions"></div>
+        </div>
         <div class="card">
           <div class="card-header"><h2>📅 Mes prochains RDV</h2><a href="#" onclick="navigate('planning');return false" style="font-size:12px;color:var(--rouge)">Voir tout →</a></div>
           <div id="dash-tech-rdv"><div class="loading"><span class="spin"></span></div></div>
@@ -314,9 +318,14 @@ tr:hover td{background:#fafafa}
                 <span id="cal-label" style="font-size:13px;font-weight:600;min-width:130px;text-align:center"></span>
                 <button class="btn btn-s btn-sm" onclick="calNav(1)">›</button>
               </div>
+              <button class="btn btn-s btn-sm" onclick="openMissionModal()">🎯 + Mission</button>
               <button class="btn btn-p btn-sm" onclick="openRdvModal()">+ RDV</button>
             </div>
             <div style="padding:12px"><div id="calendrier"></div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h2>🎯 Missions en cours</h2></div>
+            <div id="sec-missions"><div class="loading"><span class="spin"></span></div></div>
           </div>
           <div class="card">
             <div class="card-header"><h2>⚠️ Urgences</h2></div>
@@ -444,6 +453,7 @@ tr:hover td{background:#fafafa}
         <div class="search-bar">
           <select id="f-tech-plan" onchange="loadPlanningPage()" style="max-width:200px"><option value="">Tous techniciens</option></select>
           <select id="f-ag-plan" onchange="loadPlanningPage()" style="max-width:140px"><option value="">Toutes agences</option><option value="briec">Briec</option><option value="sevremont">Sevremont</option></select>
+          <button class="btn btn-s" onclick="openMissionModal()">🎯 + Mission</button>
           <button class="btn btn-p" onclick="openRdvModal()">+ RDV</button>
         </div>
         <div class="card">
@@ -811,6 +821,24 @@ tr:hover td{background:#fafafa}
       <button class="btn btn-s" id="btn-delete-rdv" onclick="deleteRdv()" style="display:none;background:#fee2e2;color:#dc2626;margin-right:auto">🗑 Supprimer</button>
       <button class="btn btn-s" onclick="CM('mo-rdv')">Annuler</button>
       <button class="btn btn-p" onclick="saveRdv()">Enregistrer</button>
+    </div>
+  </div></div>
+</div>
+
+<!-- Mission (confiée par le secrétariat à un technicien) -->
+<div class="mo" id="mo-mission">
+  <div class="modal"><div class="mh"><h3>🎯 Nouvelle mission</h3><button class="mclose" onclick="CM('mo-mission')">✕</button></div>
+  <div class="mc"><input type="hidden" id="ms-id">
+    <div class="form-grid">
+      <div class="fg"><label>Client *</label><select id="ms-client"></select></div>
+      <div class="fg"><label>Technicien *</label><select id="ms-tech"></select></div>
+      <div class="fg" style="grid-column:1/-1"><label>Titre *</label><input type="text" id="ms-titre" placeholder="Ex : Remplir un extincteur"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Description</label><textarea id="ms-description" placeholder="Détails utiles au technicien (optionnel)"></textarea></div>
+    </div>
+    <div style="font-size:12px;color:var(--txt-l);margin-top:2px">Le technicien verra cette mission en attente sur son tableau de bord et choisira lui-même la date à laquelle la planifier dans son agenda.</div>
+    <div class="fa">
+      <button class="btn btn-s" onclick="CM('mo-mission')">Annuler</button>
+      <button class="btn btn-p" onclick="saveMission()">Envoyer la mission</button>
     </div>
   </div></div>
 </div>

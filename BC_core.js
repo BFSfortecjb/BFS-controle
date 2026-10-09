@@ -266,8 +266,18 @@ function buildNav(){
   nav.querySelectorAll('a').forEach(a=>a.addEventListener('click',e=>{e.preventDefault();navigate(a.dataset.page)}));
   const def={admin:'dash-admin',secretariat:'dash-sec',technicien:'dash-tech'}[ME.role]||'dash-tech';
   navigate(def);
+  if(role==='technicien')majBadgeMissionsNav();
 }
 const navA=(p,ico,label)=>`<a href="#" data-page="${p}"><span class="ico">${ico}</span><span>${label}</span></a>`;
+// Petit badge rouge sur "Mon tableau de bord" tant que le technicien a des missions à
+// planifier — c'est la notification qui l'alerte dès l'ouverture de l'appli.
+async function majBadgeMissionsNav(){
+  const {count}=await db.from('missions').select('id',{count:'exact',head:true}).eq('technicien_id',ME.id).eq('statut','a_planifier');
+  const lnk=document.querySelector('#sb-nav a[data-page="dash-tech"]');
+  if(!lnk)return;
+  const old=lnk.querySelector('.nav-badge');if(old)old.remove();
+  if(count){lnk.style.display='flex';lnk.style.alignItems='center';lnk.insertAdjacentHTML('beforeend',`<span class="nav-badge" style="margin-left:auto;background:#dc2626;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700">${count}</span>`);}
+}
 
 function navigate(page){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
