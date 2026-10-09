@@ -4692,6 +4692,14 @@ function efPlacerEnergie(){
   const fg=en?.closest('.fg');if(fg&&mm)mm.insertAdjacentElement('afterend',fg);
   efMajChampsEnergie('ef-');
 }
+function efTitreHistorique(code){
+  const hl=document.getElementById('ef-historique-list');if(!hl)return;
+  const hdesc=hl.previousElementSibling,ht=hdesc?.previousElementSibling;if(!hdesc||!ht)return;
+  if(!ht.dataset.orig){ht.dataset.orig=ht.textContent;hdesc.dataset.orig=hdesc.textContent}
+  const vgp=String(code||'').startsWith('vgp_');
+  ht.textContent=vgp?'📜 Dernières VGP / remises en service':ht.dataset.orig;
+  hdesc.textContent=vgp?'Dernières VGP et mises ou remises en service connues. N\'impacte pas le calcul automatique des échéances.':hdesc.dataset.orig;
+}
 function onEFTypeChange(){
   const mmType=document.getElementById('ef-type')?.value;
   const mmDiv=document.getElementById('ef-marque-modele');
@@ -4702,6 +4710,7 @@ function onEFTypeChange(){
   }
   const code = document.getElementById('ef-type').value;
   efAjusterFormVGP(code);
+  efTitreHistorique(code);
   // Extincteur : le N° identification/QR suit la règle PP-AGENT-CAPACITE-ANNEE-SEQ,
   // généré automatiquement à l'enregistrement (même règle que l'atelier) — pas de
   // saisie manuelle. Pour les autres types d'équipement, saisie manuelle inchangée.
@@ -4937,6 +4946,8 @@ function fmtMoisAnnee(d){
   return m?m[2]+'/'+m[1]:fmt(d);
 }
 
+const TYPES_HISTORIQUE_VGP_T = ['VGP (dernière visite)','Mise en service','Remise en service','Autre'];
+function typesHistoriqueTerrain(){return String(document.getElementById('ef-type')?.value||'').startsWith('vgp_')?TYPES_HISTORIQUE_VGP_T:TYPES_OP_HISTORIQUE_TERRAIN}
 const TYPES_OP_HISTORIQUE_TERRAIN = [
   'Mise en service','Vérification annuelle','Maintenance approfondie (MAA)',
   'Révision atelier','Recharge','Remplacement pièce','Percussion / incident',
@@ -4970,7 +4981,7 @@ function ajouterLigneHistoriqueTerrain(){
     <h3>Ajouter une ligne d'historique</h3>
     <div class="fg"><label>Mois / année</label><input type="month" id="hist-date-t"></div>
     <div class="fg"><label>Type d'opération</label>
-      <select id="hist-type-t">${TYPES_OP_HISTORIQUE_TERRAIN.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+      <select id="hist-type-t">${typesHistoriqueTerrain().map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
     </div>
     <div class="fg"><label>Commentaire</label><input type="text" id="hist-commentaire-t" placeholder="Précisions (optionnel)"></div>
     <div style="display:flex;gap:8px;margin-top:10px">

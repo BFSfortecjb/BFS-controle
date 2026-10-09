@@ -814,6 +814,8 @@ const TYPES_OPERATION_HISTORIQUE = [
   'Réparation','Contrôle réglementaire','Autre'
 ];
 
+const TYPES_HISTORIQUE_VGP = ['VGP (dernière visite)','Mise en service','Remise en service','Autre'];
+function typesHistoriqueEquip(){return String($('e-type')?.value||'').startsWith('vgp_')?TYPES_HISTORIQUE_VGP:TYPES_OPERATION_HISTORIQUE}
 function renderHistoriqueEquip(){
   const el = $('e-historique-list');
   if(!el) return;
@@ -841,7 +843,7 @@ function ajouterLigneHistorique(){
     <div class="mc">
       <div class="fg" style="margin-bottom:12px"><label>Date *</label><input type="date" id="hist-date"></div>
       <div class="fg" style="margin-bottom:12px"><label>Type d'opération *</label>
-        <select id="hist-type">${TYPES_OPERATION_HISTORIQUE.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+        <select id="hist-type">${typesHistoriqueEquip().map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
       </div>
       <div class="fg" style="margin-bottom:12px"><label>Commentaire</label><input type="text" id="hist-commentaire" placeholder="Précisions (optionnel)"></div>
       <div class="fa">
@@ -2191,6 +2193,12 @@ function ajusterFormEquipVGP(code){
   const en=$('e-energie'),fgM=mm?.parentElement;
   if(vgp&&en&&fgM)fgM.insertAdjacentElement('afterend',en.closest('.fg'));
   if(vgp)majChampsEnergie('e-');
+  const hl=$('e-historique-list'),hdesc=hl?.previousElementSibling,ht=hdesc?.previousElementSibling;
+  if(hl&&hdesc&&ht){
+    if(!ht.dataset.orig){ht.dataset.orig=ht.textContent;hdesc.dataset.orig=hdesc.textContent}
+    ht.textContent=vgp?'📜 Dernières VGP / remises en service':ht.dataset.orig;
+    hdesc.textContent=vgp?'Saisissez les dernières VGP et les mises ou remises en service connues. N\'impacte pas le calcul automatique des échéances.':hdesc.dataset.orig;
+  }
 }
 function onEquipTypeChange(){
   const code = document.getElementById('e-type').value;
