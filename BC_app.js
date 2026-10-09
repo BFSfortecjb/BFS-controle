@@ -747,6 +747,7 @@ async function openEquipModal(prefill=null){
   $('e-tech').innerHTML='<option value="">— Non affecté —</option>'+profils.map(p=>`<option value="${p.id}">${p.prenom||''} ${p.nom}</option>`).join('');
   ['e-id','e-num','e-serie','e-lot','e-num-ent','e-emplacement','e-loc','e-zone','e-notes'].forEach(id=>$(id).value='');
   _equipRestoreData={};
+  majStatutsEquip('');
   $('e-statut').value='opérationnel';
   $('mo-eq-t').textContent='Nouvel équipement';
 
@@ -791,7 +792,7 @@ function onEquipClientChange(){
   const bloc=$('e-agence-stock-bloc');
   const sansClient=!$('e-client').value;
   bloc.style.display=sansClient?'block':'none';
-  if(sansClient&&$('e-statut').value==='opérationnel')$('e-statut').value='en stock';
+  if(sansClient&&!String($('e-type').value).startsWith('vgp_')&&$('e-statut').value==='opérationnel')$('e-statut').value='en stock';
 }
 function openStockNeufModal(prefill=null){
   openEquipModal(prefill);
@@ -877,7 +878,13 @@ async function saveEquip(){
     agenceId=$('e-agence-stock').value||null;
     if(!agenceId){toast('Choisis l\'agence de stockage','err');return}
   }
-  const p={client_id:clientId,agence_id:agenceId,technicien_id:$('e-tech').value||null,type_equipement_code:$('e-type').value,numero_identification:$('e-num').value.trim(),numero_serie:$('e-serie').value.trim()||null,numero_lot:$('e-lot').value.trim()||null,numero_entreprise:$('e-num-ent').value.trim()||null,emplacement:$('e-emplacement').value.trim()||null,marque:(lireMarqueModele('e-').marque||'').trim(),modele:(lireMarqueModele('e-').modele||'').trim(),capacite_valeur:parseFloat($('e-cap')?.value)||null,capacite_unite:$('e-unite')?.value?.trim()||null,donnees_specifiques:getEquipSpecificData(),date_fabrication:$('e-fab')?.value||null,date_mise_en_service:$('e-mis')?.value||null,localisation:$('e-loc').value.trim(),etage_zone:$('e-zone').value.trim(),statut:$('e-statut').value,notes:$('e-notes').value.trim(),historique:_historiqueEquip,updated_at:new Date().toISOString()};
+  let numId=$('e-num').value.trim();
+  if(!id&&!numId&&String($('e-type').value).startsWith('vgp_')){
+    const {data:idGen,error:eg}=await db.rpc('generer_identification_vgp',{p_type:$('e-type').value,p_annee:null});
+    if(eg){toast('Erreur génération identification : '+eg.message,'err');return}
+    numId=idGen;
+  }
+  const p={client_id:clientId,agence_id:agenceId,technicien_id:$('e-tech').value||null,type_equipement_code:$('e-type').value,numero_identification:numId,numero_serie:$('e-serie').value.trim()||null,numero_lot:$('e-lot').value.trim()||null,numero_entreprise:$('e-num-ent').value.trim()||null,emplacement:$('e-emplacement').value.trim()||null,marque:(lireMarqueModele('e-').marque||'').trim(),modele:(lireMarqueModele('e-').modele||'').trim(),capacite_valeur:parseFloat($('e-cap')?.value)||null,capacite_unite:$('e-unite')?.value?.trim()||null,donnees_specifiques:getEquipSpecificData(),date_fabrication:$('e-fab')?.value||null,date_mise_en_service:$('e-mis')?.value||null,localisation:$('e-loc').value.trim(),etage_zone:$('e-zone').value.trim(),statut:$('e-statut').value,notes:$('e-notes').value.trim(),historique:_historiqueEquip,updated_at:new Date().toISOString()};
   const {error}=id?await db.from('equipements').update(p).eq('id',id):await db.from('equipements').insert(p);
   if(error){toast('Erreur: '+error.message,'err');return}
   toast(id?'Modifié':'Créé');CM('mo-equip');loadEquipements();
@@ -2126,9 +2133,14 @@ const CHAMPS_TYPE = {
   ],
   vgp_engin: [
     {id:'e-type-engin',label:"Type d'engin",type:'select',opts:['Chariot élévateur frontal','Chariot télescopique','Pelle hydraulique','Mini-pelle','Chargeuse','Tractopelle','Tombereau','Compacteur','Autre']},
-    {id:'e-ptac',label:'PTAC (tonnes)',type:'number',placeholder:'3.5',step:'0.5'},
-    {id:'e-cap',label:'Capacité de levage (t)',type:'number',placeholder:'1.5',step:'0.1'},
     {id:'e-energie',label:'Énergie',type:'select',opts:['Diesel','Électrique','Gaz','Essence','Hybride (électrique + diesel)']},
+    {id:'e-poids-vide',label:'Poids à vide (kg)',type:'number',placeholder:'3200',step:'10'},
+    {id:'e-cap-levage',label:'Capacité de levage (kg)',type:'number',placeholder:'1500',step:'10'},
+    {id:'e-h-levage',label:'Hauteur de levage (m)',type:'number',placeholder:'4.5',step:'0.1'},
+    {id:'e-charge-hmax',label:'Charge à la hauteur max (kg)',type:'number',placeholder:'800',step:'10'},
+    {id:'e-bat-min',label:'Batterie — poids mini (kg) (électrique)',type:'number',placeholder:'900',step:'10'},
+    {id:'e-bat-max',label:'Batterie — poids maxi (kg) (électrique)',type:'number',placeholder:'1100',step:'10'},
+    {id:'e-bat-reel',label:'Batterie — poids réel (kg) (électrique)',type:'number',placeholder:'1000',step:'10'},
   ],
   vgp_antichute: [
     {id:'e-type-ac',label:"Type d'équipement",type:'select',opts:['Harnais complet','Longe double absorbeur','Longe simple','Absorbeur énergie','Enrouleur rappel auto','Ligne de vie horizontale','Connecteur / Mousqueton']},
@@ -2140,6 +2152,36 @@ const CHAMPS_TYPE = {
 let _equipRestoreData = {};
 let _champPersoCount = 0;
 
+// Équipements VGP : statuts propres au parc VGP, N° identification automatique, pas de N° de lot,
+// marque + modèle sur une ligne, énergie dessous. Les extincteurs et autres types ne changent pas.
+// code='' : remet la liste complète des statuts (avant affectation d'une valeur).
+function majStatutsEquip(code){
+  const sel=$('e-statut');if(!sel)return;
+  const vgp=String(code||'').startsWith('vgp_');
+  const tous=[['opérationnel','Opérationnel'],['en stock','🧯 En stock (neuf, à installer)'],['à remplacer','À remplacer'],['en révision','En révision'],['hors service','Hors service'],['réformé','Réformé'],
+    ['à mettre en service','À mettre en service'],['à remettre en service','À remettre en service'],['en service','En service']];
+  const vgpOpts=[['à mettre en service','À mettre en service'],['à remettre en service','À remettre en service'],['en service','En service'],['réformé','Sortie du parc (historique conservé)']];
+  const liste=!code?tous:vgp?vgpOpts:tous.slice(0,6);
+  const cur=sel.value;
+  sel.innerHTML=liste.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+  sel.value=liste.some(o=>o[0]===cur)?cur:(vgp?'en service':'opérationnel');
+}
+function ajusterFormEquipVGP(code){
+  const vgp=String(code||'').startsWith('vgp_');
+  majStatutsEquip(code);
+  const lot=$('e-lot')?.closest('.fg');if(lot)lot.style.display=vgp?'none':'';
+  const mm=$('e-marque-modele');
+  if(mm){mm.style.display=vgp?'grid':'';mm.style.gridTemplateColumns=vgp?'1fr 1fr':'';mm.style.gap=vgp?'13px':'';}
+  const num=$('e-num');
+  if(num){
+    const auto=vgp&&!$('e-id').value;
+    num.readOnly=auto;
+    num.placeholder=auto?'Généré automatiquement à l\'enregistrement':'Ex: EXT-BRIEC-001';
+    if(auto)num.value='';
+  }
+  const en=$('e-energie'),fgM=mm?.parentElement;
+  if(vgp&&en&&fgM)fgM.insertAdjacentElement('afterend',en.closest('.fg'));
+}
 function onEquipTypeChange(){
   const code = document.getElementById('e-type').value;
   const mmDiv=document.getElementById('e-marque-modele');
@@ -2174,6 +2216,7 @@ function onEquipTypeChange(){
   zonePerso.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--txt-l);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Champs personnalisés</div><div id="e-champs-perso"></div><button type="button" onclick="ajouterChampPerso()" class="btn btn-s btn-sm" style="margin-top:6px">+ Ajouter un champ</button>';
   container.appendChild(zonePerso);
   restoreEquipValues();
+  ajusterFormEquipVGP(code);
   if(_equipRestoreData['_perso']){
     try{((_equipRestoreData['_perso'])||[]).forEach(p=>ajouterChampPerso(p.label,p.value));}catch(e){}
   }
@@ -2209,7 +2252,7 @@ function restoreEquipValues(){
     'e-diametre','e-dmf','e-autonomie','e-type-batt','e-flux','e-alim',
     'e-nb-declencheurs','e-nb-sirenes','e-type-det','e-num-centrale',
     'e-classement','e-type-porte','e-ferme-auto','e-type-nacelle','e-hauteur',
-    'e-energie','e-type-engin','e-ptac','e-type-ac','e-norme',
+    'e-energie','e-type-engin','e-ptac','e-poids-vide','e-cap-levage','e-h-levage','e-charge-hmax','e-bat-min','e-bat-max','e-bat-reel','e-type-ac','e-norme',
     'e-date-limite','e-type-baes'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el&&d[id])el.value=d[id];});
 }
@@ -2220,7 +2263,7 @@ function getEquipSpecificData(){
     'e-diametre','e-dmf','e-autonomie','e-type-batt','e-flux','e-alim',
     'e-nb-declencheurs','e-nb-sirenes','e-type-det','e-num-centrale',
     'e-classement','e-type-porte','e-ferme-auto','e-type-nacelle','e-hauteur',
-    'e-energie','e-type-engin','e-ptac','e-type-ac','e-norme',
+    'e-energie','e-type-engin','e-ptac','e-poids-vide','e-cap-levage','e-h-levage','e-charge-hmax','e-bat-min','e-bat-max','e-bat-reel','e-type-ac','e-norme',
     'e-date-limite','e-type-baes'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el&&el.value)data[id]=el.value;});
   const perso = getChampsPerso();
