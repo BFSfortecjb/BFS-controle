@@ -2166,6 +2166,15 @@ function majStatutsEquip(code){
   sel.innerHTML=liste.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
   sel.value=liste.some(o=>o[0]===cur)?cur:(vgp?'en service':'opérationnel');
 }
+// Champs batterie : seulement pour les modèles électriques ou hybrides
+function majChampsEnergie(pf){
+  const en=document.getElementById(pf+'energie');if(!en)return;
+  const maj=(vide)=>{
+    const show=/lectr|hybride/i.test(en.value);
+    ['bat-min','bat-max','bat-reel'].forEach(k=>{const el=document.getElementById(pf+k);const fg=el?.closest('.fg');if(!fg)return;fg.style.display=show?'':'none';if(!show&&vide)el.value=''});
+  };
+  en.onchange=()=>maj(true);maj(false);
+}
 function ajusterFormEquipVGP(code){
   const vgp=String(code||'').startsWith('vgp_');
   majStatutsEquip(code);
@@ -2181,6 +2190,7 @@ function ajusterFormEquipVGP(code){
   }
   const en=$('e-energie'),fgM=mm?.parentElement;
   if(vgp&&en&&fgM)fgM.insertAdjacentElement('afterend',en.closest('.fg'));
+  if(vgp)majChampsEnergie('e-');
 }
 function onEquipTypeChange(){
   const code = document.getElementById('e-type').value;
