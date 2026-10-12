@@ -250,9 +250,9 @@ function buildNav(){
   html+=navA('verifications','✅','Vérifications');
   html+=navA('contrats','📋','Contrats');
   html+=navA('planning','📅','Planning');
+  html+=navA('stock','📦','Stock & commandes'); // accessible à tous les rôles (écriture limitée à leur agence par la RLS)
   if(role==='admin'||role==='secretariat'){
     html+=navA('bons','📝','Bons d\'intervention');
-    html+=navA('stock','📦','Stock & commandes');
     html+=navA('tarifs','💶','Tarifs');
     html+=navA('utilisateurs','👥','Utilisateurs');
   }
