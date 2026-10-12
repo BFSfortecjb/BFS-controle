@@ -2416,11 +2416,12 @@ function vgpItemHtml(p){
 function vgpRender(){
   const el=$('vgp-sections');if(!el||!_vgp)return;
   Object.assign(_vgp.answers,vgpSnapshot());
+  const addF=$('vgp-add'),hold=$('vgp-add-holder');if(addF&&hold&&addF.parentElement!==hold)hold.appendChild(addF);
   const visibles=_vgp.pts.filter(p=>!_vgp.removed.has(p.id)&&(!p.energies||p.energies.some(e=>_vgp.energies.has(e))));
   const ordre=[],parSection={};
   visibles.forEach(p=>{const s=p.section||'Divers';if(!parSection[s]){parSection[s]=[];ordre.push(s)}parSection[s].push(p)});
-  _vgp.sections=ordre.map(s=>parSection[s].map(p=>p.id));
-  el.innerHTML=ordre.map((s,i)=>`<div class="sec" style="display:flex;justify-content:space-between;align-items:center"><span>${s}</span><button type="button" onclick="vgpRetirerSection(${i})" title="Retirer tout ce bloc" style="background:none;border:none;color:var(--txt-l);font-size:12px;cursor:pointer;text-transform:none;letter-spacing:0">🗑 retirer le bloc</button></div>`+parSection[s].map(vgpItemHtml).join('')).join('')
+  _vgp.sections=ordre.map(s=>parSection[s].map(p=>p.id));_vgp.secNames=ordre;
+  el.innerHTML=ordre.map((s,i)=>`<div class="sec" style="display:flex;justify-content:space-between;align-items:center"><span>${s}</span><button type="button" onclick="vgpRetirerSection(${i})" title="Retirer tout ce bloc" style="background:none;border:none;color:var(--txt-l);font-size:12px;cursor:pointer;text-transform:none;letter-spacing:0">🗑 retirer le bloc</button></div>`+parSection[s].map(vgpItemHtml).join('')+`<div id="vgp-slot-${i}" style="margin:6px 0 14px"><div style="display:flex;gap:8px"><button type="button" class="btn btn-s btn-sm" style="flex:1" onclick="vgpAjouterOuvrir(${i})">➕ Ajouter une ligne</button><button type="button" class="btn btn-p btn-sm" style="flex:1" onclick="vgpValiderBloc(${i})">✅ Valider le bloc</button></div></div>`).join('')
     ||'<div style="text-align:center;padding:16px;color:var(--txt-l);font-size:13px">Aucun point à afficher — coche une énergie ou remets les blocs retirés.</div>';
   const nb=_vgp.removed.size;
   const r=$('vgp-restore');if(r){r.style.display=nb?'block':'none';r.textContent=`↺ Remettre les points retirés (${nb})`}
@@ -2431,9 +2432,13 @@ window.vgpToggleEnergie=function(c){
   const b=$('vgp-e-'+c);if(b)b.classList.toggle('ok-sel',_vgp.energies.has(c));
   vgpRender();
 };
-window.vgpRetirer=function(pid){Object.assign(_vgp.answers,vgpSnapshot());_vgp.removed.add(pid);vgpRender()};
+window.vgpRetirer=function(pid){
+  const pt=_vgp.pts.find(x=>x.id===pid);
+  if(!confirm('Retirer « '+(pt?.libelle||'ce point')+' » de CE contrôle ?\n\nLa trame de base n\'est pas modifiée : le point sera de nouveau proposé aux prochains contrôles.'))return;
+  Object.assign(_vgp.answers,vgpSnapshot());_vgp.removed.add(pid);vgpRender();
+};
 window.vgpRetirerSection=function(i){
-  if(!confirm('Retirer tout ce bloc du contrôle ?'))return;
+  if(!confirm('Retirer tout ce bloc de CE contrôle ?\n\nLa trame de base n\'est pas modifiée : le bloc sera de nouveau proposé aux prochains contrôles.'))return;
   Object.assign(_vgp.answers,vgpSnapshot());
   (_vgp.sections[i]||[]).forEach(id=>_vgp.removed.add(id));vgpRender();
 };
@@ -2446,16 +2451,16 @@ function vgpInit(equip,pts,saved){
     <div style="display:flex;gap:6px;flex-wrap:wrap">${VGP_ENERGIES.map(([c,l])=>`<button type="button" id="vgp-e-${c}" class="pc-btn${_vgp.energies.has(c)?' ok-sel':''}" style="flex:1;min-width:110px;padding:8px;font-size:13px" onclick="vgpToggleEnergie('${c}')">${l}</button>`).join('')}</div>
     <button type="button" id="vgp-restore" class="btn btn-s btn-sm" style="display:none;margin-top:8px" onclick="vgpRestaurer()"></button>
   </div>${vgpInfosHtml(equip,st)}<div id="vgp-sections"></div>
-  <button type="button" class="btn btn-s" style="width:100%;margin-top:6px" onclick="vgpAjouterOuvrir()">➕ Ajouter un point absent du template</button>
+  <button type="button" class="btn btn-s" style="width:100%;margin-top:6px" onclick="vgpAjouterOuvrir(-1)">➕ Ajouter un bloc (ex : nom d'un accessoire)</button><div id="vgp-add-holder">
   <div class="sec" style="margin-top:16px">Texte réglementaire</div><div id="vgp-mention" style="font-size:12px;color:var(--txt-l)">Chargement…</div>
   <div id="vgp-add" style="display:none;background:#f8fafc;border:1.5px solid #e5e7eb;border-radius:10px;padding:12px;margin-top:8px">
     <div class="fg"><label>Point à contrôler *</label><input type="text" id="vgp-add-lib" placeholder="Ex : Rétroviseur côté droit"></div>
     <div class="fg"><label>Bloc</label><select id="vgp-add-sec" onchange="$('vgp-add-newsec').style.display=this.value==='__new'?'block':'none'"></select>
-      <input type="text" id="vgp-add-newsec" placeholder="Nom du nouveau bloc" style="display:none;margin-top:6px"></div>
+      <input type="text" id="vgp-add-newsec" placeholder="Nom du bloc / de l'accessoire (ex : Fourches, Godet, Pince)" style="display:none;margin-top:6px"></div>
     <div class="fg"><label>Type de réponse</label><select id="vgp-add-type"><option value="oui_non">OK / NON</option><option value="numerique">Valeur numérique</option><option value="texte">Texte</option><option value="date">Date</option></select></div>
     ${ME&&ME.role==='admin'?`<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:10px"><input type="checkbox" id="vgp-add-keep"> Garder dans le template (prochains VGP de cette catégorie)</label>`:''}
     <div style="display:flex;gap:8px"><button type="button" class="btn btn-s" style="flex:1" onclick="$('vgp-add').style.display='none'">Annuler</button><button type="button" class="btn btn-p" style="flex:1" onclick="vgpAjouter()">Ajouter</button></div>
-  </div>`;
+  </div></div>`;
   _vgp.type=equip.type_equipement_code;_vgp.categorie=vgpCategorie(equip);
   _vgp.infosSaved=st?.infos||null;
   vgpRender();
@@ -2548,11 +2553,30 @@ window.vgpRappelObservations=function(){
   $('verif-obs').value=lignes.join('\n');
   if(!currentStatut)setStatut(g3?'non conforme':'à surveiller');
 };
-window.vgpAjouterOuvrir=function(){
+window.vgpAjouterOuvrir=function(i){
+  Object.assign(_vgp.answers,vgpSnapshot());
   const secs=[...new Set(_vgp.pts.map(p=>p.section||'Divers'))];
-  $('vgp-add-sec').innerHTML=secs.map(s=>`<option value="${s.replace(/"/g,'&quot;')}">${s}</option>`).join('')+'<option value="__new">➕ Nouveau bloc…</option>';
-  $('vgp-add-newsec').style.display='none';$('vgp-add-lib').value='';
-  $('vgp-add').style.display='block';$('vgp-add-lib').focus();
+  $('vgp-add-sec').innerHTML=secs.map(s=>`<option value="${s.replace(/"/g,'&quot;')}">${s}</option>`).join('')+'<option value="__new">➕ Nouveau bloc / accessoire…</option>';
+  const nom=i>=0?_vgp.secNames?.[i]:null;
+  if(nom){$('vgp-add-sec').value=nom;$('vgp-add-newsec').style.display='none'}
+  else{$('vgp-add-sec').value='__new';$('vgp-add-newsec').style.display='block'}
+  $('vgp-add-lib').value='';
+  const f=$('vgp-add'),slot=i>=0?$('vgp-slot-'+i):null;
+  if(slot)slot.appendChild(f);
+  f.style.display='block';$('vgp-add-lib').focus();
+};
+// Validation d'un bloc : les points non encore renseignés passent à OK
+window.vgpValiderBloc=function(i){
+  const ids=_vgp.sections[i]||[];let nb=0;
+  ids.forEach(id=>{
+    const it=document.getElementById('pci-'+id);if(!it)return;
+    const pt=_vgp.pts.find(x=>x.id===id);
+    if(pt?.type_reponse!=='oui_non')return;
+    if(it.querySelector('.ok-sel,.nok-sel,.na-sel'))return;
+    selectPC(id,true);nb++;
+  });
+  const nok=ids.filter(id=>document.getElementById('pci-'+id)?.querySelector('.nok-sel')).length;
+  toast(`Bloc validé${nb?` — ${nb} point${nb>1?'s':''} passé${nb>1?'s':''} à OK`:''}${nok?` · ${nok} non-conformité${nok>1?'s':''}`:''}`);
 };
 window.vgpAjouter=async function(){
   const libelle=$('vgp-add-lib').value.trim();

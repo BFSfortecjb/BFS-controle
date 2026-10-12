@@ -881,6 +881,16 @@ async function saveEquip(){
     if(!agenceId){toast('Choisis l\'agence de stockage','err');return}
   }
   let numId=$('e-num').value.trim();
+  if(!id&&$('e-type').value==='extincteur'){
+    // Identification extincteur : générée automatiquement (MODE-AGENT-CAPACITE-ANNEE-SEQ, même règle que l'atelier)
+    const mode=$('e-mode-press')?.value,agent=$('e-agent')?.value,cap=parseFloat($('e-cap')?.value);
+    if(!mode||!agent||isNaN(cap)){toast('Mode de pressurisation, agent et capacité obligatoires pour générer l\'identification','err');return}
+    const fab=$('e-fab')?.value,mis=$('e-mis')?.value;
+    const annee=fab?new Date(fab).getFullYear():(mis?new Date(mis).getFullYear():new Date().getFullYear());
+    const {data:idE,error:eE}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:mode,p_agent_code:agent,p_capacite:cap,p_annee_mise_en_service:annee});
+    if(eE){toast('Erreur génération identification : '+eE.message,'err');return}
+    numId=idE;
+  }
   if(!id&&!numId&&String($('e-type').value).startsWith('vgp_')){
     const {data:idGen,error:eg}=await db.rpc('generer_identification_vgp',{p_type:$('e-type').value,p_annee:null});
     if(eg){toast('Erreur génération identification : '+eg.message,'err');return}
@@ -2095,6 +2105,7 @@ async function deletePoint(id){if(!confirm('Supprimer ?'))return;await db.from('
 // ============================================================
 const CHAMPS_TYPE = {
   extincteur: [
+    {id:'e-mode-press',label:'Mode de pressurisation',type:'select',opts:[['PP','PP — Pression permanente'],['PA','PA — Pression auxiliaire']]},
     {id:'e-agent',label:'Agent extincteur',type:'select',opts:['CO2','BC','ABC','D','A','AB','ABF','A lith','Autre']},
     {id:'e-cap',label:'Capacité',type:'number',placeholder:'6',step:'0.5'},
     {id:'e-unite',label:'Unité',type:'select',opts:['kg','L']},
@@ -2157,6 +2168,12 @@ let _champPersoCount = 0;
 // Équipements VGP : statuts propres au parc VGP, N° identification automatique, pas de N° de lot,
 // marque + modèle sur une ligne, énergie dessous. Les extincteurs et autres types ne changent pas.
 // code='' : remet la liste complète des statuts (avant affectation d'une valeur).
+document.addEventListener('change',e=>{
+  if(e.target&&e.target.id==='e-agent'){
+    const u=document.getElementById('e-unite'),a=e.target.value;
+    if(u&&a&&a!=='Autre')u.value=['CO2','BC','ABC','D'].includes(a)?'kg':'L';
+  }
+});
 function majStatutsEquip(code){
   const sel=$('e-statut');if(!sel)return;
   const vgp=String(code||'').startsWith('vgp_');
@@ -2185,7 +2202,7 @@ function ajusterFormEquipVGP(code){
   if(mm){mm.style.display=vgp?'grid':'';mm.style.gridTemplateColumns=vgp?'1fr 1fr':'';mm.style.gap=vgp?'13px':'';}
   const num=$('e-num');
   if(num){
-    const auto=vgp&&!$('e-id').value;
+    const auto=(vgp||code==='extincteur')&&!$('e-id').value;
     num.readOnly=auto;
     num.placeholder=auto?'Généré automatiquement à l\'enregistrement':'Ex: EXT-BRIEC-001';
     if(auto)num.value='';
@@ -2221,7 +2238,7 @@ function onEquipTypeChange(){
     div.className = 'fg';
     let input = '';
     if(c.type === 'select'){
-      input = '<select id="'+c.id+'"><option value="">— Sélectionner —</option>'+(c.opts||[]).map(o=>'<option value="'+o+'">'+o+'</option>').join('')+'</select>';
+      input = '<select id="'+c.id+'"><option value="">— Sélectionner —</option>'+(c.opts||[]).map(o=>{const [v,l]=Array.isArray(o)?o:[o,o];return '<option value="'+v+'">'+l+'</option>'}).join('')+'</select>';
     } else {
       input = '<input type="'+c.type+'" id="'+c.id+'" placeholder="'+(c.placeholder||'')+'" '+(c.step?'step="'+c.step+'"':'')+'>';
     }
@@ -2266,7 +2283,7 @@ function getChampsPerso(){
 function restoreEquipValues(){
   const d = _equipRestoreData;
   if(!d || !Object.keys(d).length) return;
-  const ids = ['e-cap','e-unite','e-fab','e-mis','e-agent','e-pression','e-longueur',
+  const ids = ['e-mode-press','e-cap','e-unite','e-fab','e-mis','e-agent','e-pression','e-longueur',
     'e-diametre','e-dmf','e-autonomie','e-type-batt','e-flux','e-alim',
     'e-nb-declencheurs','e-nb-sirenes','e-type-det','e-num-centrale',
     'e-classement','e-type-porte','e-ferme-auto','e-type-nacelle','e-hauteur',
@@ -2277,7 +2294,7 @@ function restoreEquipValues(){
 
 function getEquipSpecificData(){
   const data = {};
-  const ids = ['e-cap','e-unite','e-fab','e-mis','e-agent','e-pression','e-longueur',
+  const ids = ['e-mode-press','e-cap','e-unite','e-fab','e-mis','e-agent','e-pression','e-longueur',
     'e-diametre','e-dmf','e-autonomie','e-type-batt','e-flux','e-alim',
     'e-nb-declencheurs','e-nb-sirenes','e-type-det','e-num-centrale',
     'e-classement','e-type-porte','e-ferme-auto','e-type-nacelle','e-hauteur',
