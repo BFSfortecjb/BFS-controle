@@ -2973,6 +2973,13 @@ async function importUnitesTamponExcel(input){
       for(const n of noms){for(const k of Object.keys(r)){if(k.toLowerCase().trim().replace('*','').startsWith(n))return r[k]}}
       return '';
     };
+    const norm=s=>String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace('*','').trim();
+    const colMotsCles=(r,mots)=>{for(const k of Object.keys(r)){const n=norm(k);if(mots.every(m=>n.includes(m)))return r[k]}return ''};
+    const extraireAnnee=v=>{
+      if(v==null||v==='')return null;
+      if(v instanceof Date&&!isNaN(v))return v.getFullYear();
+      const m=String(v).match(/(19|20)\d{2}/);return m?parseInt(m[0],10):null;
+    };
     let crees=0,err=0;const erreurs=[],creees=[];
     for(let i=0;i<rows.length;i++){
       const r=rows[i];const ligne=i+2;
@@ -2980,9 +2987,13 @@ async function importUnitesTamponExcel(input){
       const agentMatch=(agentsData||[]).find(a=>a.code.toLowerCase()===agentRaw.toLowerCase());
       const capacite=parseFloat(String(col(r,'capacité','capacite')).replace(',','.'));
       const mode=String(col(r,'mode (pp/pa)','mode')).trim().toUpperCase();
-      const anneeMES=parseInt(col(r,'année mise en service','annee mise en service'));
+      // Année de mise en service : tolère « Année de mise en service », « Date de mise en service »,
+      // une date complète ou une année seule ; à défaut, reprend l'année de fabrication.
+      const brutMES=colMotsCles(r,['mise','service']);
+      const fabPourMES=parseDateFabrication(col(r,'année de fabrication','annee de fabrication','date fabrication','date de fabrication'));
+      const anneeMES=extraireAnnee(brutMES)||(fabPourMES?new Date(fabPourMES).getFullYear():null);
       const agenceNom=String(col(r,'agence')).trim();
-      const agence=(_stockAgences||[]).find(a=>a.nom.toLowerCase()===agenceNom.toLowerCase());
+      const agence=(_stockAgences||[]).find(a=>norm(a.nom)===norm(agenceNom)||norm(a.code||'')===norm(agenceNom));
       if(!agentRaw&&!capacite&&!mode&&!agenceNom)continue; // ligne vide
       if(!agentMatch){erreurs.push(`Ligne ${ligne} : agent "${agentRaw}" inconnu (voir onglet Légende)`);err++;continue}
       if(isNaN(capacite)||capacite<=0){erreurs.push(`Ligne ${ligne} : capacité invalide`);err++;continue}
