@@ -263,17 +263,23 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <h1>Nouveau contrat</h1>
   </div>
   <div class="content">
-    <div class="fg" style="margin-bottom:12px"><label>Client *</label><select id="nk-client"></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Client *</label><input type="search" id="nk-client-q" placeholder="🔎 Rechercher un client (nom, ville)…" oninput="filtrerClientsContrat()" style="margin-bottom:6px"><select id="nk-client"></select></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div class="fg"><label>N° contrat</label><input type="text" id="nk-num" placeholder="auto si vide"></div>
       <div class="fg"><label>Type</label><select id="nk-type"><option value="annuel">Annuel</option><option value="pluriannuel">Pluriannuel</option><option value="ponctuel">Ponctuel</option></select></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-      <div class="fg"><label>Début</label><input type="date" id="nk-debut"></div>
-      <div class="fg"><label>Fin</label><input type="date" id="nk-fin"></div>
+      <div class="fg"><label>Début</label><input type="date" id="nk-debut" onchange="renderLignes()"></div>
+      <div class="fg"><label>Durée d'engagement</label><select id="nk-duree" onchange="renderLignes()">
+        <option value="1">1 an</option><option value="2">2 ans</option><option value="3">3 ans</option>
+        <option value="4">4 ans</option><option value="5" selected>5 ans (référence)</option>
+        <option value="6">6 ans</option><option value="7">7 ans</option><option value="8">8 ans</option>
+        <option value="9">9 ans</option><option value="10">10 ans</option>
+      </select></div>
     </div>
     <div class="fg" style="margin-bottom:12px"><label>Périodicité</label><select id="nk-period"><option value="annuelle">Annuelle</option><option value="semestrielle">Semestrielle</option><option value="trimestrielle">Trimestrielle</option><option value="mensuelle">Mensuelle</option></select></div>
     <div class="sec">Chiffrage — équipements</div>
+    <div style="font-size:12px;color:var(--txt-l);margin:-4px 0 10px">Les tarifs de la base sont des prix annuels de référence sur un engagement de 5 ans. Sur une durée différente, le prix annuel est recalculé (montant total lissé constant).</div>
     <div id="nk-lignes"></div>
     <div class="btn-row" style="gap:8px;margin:8px 0">
       <button type="button" class="btn btn-s btn-sm" style="flex:1" onclick="ouvrirChoixEquipExistant('contrat')">🔎 Équipement existant</button>
@@ -302,7 +308,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="fg" style="margin-bottom:12px"><label>Tarif de la base (remplit le prix)</label><select id="lk-tarif" onchange="const t=_tarifsCom.find(x=>x.id===this.value);if(t&&t.prix_ht!=null)$('lk-pu').value=(+t.prix_ht).toFixed(2)"><option value=""></option></select></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div class="fg"><label>Quantité *</label><input type="number" id="lk-qte" min="1" value="1" inputmode="numeric"></div>
-      <div class="fg"><label>Prix unitaire HT (€) *</label><input type="number" id="lk-pu" step="0.01" min="0" inputmode="decimal"></div>
+      <div class="fg"><label>Prix unitaire HT (€) — réf. 5 ans *</label><input type="number" id="lk-pu" step="0.01" min="0" inputmode="decimal"></div>
     </div>
     <div class="sec">Prise en contrat — état constaté</div>
     <div class="fg" style="margin-bottom:12px"><label>Année de fabrication</label><input type="number" id="lk-annee" min="1980" max="2100" placeholder="2021" inputmode="numeric"></div>
@@ -405,6 +411,17 @@ function goTo(id){document.querySelectorAll('.screen').forEach(s=>s.classList.re
 
 let ME=null,typesEquip=[],clientsList=[],_lignes=[],_contratASigner=null,_tarifsCom=[];
 let _choixCible='contrat',_equipsExistants=[];
+
+// ---- Tarification par durée d'engagement ----
+// Les tarifs de la base (tarifs.prix_ht) sont des prix ANNUELS lissés sur une
+// durée de référence de 5 ans (ex : 100€ de montant total / 5 ans = 20€/an).
+// Sur une durée d'engagement différente, on garde le même montant total et on
+// le relisse sur le nombre d'années choisi : prix_annuel = prix_ht_5ans * 5 / duree.
+const DUREE_REF_TARIFS = 5;
+function dureeContratActuelle(){ return parseInt($('nk-duree')?.value,10) || DUREE_REF_TARIFS; }
+// l.pu est toujours stocké comme le prix de référence (base 5 ans) — puEffectif()
+// donne le prix annuel réellement facturé pour la durée choisie sur ce contrat.
+function puEffectif(l){ return (+l.pu) * DUREE_REF_TARIFS / dureeContratActuelle(); }
 
 // ---- AUTH ----
 async function doLogin(){
@@ -535,7 +552,7 @@ function choisirEquipExistant(i){
   const e=_equipsExistants[i];if(!e)return;
   const tarif=_tarifsCom.find(t=>t.code===e.type_equipement_code);
   const puDef=tarif?(+tarif.prix_ht).toFixed(2):'0';
-  const saisie=prompt('Montant annuel HT pour '+(e.numero_identification||'cet équipement')+' :',puDef);
+  const saisie=prompt('Montant annuel HT (référence sur 5 ans) pour '+(e.numero_identification||'cet équipement')+' :',puDef);
   if(saisie===null)return;
   const pu=parseFloat(saisie.replace(',','.'));
   if(isNaN(pu)||pu<0){toast('Montant invalide','err');return}
@@ -688,26 +705,40 @@ async function saveClientCom(){
 async function ouvrirNouveauContrat(clientId){
   const {data:cls}=await db.from('clients').select('id,raison_sociale,ville,agence_id').order('raison_sociale');
   clientsList=cls||[];
-  $('nk-client').innerHTML=clientsList.map(x=>`<option value="${x.id}">${x.raison_sociale}${x.ville?' ('+x.ville+')':''}</option>`).join('');
-  if(clientId)$('nk-client').value=clientId;
-  ['nk-num','nk-debut','nk-fin','nk-notes'].forEach(id=>$(id).value='');
-  $('nk-type').value='annuel';$('nk-period').value='annuelle';
+  if($('nk-client-q'))$('nk-client-q').value='';
+  filtrerClientsContrat(clientId);
+  ['nk-num','nk-debut','nk-notes'].forEach(id=>$(id).value='');
+  $('nk-type').value='annuel';$('nk-period').value='annuelle';$('nk-duree').value='5';
   _lignes=[];renderLignes();
   goTo('s-new-contrat');
+}
+// Recherche client (nom ou ville, sans tenir compte des accents ni de la casse)
+function filtrerClientsContrat(garderId){
+  const sel=$('nk-client');if(!sel)return;
+  const n=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const q=n($('nk-client-q')?.value).trim();
+  const courant=garderId||sel.value;
+  const liste=(clientsList||[]).filter(x=>!q||n(x.raison_sociale+' '+(x.ville||'')).includes(q));
+  sel.innerHTML=liste.length?liste.map(x=>`<option value="${x.id}">${x.raison_sociale}${x.ville?' ('+x.ville+')':''}</option>`).join(''):'<option value="">Aucun client trouvé</option>';
+  if(courant&&liste.some(x=>x.id===courant))sel.value=courant;
 }
 function renderLignes(){
   const el=$('nk-lignes');
   const lib=code=>{const t=typesEquip.find(t=>t.code===code);return t?t.icone+' '+t.libelle:code};
-  el.innerHTML=_lignes.length?_lignes.map((l,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:6px${l.equipement_id?';border-left:4px solid #16a34a':''}">
+  const duree=dureeContratActuelle();
+  el.innerHTML=_lignes.length?_lignes.map((l,i)=>{
+    const puEff=puEffectif(l);
+    return `<div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:6px${l.equipement_id?';border-left:4px solid #16a34a':''}">
     <div><div style="font-weight:600;font-size:14px">${lib(l.type)}${l.equipement_id?' <span style="font-size:11px;font-weight:400;color:#16a34a">· déjà existant</span>':''}</div>
-    <div style="font-size:12px;color:var(--txt-l)">${[l.marque,l.modele].filter(Boolean).join(' ')||'—'}${l.resume?' · '+l.resume:''} · ${l.quantite} × ${(+l.pu).toFixed(2)} €</div></div>
+    <div style="font-size:12px;color:var(--txt-l)">${[l.marque,l.modele].filter(Boolean).join(' ')||'—'}${l.resume?' · '+l.resume:''} · ${l.quantite} × ${puEff.toFixed(2)} €${duree!==DUREE_REF_TARIFS?'/an (réf. 5 ans : '+(+l.pu).toFixed(2)+' €)':''}</div></div>
     <div style="display:flex;align-items:center;gap:10px">
-      <div style="font-weight:700">${((+l.quantite)*(+l.pu)).toFixed(2)} €</div>
+      <div style="font-weight:700">${((+l.quantite)*puEff).toFixed(2)} €</div>
       <button onclick="_lignes.splice(${i},1);renderLignes()" style="background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:4px 8px;font-size:13px">✕</button>
     </div>
-  </div>`).join(''):'<div style="padding:10px;text-align:center;color:var(--txt-l);font-size:13px">Aucun équipement — ajoute le résultat du repérage.</div>';
-  const tot=_lignes.reduce((s,l)=>s+(+l.quantite)*(+l.pu),0);
-  $('nk-total').textContent=_lignes.length?'Total HT : '+tot.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'';
+  </div>`;
+  }).join(''):'<div style="padding:10px;text-align:center;color:var(--txt-l);font-size:13px">Aucun équipement — ajoute le résultat du repérage.</div>';
+  const tot=_lignes.reduce((s,l)=>s+(+l.quantite)*puEffectif(l),0);
+  $('nk-total').textContent=_lignes.length?'Total HT : '+tot.toLocaleString('fr-FR',{style:'currency',currency:'EUR'})+' /an':'';
 }
 function ouvrirLigneContrat(){
   $('lk-tarif').innerHTML='<option value=""></option>'+_tarifsCom.map(t=>`<option value="${t.id}">${t.designation} — ${(+t.prix_ht).toFixed(2)} €</option>`).join('');
@@ -745,9 +776,12 @@ function validerLigneContrat(){
 }
 
 async function prochainNumeroContrat(){
+  // Calcul côté base sur TOUS les contrats (un technicien ne voit que son périmètre : risque de doublon sinon)
+  const {data,error}=await db.rpc('prochain_numero_contrat');
+  if(!error&&data)return data;
   const prefixe='CT-'+new Date().getFullYear()+'-';
-  const {data}=await db.from('contrats').select('numero_contrat').like('numero_contrat',prefixe+'%');
-  let max=0;(data||[]).forEach(x=>{const n=parseInt((x.numero_contrat||'').slice(prefixe.length),10);if(n>max)max=n});
+  const {data:d2}=await db.from('contrats').select('numero_contrat').like('numero_contrat',prefixe+'%');
+  let max=0;(d2||[]).forEach(x=>{const n=parseInt((x.numero_contrat||'').slice(prefixe.length),10);if(n>max)max=n});
   return prefixe+String(max+1).padStart(3,'0');
 }
 
@@ -755,12 +789,17 @@ async function saveContratCom(signer){
   const clientId=$('nk-client').value;
   if(!clientId){toast('Choisis un client','err');return}
   const client=clientsList.find(x=>x.id===clientId);
-  const total=_lignes.reduce((s,l)=>s+(+l.quantite)*(+l.pu),0);
+  const duree=dureeContratActuelle();
+  // Tarif annuel réellement facturé = montant total lissé sur "duree" (pas le prix de réf. à 5 ans)
+  const total=_lignes.reduce((s,l)=>s+(+l.quantite)*puEffectif(l),0);
+  const debut=$('nk-debut').value||null;
+  let fin=null;
+  if(debut){const d=new Date(debut);d.setFullYear(d.getFullYear()+duree);fin=d.toISOString().slice(0,10);}
   const {data:ct,error}=await db.from('contrats').insert({
     client_id:clientId,agence_id:client?.agence_id||ME.agence_id||null,
     numero_contrat:$('nk-num').value.trim()||await prochainNumeroContrat(),type_contrat:$('nk-type').value,
     types_couverts:[...new Set(_lignes.map(l=>l.type))],lignes:_lignes,
-    date_debut:$('nk-debut').value||null,date_fin:$('nk-fin').value||null,
+    date_debut:debut,date_fin:fin,duree_engagement:duree,
     tarif_annuel:total||null,periodicite_visite:$('nk-period').value,
     statut:'actif',notes:$('nk-notes').value.trim()
   }).select('*,clients(raison_sociale)').single();

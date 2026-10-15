@@ -253,6 +253,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button id="filtre-tous-clients" class="btn btn-s" style="flex:1;font-size:12px;padding:7px" onclick="setFiltreParc('tous')">Tous</button>
     <button id="filtre-agence-clients" class="btn btn-s" style="flex:1;font-size:12px;padding:7px" onclick="setFiltreParc('agence')">Mon agence</button>
   </div>
+  <div style="padding:8px 12px;background:#fff;border-bottom:1px solid #e5e7eb"><input type="search" id="parc-q" placeholder="🔎 Rechercher un client (nom, ville)…" oninput="filtrerParc()" style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"></div>
   <div class="content" id="parc-list">
     <div class="loading"><div class="spin spin-dark"></div></div>
   </div>
@@ -1362,6 +1363,19 @@ async function loadParc(){
       <span class="client-badge ${badge}">${label}</span>
     </div>`;
   }).join('');
+  filtrerParc();
+}
+// Recherche client dans la liste affichée (nom, ville, agence ; sans accents ni casse)
+function filtrerParc(){
+  const q=String($('parc-q')?.value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+  let vus=0;
+  document.querySelectorAll('#parc-list .client-card').forEach(c=>{
+    const txt=String(c.textContent).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    const ok=!q||txt.includes(q);c.style.display=ok?'':'none';if(ok)vus++;
+  });
+  let msg=$('parc-aucun');
+  if(q&&!vus){if(!msg){msg=document.createElement('div');msg.id='parc-aucun';msg.style.cssText='text-align:center;padding:30px;color:var(--txt-l);font-size:13px';$('parc-list').appendChild(msg)}msg.textContent='Aucun client trouvé — essaie le filtre « Tous ».'}
+  else if(msg)msg.remove();
 }
 
 let _filtreParc='mes';
