@@ -432,7 +432,7 @@ async function openRdvModal(prefill=null){
   OM('mo-rdv');
 }
 window.editRdv=function(id){const r=rdvs.find(x=>x.id===id);if(r)openRdvModal(r)};
-async function saveRdv(){
+async function _saveRdvInterne(){
   const id=$('rdv-id').value;
   const p={client_id:$('rdv-client').value,technicien_id:$('rdv-tech').value||null,date_rdv:$('rdv-date').value,heure_debut:$('rdv-heure').value||null,duree_minutes:parseInt($('rdv-duree').value)||60,type_intervention:$('rdv-type-int').value,statut:$('rdv-statut').value,notes:$('rdv-notes').value.trim(),cree_par:ME.id,updated_at:new Date().toISOString()};
   if(!p.client_id||!p.date_rdv){toast('Client et date obligatoires','err');return}
@@ -473,7 +473,7 @@ async function openMissionModal(clientIdPrefill){
   if(clientIdPrefill)$('ms-client').value=clientIdPrefill;
   OM('mo-mission');
 }
-async function saveMission(){
+async function _saveMissionInterne(){
   const clientId=$('ms-client').value,techId=$('ms-tech').value,titre=$('ms-titre').value.trim();
   if(!clientId||!techId||!titre){toast('Client, technicien et titre obligatoires','err');return}
   const client=clients.find(c=>c.id===clientId);
@@ -665,7 +665,7 @@ async function ajouterAffectation(){
   document.body.appendChild(modal);
 }
 
-async function confirmerAffectation(btn){
+async function _confirmerAffectationInterne(btn){
   const clientId=$('c-id').value;
   if(!clientId){toast('Enregistrez d\'abord le client','err');return}
   const techId=document.getElementById('aff-tech').value;
@@ -686,7 +686,7 @@ async function supprimerAffectation(affId){
 }
 
 
-async function saveClient(){
+async function _saveClientInterne(){
   const id=$('c-id').value;const rs=$('c-rs').value.trim();
   if(!rs){toast('Raison sociale obligatoire','err');return}
   const p={raison_sociale:rs,agence_id:$('c-agence').value||null,adresse:$('c-adr').value.trim(),code_postal:$('c-cp').value.trim(),ville:$('c-ville').value.trim(),siret:$('c-siret').value.trim(),contact_nom:$('c-contact').value.trim(),contact_telephone:$('c-tel').value.trim(),contact_email:$('c-email').value.trim(),notes:$('c-notes').value.trim(),actif:$('c-actif').checked,updated_at:new Date().toISOString()};
@@ -871,7 +871,21 @@ function supprimerLigneHistorique(idx){
   renderHistoriqueEquip();
 }
 
-async function saveEquip(){
+// Anti double-clic : une seule exécution à la fois ; le bouton est grisé jusqu'à la fin
+function antiDoublon(fn){
+  let enCours=false;
+  return async function(...a){
+    if(enCours)return;
+    enCours=true;
+    const ev=window.event;
+    const b=ev&&ev.target&&ev.target.closest?ev.target.closest('button'):null;
+    const txt=b?b.innerHTML:null;
+    if(b){b.disabled=true;b.textContent='⏳ En cours…'}
+    try{return await fn.apply(this,a)}
+    finally{enCours=false;if(b){b.disabled=false;b.innerHTML=txt}}
+  };
+}
+async function _saveEquipInterne(){
   const id=$('e-id').value;
   const clientId=$('e-client').value||null;
   let agenceId=null;
@@ -1375,7 +1389,7 @@ function calculerPalierSuggereBureau(equip, paliers){
 }
 
 window.selPC=function(lbl,type,name){lbl.closest('.pc-radio').querySelectorAll('label').forEach(l=>l.classList.remove('ok-sel','nok-sel'));lbl.classList.add(type==='ok'?'ok-sel':'nok-sel');const item=lbl.closest('.pc-item');item.classList.remove('ok','nc');item.classList.add(type==='ok'?'ok':'nc')};
-async function saveVerif(){
+async function _saveVerifInterne(){
   const cid=$('v-client').value;const eid=$('v-equip').value;const date=$('v-date').value;
   if(!eid||!date){toast('Champs obligatoires manquants','err');return}
   const opt=$('v-equip').options[$('v-equip').selectedIndex];const typeCode=opt?.dataset?.type||'';
@@ -1451,6 +1465,8 @@ async function openContratModal(prefill=null){
   _lignesContrat=(prefill&&Array.isArray(prefill.lignes))?[...prefill.lignes]:[];
   renderLignesContrat();
   OM('mo-contrat');
+  $('ct-fd-mode').value=prefill?.frais_deplacement_mode||'facture';
+  await majDeplacementBureau(prefill);
 }
 function editContrat(id){openContratModal(contrats.find(c=>c.id===id))}
 
@@ -1468,13 +1484,41 @@ async function prochainNumeroContrat(){
   return prefixe+String(max+1).padStart(3,'0');
 }
 
-async function saveContrat(){
+// ---- Frais de déplacement du contrat (zone estimée depuis l'adresse du client) ----
+async function majDeplacementBureau(prefill){
+  const sel=$('ct-fd-zone');if(!sel)return;if(!DEPLACEMENT_TARIF_ACTIF){majAffichageDeplacementBureau();return}
+  const prix=await chargerPrixZonesDeplacement();
+  sel.innerHTML=ZONES_DEPLACEMENT.map(z=>`<option value="${z.code}">${zoneLibelle(z.code)}${prix[z.code]!=null?' — '+prix[z.code].toFixed(2)+' € HT':''}</option>`).join('');
+  const c=clients.find(x=>x.id===$('ct-client').value);
+  $('ct-fd-info').textContent=' — calcul de la distance…';
+  if(prefill&&prefill.zone_deplacement){sel.value=prefill.zone_deplacement;sel.dataset.km=prefill.frais_deplacement_km??'';$('ct-fd-info').textContent=prefill.frais_deplacement_km!=null?' — ≈ '+prefill.frais_deplacement_km+' km (enregistré)':'';majAffichageDeplacementBureau();return}
+  if(!_agencesCache.length){const {data:ag}=await db.from('agences').select('*').order('nom');_agencesCache=ag||[]}
+  const ag=_agencesCache.find(x=>x.id===c?.agence_id);
+  const est=await estimerDeplacement(c,ag);
+  if(est){sel.value=est.zone;sel.dataset.km=est.km;$('ct-fd-info').textContent=` — ≈ ${est.km} km (${est.source}), modifiable`}
+  else{sel.dataset.km='';$('ct-fd-info').textContent=" — adresse insuffisante, choisir la zone à la main"}
+  majAffichageDeplacementBureau();
+}
+function majAffichageDeplacementBureau(manuel){
+  const mode=$('ct-fd-mode')?.value;
+  const bloc=$('ct-fd-zone-bloc');if(bloc)bloc.style.display=DEPLACEMENT_TARIF_ACTIF&&mode==='facture'?'':'none';
+  if(manuel&&$('ct-fd-zone'))$('ct-fd-zone').dataset.km='';
+  const prix=_prixZonesDepl||{};const z=$('ct-fd-zone')?.value;
+  if($('ct-fd-prix'))$('ct-fd-prix').textContent=mode==='facture'&&prix[z]!=null?prix[z].toFixed(2)+' € HT par passage':'';
+}
+function donneesDeplacementBureau(){
+  const mode=$('ct-fd-mode')?.value||null,zone=$('ct-fd-zone')?.value||null,km=parseFloat($('ct-fd-zone')?.dataset.km),prix=_prixZonesDepl||{};
+  if(!DEPLACEMENT_TARIF_ACTIF)return {frais_deplacement_mode:mode,zone_deplacement:null,frais_deplacement_km:null,frais_deplacement_ht:null};
+  return {frais_deplacement_mode:mode,zone_deplacement:mode==='facture'?zone:null,
+    frais_deplacement_km:mode==='facture'&&!isNaN(km)?km:null,frais_deplacement_ht:mode==='facture'&&prix[zone]!=null?prix[zone]:null};
+}
+async function _saveContratInterne(){
   const id=$('ct-id').value;
   const coches=Array.from(document.querySelectorAll('input[name="ct-type"]:checked')).map(c=>c.value);
   // Les types présents dans le chiffrage sont automatiquement couverts
   const types=[...new Set([...coches,..._lignesContrat.map(l=>l.type)])];
   const numAuto=$('ct-num').value.trim()||await prochainNumeroContrat();
-  const p={client_id:$('ct-client').value,numero_contrat:numAuto,type_contrat:$('ct-type').value,types_couverts:types,lignes:_lignesContrat,date_debut:$('ct-debut').value||null,date_fin:$('ct-fin').value||null,tarif_annuel:parseFloat($('ct-tarif').value)||null,periodicite_visite:$('ct-period').value,statut:$('ct-statut').value,notes:$('ct-notes').value.trim(),updated_at:new Date().toISOString()};
+  const p={client_id:$('ct-client').value,numero_contrat:numAuto,type_contrat:$('ct-type').value,types_couverts:types,lignes:_lignesContrat,date_debut:$('ct-debut').value||null,date_fin:$('ct-fin').value||null,tarif_annuel:parseFloat($('ct-tarif').value)||null,periodicite_visite:$('ct-period').value,statut:$('ct-statut').value,notes:$('ct-notes').value.trim(),updated_at:new Date().toISOString(),...donneesDeplacementBureau()};
   let error,nouveauContrat=null;
   if(id){({error}=await db.from('contrats').update(p).eq('id',id));}
   else{const r=await db.from('contrats').insert(p).select().single();error=r.error;nouveauContrat=r.data;}
@@ -1785,7 +1829,7 @@ function ouvrirEnvoiMail({type,referenceId,clientId,destinataireDefaut,sujet,mes
   OM('mo-envoi-mail');
 }
 
-async function confirmerEnvoiMail(){
+async function _confirmerEnvoiMailInterne(){
   const ctx=window._envoiMailContexte;if(!ctx)return;
   const destinataire=$('em-destinataire').value.trim();
   if(!destinataire){toast('Indique l\'adresse email du client','err');return}
@@ -2089,7 +2133,7 @@ function openPointModal(prefill=null){
 }
 function editPoint(id){openPointModal(pointsControle.find(p=>p.id===id))}
 function toggleUnite(){$('fg-unite-pt').style.display=$('pt-type-rep').value==='numerique'?'flex':'none'}
-async function savePoint(){
+async function _savePointInterne(){
   const id=$('pt-id').value;const tc=$('f-type-config').value;
   const p={type_equipement_code:tc,libelle:$('pt-libelle').value.trim(),type_reponse:$('pt-type-rep').value,unite:$('pt-unite').value.trim()||null,marque:$('pt-marque').value.trim()||null,modele:$('pt-modele').value.trim()||null,ordre:parseInt($('pt-ordre').value)||99,obligatoire:$('pt-oblig').value==='true',actif:true};
   if(!p.libelle){toast('Libellé obligatoire','err');return}
@@ -2393,7 +2437,7 @@ function openTarifModal(prefill=null){
   OM('mo-tarif');
 }
 function editTarif(id){openTarifModal(tarifs.find(t=>t.id===id))}
-async function saveTarif(){
+async function _saveTarifInterne(){
   const id=$('tf-id').value;
   const code=$('tf-code').value.trim().toUpperCase();const des=$('tf-designation').value.trim();
   const prixRaw=$('tf-prix').value;
@@ -2792,7 +2836,7 @@ function openUniteExtincteurModal(prefill=null){
   }
   OM('mo-unite-ext');
 }
-async function saveUniteExtincteur(){
+async function _saveUniteExtincteurInterne(){
   const id=$('ue-id').value;
   const mode=$('ue-mode').value,agent=$('ue-agent').value,capacite=parseFloat($('ue-capacite').value);
   // Seule l'année de fabrication est connue (marquée sur l'extincteur, pas de jour/mois) — stockée au 1er janvier.
@@ -3306,7 +3350,7 @@ function ajouterCompat(){
   renderCompatPiece();
 }
 function editPiece(id){openPieceModal(stockPieces.find(p=>p.id===id))}
-async function savePiece(){
+async function _savePieceInterne(){
   const id=$('pc-id').value;
   const code=$('pc-code').value.trim();const des=$('pc-designation').value.trim();
   if(!code||!des){toast('Code et désignation obligatoires','err');return}
@@ -3380,7 +3424,7 @@ function openCasseModal(id){
   }else bloc.style.display='none';
   OM('mo-casse');
 }
-async function saveCasse(){
+async function _saveCasseInterne(){
   const p=stockPieces.find(x=>x.id===$('cs-piece-id').value);if(!p)return;
   const q=parseFloat($('cs-qte').value);
   if(!q||q<1){toast('Quantité invalide','err');return}
@@ -3416,7 +3460,7 @@ function openTransfertModal(id){
   $('tf-dest').innerHTML=_stockAgences.filter(a=>a.id!==p.agence_id).map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
   OM('mo-transfert');
 }
-async function saveTransfert(){
+async function _saveTransfertInterne(){
   const p=stockPieces.find(x=>x.id===$('tf-piece-id').value);if(!p)return;
   const q=parseFloat($('tf-qte').value);const destId=$('tf-dest').value;
   if(!q||q<1){toast('Quantité invalide','err');return}
@@ -3642,3 +3686,19 @@ window.printQR=function(){
 };
 
 console.log('✓ app.js chargé');
+
+window.saveEquip=antiDoublon(_saveEquipInterne);
+window.saveUniteExtincteur=antiDoublon(_saveUniteExtincteurInterne);
+
+window.saveVerif=antiDoublon(_saveVerifInterne);
+window.saveContrat=antiDoublon(_saveContratInterne);
+window.saveClient=antiDoublon(_saveClientInterne);
+window.saveRdv=antiDoublon(_saveRdvInterne);
+window.saveMission=antiDoublon(_saveMissionInterne);
+window.savePiece=antiDoublon(_savePieceInterne);
+window.saveTransfert=antiDoublon(_saveTransfertInterne);
+window.saveCasse=antiDoublon(_saveCasseInterne);
+window.confirmerAffectation=antiDoublon(_confirmerAffectationInterne);
+window.saveTarif=antiDoublon(_saveTarifInterne);
+window.confirmerEnvoiMail=antiDoublon(_confirmerEnvoiMailInterne);
+window.savePoint=antiDoublon(_savePointInterne);

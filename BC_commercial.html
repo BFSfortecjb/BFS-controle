@@ -263,7 +263,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <h1>Nouveau contrat</h1>
   </div>
   <div class="content">
-    <div class="fg" style="margin-bottom:12px"><label>Client *</label><input type="search" id="nk-client-q" placeholder="🔎 Rechercher un client (nom, ville)…" oninput="filtrerClientsContrat()" style="margin-bottom:6px"><select id="nk-client"></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Client *</label><input type="search" id="nk-client-q" placeholder="🔎 Rechercher un client (nom, ville)…" oninput="filtrerClientsContrat()" style="margin-bottom:6px"><select id="nk-client" onchange="majDeplacementContrat()"></select></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div class="fg"><label>N° contrat</label><input type="text" id="nk-num" placeholder="auto si vide"></div>
       <div class="fg"><label>Type</label><select id="nk-type"><option value="annuel">Annuel</option><option value="pluriannuel">Pluriannuel</option><option value="ponctuel">Ponctuel</option></select></div>
@@ -278,6 +278,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       </select></div>
     </div>
     <div class="fg" style="margin-bottom:12px"><label>Périodicité</label><select id="nk-period"><option value="annuelle">Annuelle</option><option value="semestrielle">Semestrielle</option><option value="trimestrielle">Trimestrielle</option><option value="mensuelle">Mensuelle</option></select></div>
+    <div class="sec">Frais de déplacement</div>
+    <div class="fg" style="margin-bottom:8px"><select id="nk-fd-mode" onchange="majAffichageDeplacement()"><option value="facture">Facturés à chaque passage</option><option value="inclus">Inclus dans le contrat</option><option value="offert">Offerts</option></select></div>
+    <div id="nk-fd-zone-bloc" style="background:#f8fafc;border:1.5px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:12px">
+      <div id="nk-fd-info" style="font-size:12px;color:var(--txt-l);margin-bottom:6px">Calcul de la distance…</div>
+      <select id="nk-fd-zone" onchange="majAffichageDeplacement(true)" style="width:100%;padding:9px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px"></select>
+      <div id="nk-fd-prix" style="text-align:right;font-weight:700;margin-top:6px"></div>
+    </div>
     <div class="sec">Chiffrage — équipements</div>
     <div style="font-size:12px;color:var(--txt-l);margin:-4px 0 10px">Les tarifs de la base sont des prix annuels de référence sur un engagement de 5 ans. Sur une durée différente, le prix annuel est recalculé (montant total lissé constant).</div>
     <div id="nk-lignes"></div>
@@ -686,7 +693,21 @@ function ouvrirNouveauClient(){
   ['nc-rs','nc-adr','nc-cp','nc-ville','nc-siret','nc-contact','nc-tel','nc-email'].forEach(id=>$(id).value='');
   goTo('s-new-client');
 }
-async function saveClientCom(){
+// Anti double-clic : une seule exécution à la fois ; le bouton est grisé jusqu'à la fin
+function antiDoublon(fn){
+  let enCours=false;
+  return async function(...a){
+    if(enCours)return;
+    enCours=true;
+    const ev=window.event;
+    const b=ev&&ev.target&&ev.target.closest?ev.target.closest('button'):null;
+    const txt=b?b.innerHTML:null;
+    if(b){b.disabled=true;b.textContent='⏳ En cours…'}
+    try{return await fn.apply(this,a)}
+    finally{enCours=false;if(b){b.disabled=false;b.innerHTML=txt}}
+  };
+}
+async function _saveClientComInterne(){
   const rs=$('nc-rs').value.trim();
   if(!rs){toast('Raison sociale obligatoire','err');return}
   const {data:nc,error}=await db.from('clients').insert({
@@ -703,14 +724,16 @@ async function saveClientCom(){
 
 // ---- NOUVEAU CONTRAT ----
 async function ouvrirNouveauContrat(clientId){
-  const {data:cls}=await db.from('clients').select('id,raison_sociale,ville,agence_id').order('raison_sociale');
+  const {data:cls}=await db.from('clients').select('id,raison_sociale,ville,adresse,code_postal,agence_id,distance_km,zone_deplacement').order('raison_sociale');
   clientsList=cls||[];
   if($('nk-client-q'))$('nk-client-q').value='';
   filtrerClientsContrat(clientId);
   ['nk-num','nk-debut','nk-notes'].forEach(id=>$(id).value='');
   $('nk-type').value='annuel';$('nk-period').value='annuelle';$('nk-duree').value='5';
   _lignes=[];renderLignes();
+  if($('nk-fd-mode'))$('nk-fd-mode').value='facture';
   goTo('s-new-contrat');
+  majDeplacementContrat();
 }
 // Recherche client (nom ou ville, sans tenir compte des accents ni de la casse)
 function filtrerClientsContrat(garderId){
@@ -721,6 +744,41 @@ function filtrerClientsContrat(garderId){
   const liste=(clientsList||[]).filter(x=>!q||n(x.raison_sociale+' '+(x.ville||'')).includes(q));
   sel.innerHTML=liste.length?liste.map(x=>`<option value="${x.id}">${x.raison_sociale}${x.ville?' ('+x.ville+')':''}</option>`).join(''):'<option value="">Aucun client trouvé</option>';
   if(courant&&liste.some(x=>x.id===courant))sel.value=courant;
+  if(!garderId)majDeplacementContrat();
+}
+// ---- Frais de déplacement du contrat : zone estimée automatiquement depuis l'adresse du client ----
+let _agencesDepl=null;
+async function majDeplacementContrat(){
+  const sel=$('nk-fd-zone');if(!sel)return;if(!DEPLACEMENT_TARIF_ACTIF){majAffichageDeplacement();return}
+  const zs=ZONES_DEPLACEMENT;
+  const prix=await chargerPrixZonesDeplacement();
+  sel.innerHTML=zs.map(z=>`<option value="${z.code}">${zoneLibelle(z.code)}${prix[z.code]!=null?' — '+prix[z.code].toFixed(2)+' € HT':''}</option>`).join('');
+  const client=(clientsList||[]).find(x=>x.id===$('nk-client').value);
+  $('nk-fd-info').textContent='Calcul de la distance…';
+  if(!_agencesDepl){const {data}=await db.from('agences').select('id,code,nom,adresse');_agencesDepl=data||[]}
+  const ag=_agencesDepl.find(a=>a.id===client?.agence_id);
+  const est=await estimerDeplacement(client,ag);
+  if(est){sel.value=est.zone;sel.dataset.km=est.km;
+    $('nk-fd-info').textContent=`Distance estimée ${ag?.nom||'agence'} → ${client.ville||'client'} : ≈ ${est.km} km (${est.source}). Modifiable ci-dessous.`}
+  else{sel.dataset.km='';$('nk-fd-info').textContent="Adresse du client insuffisante pour estimer la distance : choisis la zone à la main."}
+  majAffichageDeplacement();
+}
+function majAffichageDeplacement(manuel){
+  const mode=$('nk-fd-mode')?.value;
+  const bloc=$('nk-fd-zone-bloc');if(bloc)bloc.style.display=DEPLACEMENT_TARIF_ACTIF&&mode==='facture'?'block':'none';
+  if(manuel&&$('nk-fd-zone'))$('nk-fd-zone').dataset.km='';
+  const prix=_prixZonesDepl||{};const z=$('nk-fd-zone')?.value;
+  if($('nk-fd-prix'))$('nk-fd-prix').textContent=mode==='facture'&&prix[z]!=null?prix[z].toFixed(2)+' € HT par passage':'';
+}
+function donneesDeplacementContrat(){
+  const mode=$('nk-fd-mode')?.value||null;const zone=$('nk-fd-zone')?.value||null;
+  const km=parseFloat($('nk-fd-zone')?.dataset.km);
+  const prix=_prixZonesDepl||{};
+  if(!DEPLACEMENT_TARIF_ACTIF)return {frais_deplacement_mode:mode,zone_deplacement:null,frais_deplacement_km:null,frais_deplacement_ht:null};
+  return {frais_deplacement_mode:mode,
+    zone_deplacement:mode==='facture'?zone:null,
+    frais_deplacement_km:mode==='facture'&&!isNaN(km)?km:null,
+    frais_deplacement_ht:mode==='facture'&&prix[zone]!=null?prix[zone]:null};
 }
 function renderLignes(){
   const el=$('nk-lignes');
@@ -785,7 +843,7 @@ async function prochainNumeroContrat(){
   return prefixe+String(max+1).padStart(3,'0');
 }
 
-async function saveContratCom(signer){
+async function _saveContratComInterne(signer){
   const clientId=$('nk-client').value;
   if(!clientId){toast('Choisis un client','err');return}
   const client=clientsList.find(x=>x.id===clientId);
@@ -801,7 +859,8 @@ async function saveContratCom(signer){
     types_couverts:[...new Set(_lignes.map(l=>l.type))],lignes:_lignes,
     date_debut:debut,date_fin:fin,duree_engagement:duree,
     tarif_annuel:total||null,periodicite_visite:$('nk-period').value,
-    statut:'actif',notes:$('nk-notes').value.trim()
+    statut:'actif',notes:$('nk-notes').value.trim(),
+    ...donneesDeplacementContrat()
   }).select('*,clients(raison_sociale)').single();
   if(error){toast('Erreur : '+error.message,'err');return}
   const nb=await creerEquipementsDepuisContrat(ct,_lignes,clientId);
@@ -961,6 +1020,9 @@ async function validerSignatureCom(){
   ouvrirCommercial();
 }
 console.log('✓ commercial.html chargé');
+
+window.saveContratCom=antiDoublon(_saveContratComInterne);
+window.saveClientCom=antiDoublon(_saveClientComInterne);
 </script>
 </body>
 </html>

@@ -318,7 +318,7 @@ async function construireContratPDF(id){
   doc.text(`N° ${c.numero_contrat||'—'} — Agence ${c.agences?.nom||'—'}`,14,26);
   doc.text(`Édité le ${new Date().toLocaleDateString('fr-FR')}`,162,26);
   let y=31;
-  doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[['Prestataire','BFS — '+raisonSoc],['Client',cl?.raison_sociale||'—'],['Adresse',`${cl?.adresse||''} ${cl?.code_postal||''} ${cl?.ville||''}`.trim()||'—'],['SIRET',cl?.siret||'—'],['Contact',`${cl?.contact_nom||'—'}${cl?.contact_telephone?' — '+cl.contact_telephone:''}`],['Type de contrat',c.type_contrat],['Période',`${fmt(c.date_debut)} → ${fmt(c.date_fin)}`],['Périodicité des visites',c.periodicite_visite||'—']],styles:{fontSize:9.5},columnStyles:{0:{fontStyle:'bold',cellWidth:52}}});
+  doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[['Prestataire','BFS — '+raisonSoc],['Client',cl?.raison_sociale||'—'],['Adresse',`${cl?.adresse||''} ${cl?.code_postal||''} ${cl?.ville||''}`.trim()||'—'],['SIRET',cl?.siret||'—'],['Contact',`${cl?.contact_nom||'—'}${cl?.contact_telephone?' — '+cl.contact_telephone:''}`],['Type de contrat',c.type_contrat],['Période',`${fmt(c.date_debut)} → ${fmt(c.date_fin)}`],['Périodicité des visites',c.periodicite_visite||'—'],...(typeof libelleFraisDeplacement==='function'&&libelleFraisDeplacement(c)?[['Frais de déplacement',libelleFraisDeplacement(c)]]:[])],styles:{fontSize:9.5},columnStyles:{0:{fontStyle:'bold',cellWidth:52}}});
   y=doc.lastAutoTable.finalY+7;
   // Chiffrage détaillé
   const lignes=Array.isArray(c.lignes)?c.lignes:[];

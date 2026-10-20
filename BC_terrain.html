@@ -1548,7 +1548,7 @@ async function voirFicheEquip(id){
 // ============================================================
 // SESSION DE CONTRÔLE
 // ============================================================
-async function demarrerSessionType(typeCode){
+async function _demarrerSessionTypeInterne(typeCode){
   // Recharger depuis la base (comme la session complète) plutôt que de
   // filtrer currentEquipements : ce tableau vient d'un fetch avec cache
   // hors-ligne (reqCache) et peut être périmé si un équipement vient
@@ -1582,7 +1582,7 @@ async function demarrerSessionType(typeCode){
   goTo('s-session');
 }
 
-async function demarrerSession(){
+async function _demarrerSessionInterne(){
   // Créer session en base
   const {data:sess,error}=await db.from('sessions_controle').insert({
     client_id:currentClient.id,
@@ -1978,7 +1978,7 @@ function afficherFicheUniteAtelier(u){
   $('af-actions-confirmation').style.display=enAttente?'flex':'none';
   $('af-actions-normales').style.display=enAttente?'none':'flex';
 }
-async function confirmerIdentiteUnite(){
+async function _confirmerIdentiteUniteInterne(){
   const u=_uniteAtelierCourante;if(!u)return;
   const {error}=await db.from('extincteurs_unites').update({en_attente_confirmation:false,updated_at:new Date().toISOString()}).eq('id',u.id);
   if(error){toast('Erreur : '+error.message,'err');return}
@@ -2001,7 +2001,7 @@ async function ouvrirReceptionNeuf(){
   $('ar-mode').value='PP';$('ar-unite').value='L';$('ar-fabrication').value=new Date().getFullYear();
   goTo('s-atelier-reception');
 }
-async function enregistrerReceptionNeuf(){
+async function _enregistrerReceptionNeufInterne(){
   const mode=$('ar-mode').value,agent=$('ar-agent').value,capacite=parseFloat($('ar-capacite').value);
   const uniteCap=$('ar-unite').value,agenceId=$('ar-agence').value;
   const marque=$('ar-marque').value.trim()||null,modele=$('ar-modele').value.trim()||null,lot=$('ar-lot').value.trim()||null;
@@ -2039,7 +2039,7 @@ async function ouvrirCorrectionUnite(){
   $('ac-notes').value=u.notes||'';
   goTo('s-atelier-correction');
 }
-async function enregistrerCorrectionUnite(){
+async function _enregistrerCorrectionUniteInterne(){
   const u=_uniteAtelierCourante;if(!u)return;
   const mode=$('ac-mode').value,agent=$('ac-agent').value,capacite=parseFloat($('ac-capacite').value);
   const uniteCap=$('ac-unite').value,marque=$('ac-marque').value.trim()||null,modele=$('ac-modele').value.trim()||null;
@@ -2248,7 +2248,7 @@ function avSetStatut(s){
   const cls={conforme:'sel-conforme','à surveiller':'sel-surveiller','non conforme':'sel-nc','hors service':'sel-hs'};
   $(map[s])?.classList.add(cls[s]);
 }
-async function enregistrerVerifAtelier(){
+async function _enregistrerVerifAtelierInterne(){
   const u=_uniteAtelierCourante;if(!u)return;
   if(!_avStatut){toast('Sélectionne un statut final','err');return}
   const palierSel=$('av-palier');const palierId=palierSel.value;const palierCode=palierSel.selectedOptions[0]?.dataset.code||null;
@@ -2287,7 +2287,7 @@ async function enregistrerVerifAtelier(){
   toast('Vérification enregistrée ✓'+(nbSorties?' · '+nbSorties+' pièce(s) sortie(s) du stock':''));
   goTo('s-atelier');
 }
-async function validerAtelierReforme(){
+async function _validerAtelierReformeInterne(){
   const u=_uniteAtelierCourante;if(!u)return;
   if(!confirm('Confirmer la réforme (dépollution/recyclage) de cette unité ? Irréversible.'))return;
   const {error}=await db.from('extincteurs_unites').update({statut:'reforme',en_attente_confirmation:false,updated_at:new Date().toISOString()}).eq('id',u.id);
@@ -4024,7 +4024,7 @@ function effacerSigne(cid){
 function effacerSignature(){effacerSigne('sig-canvas')}
 function effacerSignatureTech(){effacerSigne('sig-canvas-tech')}
 
-async function validerSignatureEtCloturer(){
+async function _validerSignatureEtCloturerInterne(){
   const nom=document.getElementById('sig-nom').value.trim();
   if(!nom){toast('Nom du signataire obligatoire','err');return}
   if(!_sigs['sig-canvas-tech']?.has){toast('Signature du technicien obligatoire','err');return}
@@ -4188,7 +4188,7 @@ function renderStockMobile(){
     <div class="sec">Pièces comptées</div>${lignes}`+listePiecesHTML();
 }
 
-async function demarrerInventaire(){
+async function _demarrerInventaireInterne(){
   if(!confirm('Démarrer un inventaire du stock '+nomAgenceStock()+' ?'))return;
   const {data,error}=await db.from('stock_inventaires').insert({demarre_par:ME.id,agence_id:_stockAgence}).select().single();
   if(error){toast('Erreur : '+error.message,'err');return}
@@ -4370,7 +4370,7 @@ function ajouterLotNP(){
   _lotsNP.sort((a,b)=>a.peremption.localeCompare(b.peremption));
   renderLotsNP();
 }
-async function saveNouvellePiece(){
+async function _saveNouvellePieceInterne(){
   const code=$('np-code').value.trim().toUpperCase();
   const des=$('np-designation').value.trim();
   if(!code||!des){toast('Code et désignation obligatoires','err');return}
@@ -4456,7 +4456,7 @@ function majEcartComptage(){
   else{el.textContent='✓ Conforme au stock théorique';el.style.color='#9ca3af'}
 }
 
-async function validerComptage(){
+async function _validerComptageInterne(){
   const avant=+_pieceEnCours.quantite;
   let compte,maj={updated_at:new Date().toISOString()},motif='Inventaire';
   if(_pieceEnCours.gestion_peremption){
@@ -5046,7 +5046,21 @@ function supprimerLigneHistoriqueTerrain(idx){
   renderHistoriqueTerrain();
 }
 
-async function saveEquipTerrain(){
+// Anti double-clic : une seule exécution à la fois ; le bouton est grisé jusqu'à la fin
+function antiDoublon(fn){
+  let enCours=false;
+  return async function(...a){
+    if(enCours)return;
+    enCours=true;
+    const ev=window.event;
+    const b=ev&&ev.target&&ev.target.closest?ev.target.closest('button'):null;
+    const txt=b?b.innerHTML:null;
+    if(b){b.disabled=true;b.textContent='⏳ En cours…'}
+    try{return await fn.apply(this,a)}
+    finally{enCours=false;if(b){b.disabled=false;b.innerHTML=txt}}
+  };
+}
+async function _saveEquipTerrainInterne(){
   // Garde-fou : motif obligatoire pour un ajout direct (pas d'avenant)
   const estCreation=!document.getElementById('ef-id').value;
   const motifSel=document.getElementById('ef-motif');
@@ -5473,7 +5487,7 @@ function renderIpPieces(){
   `).join('');
 }
 
-async function validerInterventionPonctuelle(){
+async function _validerInterventionPonctuelleInterne(){
   const description = $('ip-description').value.trim();
   if(!description){toast('Description obligatoire','err');return}
 
@@ -5791,7 +5805,7 @@ async function editerRdvTerrain(id){
   await openRdvFormTerrain({...r, client_id: rdvFull?.client_id});
 }
 
-async function saveRdvTerrain(){
+async function _saveRdvTerrainInterne(){
   const id = $('rf-id').value;
   const clientId = $('rf-client').value;
   const date = $('rf-date').value;
@@ -5879,6 +5893,22 @@ async function deleteRdvTerrain(){
   await chargerPlanning();
 }
 
+
+window.saveEquipTerrain=antiDoublon(_saveEquipTerrainInterne);
+
+window.demarrerSessionType=antiDoublon(_demarrerSessionTypeInterne);
+window.demarrerSession=antiDoublon(_demarrerSessionInterne);
+window.enregistrerVerifAtelier=antiDoublon(_enregistrerVerifAtelierInterne);
+window.enregistrerReceptionNeuf=antiDoublon(_enregistrerReceptionNeufInterne);
+window.validerAtelierReforme=antiDoublon(_validerAtelierReformeInterne);
+window.validerSignatureEtCloturer=antiDoublon(_validerSignatureEtCloturerInterne);
+window.demarrerInventaire=antiDoublon(_demarrerInventaireInterne);
+window.saveNouvellePiece=antiDoublon(_saveNouvellePieceInterne);
+window.validerComptage=antiDoublon(_validerComptageInterne);
+window.validerInterventionPonctuelle=antiDoublon(_validerInterventionPonctuelleInterne);
+window.saveRdvTerrain=antiDoublon(_saveRdvTerrainInterne);
+window.enregistrerCorrectionUnite=antiDoublon(_enregistrerCorrectionUniteInterne);
+window.confirmerIdentiteUnite=antiDoublon(_confirmerIdentiteUniteInterne);
 </script>
 </body>
 </html>
