@@ -447,16 +447,23 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button type="button" class="btn btn-s btn-sm" onclick="$('ip-photo-input').click()" style="margin-bottom:14px">📷 Prendre une photo</button>
     <input type="file" id="ip-photo-input" accept="image/*" capture="environment" style="display:none" onchange="onPhotoIPSelected(this)">
 
-    <div class="sec">Signature client (optionnel)</div>
-    <div class="fg" style="margin-bottom:8px"><input type="text" id="ip-signataire" placeholder="Nom du signataire"></div>
+    <div class="sec">Bon d'intervention — signatures (obligatoires)</div>
+    <div style="font-size:12px;color:var(--txt-l);margin-bottom:8px">1. Signature du TECHNICIEN</div>
+    <div style="background:#fff;border:2px dashed #d1d5db;border-radius:12px;position:relative;margin-bottom:8px">
+      <canvas id="ip-sig-tech" style="width:100%;height:130px;display:block;touch-action:none"></canvas>
+      <div id="ip-sig-tech-ph" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;pointer-events:none">Le technicien signe ici</div>
+    </div>
+    <button type="button" class="btn btn-s btn-sm" onclick="effacerSigne('ip-sig-tech')" style="margin-bottom:14px">🗑 Effacer</button>
+    <div style="font-size:12px;color:var(--txt-l);margin-bottom:8px">2. Signature du CLIENT</div>
+    <div class="fg" style="margin-bottom:8px"><input type="text" id="ip-signataire" placeholder="Nom du signataire (client) *"></div>
     <div style="background:#fff;border:2px dashed #d1d5db;border-radius:12px;position:relative;margin-bottom:8px">
       <canvas id="ip-sig-canvas" style="width:100%;height:160px;display:block;touch-action:none"></canvas>
-      <div id="ip-sig-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;pointer-events:none">Signature (optionnelle)</div>
+      <div id="ip-sig-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;pointer-events:none">Le client signe ici</div>
     </div>
     <button type="button" class="btn btn-s btn-sm" onclick="effacerSignatureIP()">🗑 Effacer</button>
   </div>
   <div class="footer">
-    <button class="btn btn-vert" onclick="validerInterventionPonctuelle()" id="btn-valider-ip">✅ Enregistrer l'intervention</button>
+    <button class="btn btn-vert" onclick="validerInterventionPonctuelle()" id="btn-valider-ip">✅ Signer et enregistrer le bon</button>
   </div>
 </div>
 
@@ -4024,6 +4031,26 @@ function effacerSigne(cid){
 function effacerSignature(){effacerSigne('sig-canvas')}
 function effacerSignatureTech(){effacerSigne('sig-canvas-tech')}
 
+// ---- Envoi automatique du bon signé au secrétariat (non bloquant : un échec n'empêche jamais la clôture) ----
+const EMAIL_SECRETARIAT='contact@bfs-prevention.fr';
+function blobVersBase64(blob){
+  return new Promise((ok,ko)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]||'');r.onerror=ko;r.readAsDataURL(blob)});
+}
+async function notifierSecretariatBon(pdfBlob,{titre,numero,detail}){
+  try{
+    const c=currentClient||{};
+    const sujet=`BFS — ${titre} ${numero||''} — ${c.raison_sociale||''}`.replace(/\s+/g,' ').trim();
+    const texte=`Bonjour,\n\nUn ${titre.toLowerCase()} signé vient d'être enregistré.\n\nClient : ${c.raison_sociale||'—'}${c.ville?' ('+c.ville+')':''}\nTechnicien : ${ME.prenom||''} ${ME.nom||''}\nDate : ${new Date().toLocaleDateString('fr-FR')}${numero?'\nN° : '+numero:''}${detail?'\n'+detail:''}\n\nLe bon signé est en pièce jointe (il figure aussi dans les bons à facturer).\n\nBFS Contrôle`;
+    const body={a:[EMAIL_SECRETARIAT],sujet,texte};
+    if(pdfBlob&&pdfBlob.size<=15*1024*1024){
+      body.pieces_jointes=[{nom:`${titre}_${numero||Date.now()}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await blobVersBase64(pdfBlob)}];
+    }else{body.texte+='\n\n(PDF trop volumineux pour la pièce jointe : à consulter dans les bons à facturer.)'}
+    const {data,error}=await db.functions.invoke('envoyer-mail',{body});
+    if(error||!data?.envoye){console.warn('Mail secrétariat non envoyé',error||data);toast('⚠️ Mail au secrétariat non envoyé (le bon est bien enregistré)','err');return false}
+    return true;
+  }catch(e){console.warn('Mail secrétariat',e);toast('⚠️ Mail au secrétariat non envoyé (le bon est bien enregistré)','err');return false}
+}
+
 async function _validerSignatureEtCloturerInterne(){
   const nom=document.getElementById('sig-nom').value.trim();
   if(!nom){toast('Nom du signataire obligatoire','err');return}
@@ -4084,6 +4111,9 @@ async function _validerSignatureEtCloturerInterne(){
       bonEnregistre=true;
     }
   }catch(e){console.warn('Erreur enregistrement bon:',e);toast('⚠️ Bon d\'intervention NON enregistré','err');}
+
+  // Mail automatique au secrétariat (bon enregistré uniquement)
+  if(bonEnregistre)await notifierSecretariatBon(pdfBlob,{titre:"Bon d'intervention",numero:currentSession?.numero,detail:`Équipements vérifiés : ${nbVerifies}`});
 
   // Clôturer la session — toujours exécuté
   if(currentSession){
@@ -5369,7 +5399,7 @@ function ouvrirInterventionPonctuelle(){
   $('ip-photo-preview').innerHTML = '';
   renderIpPieces();
   goTo('s-intervention-ponctuelle');
-  setTimeout(initIpSignatureCanvas, 100);
+  setTimeout(()=>{initIpSignatureCanvas();setupSigCanvas('ip-sig-tech','ip-sig-tech-ph')}, 100);
 }
 
 function initIpSignatureCanvas(){
@@ -5490,6 +5520,9 @@ function renderIpPieces(){
 async function _validerInterventionPonctuelleInterne(){
   const description = $('ip-description').value.trim();
   if(!description){toast('Description obligatoire','err');return}
+  if(!$('ip-signataire').value.trim()){toast('Nom du signataire obligatoire','err');return}
+  if(!_sigs['ip-sig-tech']?.has){toast('Signature du technicien obligatoire','err');return}
+  if(!ipSigHasContent){toast('Signature du client obligatoire','err');return}
 
   const btn = $('btn-valider-ip');
   btn.disabled = true; btn.textContent = '⏳ Enregistrement…';
@@ -5529,7 +5562,7 @@ async function _validerInterventionPonctuelleInterne(){
 
   if(ipErr){
     toast('Erreur: '+ipErr.message, 'err');
-    btn.disabled = false; btn.textContent = '✅ Enregistrer l\'intervention';
+    btn.disabled = false; btn.textContent = '✅ Signer et enregistrer le bon';
     return;
   }
 
@@ -5577,6 +5610,7 @@ async function _validerInterventionPonctuelleInterne(){
   doc.line(14,y+3,82,y+3); doc.line(122,y+3,196,y+3);
   doc.setFontSize(9);
   doc.text(`${ME.prenom||''} ${ME.nom}`, 14, y+8);
+  try{doc.addImage(_sigs['ip-sig-tech'].canvas.toDataURL('image/png'),'PNG',14,y-22,60,22)}catch(e){}
   if(signatureUrl){
     doc.addImage(signatureUrl,'PNG',122,y-22,70,24);
     doc.text(signataire||'', 122, y+8);
@@ -5584,16 +5618,31 @@ async function _validerInterventionPonctuelleInterne(){
     doc.text('(non signé)', 122, y+8);
   }
 
+  let ipPdfUrl = null;
   const pdfBlob = doc.output('blob');
   const pdfFileName = `bon_ip_${currentClient.id}_${Date.now()}.pdf`;
   const {error: pdfUpErr} = await db.storage.from('bons-intervention').upload(pdfFileName, pdfBlob, {contentType:'application/pdf'});
   if(!pdfUpErr){
     const {data:pdfUrlData} = db.storage.from('bons-intervention').getPublicUrl(pdfFileName);
     await db.from('interventions_ponctuelles').update({pdf_url: pdfUrlData.publicUrl, pdf_path: pdfFileName}).eq('id', ipData.id);
+    ipPdfUrl = pdfUrlData.publicUrl;
   }
 
-  toast('Intervention enregistrée ✓');
-  btn.disabled = false; btn.textContent = '✅ Enregistrer l\'intervention';
+  // Bon d'intervention signé : enregistré avec les autres bons (facturation, bureau)
+  const {error: bonIpErr} = await db.from('bons_intervention').insert({
+    session_id: null, client_id: currentClient.id, agence_id: currentClient.agence_id,
+    technicien_id: ME.id, date_intervention: new Date().toISOString().slice(0,10),
+    nb_equipements_verifies: 0, signataire_nom: signataire,
+    pdf_url: ipPdfUrl, pdf_path: ipPdfUrl ? pdfFileName : null,
+    statut_facturation: 'à_facturer',
+    numero_session: 'IP-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + String(ipData.id).slice(0,4).toUpperCase()
+  });
+  if(bonIpErr) toast('⚠️ Bon non enregistré dans la facturation : '+bonIpErr.message,'err');
+  else{
+    toast('Bon d\'intervention signé et enregistré ✓');
+    await notifierSecretariatBon(pdfBlob,{titre:"Bon d'intervention ponctuelle",numero:'IP-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+String(ipData.id).slice(0,4).toUpperCase(),detail:'Type : '+$('ip-type').options[$('ip-type').selectedIndex].text});
+  }
+  btn.disabled = false; btn.textContent = '✅ Signer et enregistrer le bon';
   goTo('s-client');
 }
 

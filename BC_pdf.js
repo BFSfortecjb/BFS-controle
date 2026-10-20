@@ -422,6 +422,7 @@ async function regenererBon(bonId,sansConfirm){
   // Récupérer le bon + infos session
   const {data:bon}=await db.from('bons_intervention').select('*').eq('id',bonId).single();
   if(!bon){toast('Bon introuvable','err');return}
+  if(!bon.session_id){toast("Bon d'intervention ponctuelle : non régénérable (le PDF signé d'origine est conservé)",'err');return}
 
   // Récupérer les infos client
   const {data:client}=await db.from('clients').select('*,agences(nom,code)').eq('id',bon.client_id).single();
@@ -615,6 +616,7 @@ async function rapportComplet(bonId){
   toast('Génération du rapport complet…');
   const {data:bon}=await db.from('bons_intervention').select('*').eq('id',bonId).single();
   if(!bon){toast('Bon introuvable','err');return}
+  if(!bon.session_id){toast("Pas de rapport complet pour une intervention ponctuelle (bon signé disponible)",'err');return}
   const {data:client}=await db.from('clients').select('*,agences(nom,code)').eq('id',bon.client_id).single();
   const {data:tech}=await db.from('profils').select('nom,prenom').eq('id',bon.technicien_id).single();
   const techNom=tech?`${tech.prenom||''} ${tech.nom}`.trim():'—';
