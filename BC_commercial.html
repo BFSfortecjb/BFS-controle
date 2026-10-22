@@ -256,6 +256,25 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
 </div>
 
+<!-- ===== VÉRIFICATION DU TARIF AVEC LE CLIENT (avant signature) ===== -->
+<div class="screen" id="s-verif-contrat">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-new-contrat')">←</button>
+    <h1>Vérification avec le client</h1>
+  </div>
+  <div class="content">
+    <div style="font-size:12px;color:var(--txt-l);margin-bottom:10px">Présentez cet écran au client : il récapitule le tarif et les conditions avant toute signature.</div>
+    <div id="vc-content"></div>
+    <label style="display:flex;gap:10px;align-items:flex-start;font-size:13px;margin:14px 0;padding:12px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;cursor:pointer">
+      <input type="checkbox" id="vc-ok" onchange="$('vc-btn').disabled=!this.checked" style="width:22px;height:22px;flex-shrink:0;margin-top:1px">
+      <span>Le client a pris connaissance du <b>tarif annuel</b>, du <b>montant total sur la durée</b>, de la <b>durée d'engagement</b>, de la <b>reconduction tacite</b> et des <b>frais de résiliation anticipée</b>.</span>
+    </label>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" id="vc-btn" disabled onclick="saveContratCom(_vcSigner)">✅ Valider</button>
+  </div>
+</div>
+
 <!-- ===== NOUVEAU CONTRAT ===== -->
 <div class="screen" id="s-new-contrat">
   <div class="hdr">
@@ -277,7 +296,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
         <option value="9">9 ans</option><option value="10">10 ans</option>
       </select></div>
     </div>
-    <div class="fg" style="margin-bottom:12px"><label>Périodicité</label><select id="nk-period"><option value="annuelle">Annuelle</option><option value="semestrielle">Semestrielle</option><option value="trimestrielle">Trimestrielle</option><option value="mensuelle">Mensuelle</option></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Périodicité</label><select id="nk-period" onchange="recalcGrilleLignes()"><option value="annuelle">Annuelle</option><option value="semestrielle">Semestrielle</option><option value="trimestrielle">Trimestrielle</option><option value="mensuelle">Mensuelle</option></select></div>
     <div class="sec">Frais de déplacement</div>
     <div class="fg" style="margin-bottom:8px"><select id="nk-fd-mode" onchange="majAffichageDeplacement()"><option value="facture">Facturés à chaque passage</option><option value="inclus">Inclus dans le contrat</option><option value="offert">Offerts</option></select></div>
     <div id="nk-fd-zone-bloc" style="background:#f8fafc;border:1.5px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:12px">
@@ -296,8 +315,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="fg" style="margin-bottom:12px"><label>Notes / conditions</label><textarea id="nk-notes" rows="2"></textarea></div>
   </div>
   <div class="footer" style="display:flex;flex-direction:column;gap:8px">
-    <button class="btn btn-vert" onclick="saveContratCom(true)">✍ Créer et faire signer</button>
-    <button class="btn btn-s" onclick="saveContratCom(false)">💾 Créer sans signature</button>
+    <button class="btn btn-vert" onclick="ouvrirVerifContrat(true)">✍ Vérifier avec le client et signer</button>
+    <button class="btn btn-s" onclick="ouvrirVerifContrat(false)">💾 Vérifier et créer sans signature</button>
   </div>
 </div>
 
@@ -308,15 +327,16 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <h1>Équipement du contrat</h1>
   </div>
   <div class="content">
-    <div class="fg" style="margin-bottom:12px"><label>Type d'équipement *</label><select id="lk-type" onchange="renderChampsLigne()"></select></div>
+    <div class="fg" style="margin-bottom:12px"><label>Type d'équipement *</label><select id="lk-type" onchange="renderChampsLigne();majPrixLigne()"></select></div>
     <div id="lk-marque-modele"></div>
     <div class="sec">Caractéristiques</div>
     <div id="lk-champs"><div style="font-size:12px;color:var(--txt-l);padding:4px 0">Aucune caractéristique pour ce type.</div></div>
-    <div class="fg" style="margin-bottom:12px"><label>Tarif de la base (remplit le prix)</label><select id="lk-tarif" onchange="const t=_tarifsCom.find(x=>x.id===this.value);if(t&&t.prix_ht!=null)$('lk-pu').value=(+t.prix_ht).toFixed(2)"><option value=""></option></select></div>
+    <div class="fg" id="lk-tarif-bloc" style="margin-bottom:12px"><label>Tarif de la base (remplit le prix)</label><select id="lk-tarif" onchange="const t=_tarifsCom.find(x=>x.id===this.value);if(t&&t.prix_ht!=null)$('lk-pu').value=(+t.prix_ht).toFixed(2)"><option value=""></option></select></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div class="fg"><label>Quantité *</label><input type="number" id="lk-qte" min="1" value="1" inputmode="numeric"></div>
       <div class="fg"><label>Prix unitaire HT (€) — réf. 5 ans *</label><input type="number" id="lk-pu" step="0.01" min="0" inputmode="decimal"></div>
     </div>
+    <div id="lk-pu-info" style="font-size:12px;margin:-6px 0 12px"></div>
     <div class="sec">Prise en contrat — état constaté</div>
     <div class="fg" style="margin-bottom:12px"><label>Année de fabrication</label><input type="number" id="lk-annee" min="1980" max="2100" placeholder="2021" inputmode="numeric"></div>
     <div class="fg" style="margin-bottom:12px"><label>Dernière vérification annuelle</label><input type="date" id="lk-dverif"></div>
@@ -416,7 +436,7 @@ const fmt=d=>d?new Date(d).toLocaleDateString('fr-FR'):'—';
 function toast(msg,type='ok'){const t=$('toast');t.textContent=msg;t.className='show '+type;setTimeout(()=>t.className='',2800)}
 function goTo(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));$(id).classList.add('active')}
 
-let ME=null,typesEquip=[],clientsList=[],_lignes=[],_contratASigner=null,_tarifsCom=[];
+let ME=null,typesEquip=[],clientsList=[],_lignes=[],_contratASigner=null,_tarifsCom=[],_grille=[];
 let _choixCible='contrat',_equipsExistants=[];
 
 // ---- Tarification par durée d'engagement ----
@@ -449,6 +469,7 @@ async function onLogin(user){
   typesEquip=te||[];
   const {data:trf}=await db.from('tarifs').select('id,code,designation,prix_ht,categorie').eq('actif',true).order('designation');
   _tarifsCom=(trf||[]).filter(t=>t.prix_ht!=null); // un devis a besoin d'un prix : les articles pas encore tarifés n'apparaissent pas ici
+  try{const {data:gr}=await db.from('grille_tarifs_contrat').select('type_equipement_code,periodicite,prix_ref_5ans').eq('actif',true);_grille=gr||[]}catch(e){_grille=[]}
   ouvrirCommercial();
 }
 async function doLogout(){await db.auth.signOut();ME=null;goTo('s-login')}
@@ -557,14 +578,22 @@ async function ouvrirChoixEquipExistant(cible){
 }
 function choisirEquipExistant(i){
   const e=_equipsExistants[i];if(!e)return;
-  const tarif=_tarifsCom.find(t=>t.code===e.type_equipement_code);
-  const puDef=tarif?(+tarif.prix_ht).toFixed(2):'0';
-  const saisie=prompt('Montant annuel HT (référence sur 5 ans) pour '+(e.numero_identification||'cet équipement')+' :',puDef);
-  if(saisie===null)return;
-  const pu=parseFloat(saisie.replace(',','.'));
-  if(isNaN(pu)||pu<0){toast('Montant invalide','err');return}
+  let pu,source='manuel';
+  if(_choixCible!=='avenant'){
+    const pg=grillePrix(e.type_equipement_code,periodiciteContrat());
+    if(pg!=null){pu=pg;source='grille'}
+  }
+  if(pu==null){
+    const tarif=_tarifsCom.find(t=>t.code===e.type_equipement_code);
+    const puDef=tarif?(+tarif.prix_ht).toFixed(2):'0';
+    const saisie=prompt('Aucun tarif en grille pour cet équipement.\nMontant annuel HT (référence sur 5 ans) pour '+(e.numero_identification||'cet équipement')+' (sera signalé « hors grille ») :',puDef);
+    if(saisie===null)return;
+    pu=parseFloat(saisie.replace(',','.'));
+    if(isNaN(pu)||pu<0){toast('Montant invalide','err');return}
+    source=_choixCible==='avenant'?'manuel':'hors_grille';
+  }
   const ligne={type:e.type_equipement_code,marque:e.marque||'',modele:e.modele||'',
-    quantite:1,pu,equipement_id:e.id,resume:e.numero_identification||''};
+    quantite:1,pu,pu_source:source,equipement_id:e.id,resume:e.numero_identification||''};
   if(_choixCible==='avenant'){
     ligne.sens='ajout';
     _avLignes.push(ligne);
@@ -804,6 +833,7 @@ function ouvrirLigneContrat(){
   $('lk-qte').value='1';$('lk-pu').value='';
   ['lk-annee','lk-dverif','lk-dmaa','lk-drev'].forEach(id=>$(id).value='');
   renderChampsLigne();
+  majPrixLigne();
   goTo('s-ligne-contrat');
 }
 function renderChampsLigne(){
@@ -821,7 +851,12 @@ function validerLigneContrat(){
   const {marque,modele}=lireMarqueModele('lk-');
   const annee=parseInt($('lk-annee').value,10)||null;
   const resume=[resumeCaract(type,caract),annee?'fab. '+annee:''].filter(Boolean).join(' · ');
-  const ligne={type,marque,modele,quantite:qte,pu,caract,resume,
+  let puFinal=pu,source='manuel';
+  if(_ligneCible!=='avenant'){
+    const pg=grillePrix(type,periodiciteContrat());
+    if(pg!=null){puFinal=pg;source='grille'}else source='hors_grille';
+  }
+  const ligne={type,marque,modele,quantite:qte,pu:puFinal,pu_source:source,caract,resume,
     annee_fab:annee,d_verif:$('lk-dverif').value||null,d_maa:$('lk-dmaa').value||null,d_rev:$('lk-drev').value||null};
   if(_ligneCible==='avenant'){
     ligne.sens=_avSens;
@@ -843,6 +878,88 @@ async function prochainNumeroContrat(){
   return prefixe+String(max+1).padStart(3,'0');
 }
 
+
+// ============================================================
+// GRILLE DE TARIFS DE CONTRAT (par type d'équipement et périodicité, référence 5 ans)
+// Le prix est repris automatiquement et verrouillé ; sans ligne de grille, la saisie reste possible
+// mais la ligne est signalée « hors grille » au technicien, au client et au bureau.
+// ============================================================
+const LIB_PERIOD={annuelle:'Annuelle (1 visite par an)',semestrielle:'Semestrielle (2 visites par an)',trimestrielle:'Trimestrielle (4 visites par an)',mensuelle:'Mensuelle (12 visites par an)'};
+function periodiciteContrat(){return $('nk-period')?.value||'annuelle'}
+function grillePrix(type,per){const r=_grille.find(g=>g.type_equipement_code===type&&g.periodicite===per);return r?+r.prix_ref_5ans:null}
+function majPrixLigne(){
+  const info=$('lk-pu-info'),pu=$('lk-pu'),bloc=$('lk-tarif-bloc');if(!info||!pu)return;
+  if(_ligneCible==='avenant'){pu.readOnly=false;if(bloc)bloc.style.display='';info.innerHTML='';return}
+  const per=periodiciteContrat(),p=grillePrix($('lk-type').value,per);
+  if(p!=null){
+    pu.value=p.toFixed(2);pu.readOnly=true;if(bloc)bloc.style.display='none';
+    info.innerHTML=`<span style="color:#15803d">🔒 Tarif de la grille — ${LIB_PERIOD[per]||per} : ${p.toFixed(2)} € HT par an et par appareil (référence 5 ans). Le prix annuel réel dépend de la durée d'engagement.</span>`;
+  }else{
+    pu.readOnly=false;if(bloc)bloc.style.display='';
+    info.innerHTML=`<span style="color:#b45309">⚠ Aucun tarif en grille pour ce type et cette périodicité (${LIB_PERIOD[per]||per}). Le prix saisi sera signalé « hors grille » au client et au bureau.</span>`;
+  }
+}
+function recalcGrilleLignes(){
+  if(!_lignes.length){return}
+  const per=periodiciteContrat();let horsGrille=0;
+  _lignes.forEach(l=>{
+    const p=grillePrix(l.type,per);
+    if(p!=null){l.pu=p;l.pu_source='grille'}else{l.pu_source='hors_grille';horsGrille++}
+  });
+  renderLignes();
+  toast(horsGrille?`⚠ Périodicité modifiée : ${horsGrille} ligne(s) sans tarif en grille (prix conservé, signalé « hors grille »)`:'Prix mis à jour selon la périodicité ✓',horsGrille?'err':undefined);
+}
+let _vcSigner=false;
+function ouvrirVerifContrat(signer){
+  const clientId=$('nk-client').value;
+  if(!clientId){toast('Choisis un client','err');return}
+  if(!_lignes.length){toast('Ajoute au moins un équipement','err');return}
+  _vcSigner=!!signer;
+  const client=clientsList.find(x=>x.id===clientId);
+  const duree=dureeContratActuelle(),per=periodiciteContrat();
+  const eur=n=>(+n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+  const lib=code=>{const t=typesEquip.find(t=>t.code===code);return t?t.libelle:code};
+  const lignesHtml=_lignes.map(l=>{
+    const pe=puEffectif(l),hg=l.pu_source!=='grille';
+    return `<tr><td style="padding:8px 6px;border-bottom:1px solid #eee">${lib(l.type)}${[l.marque,l.modele].filter(Boolean).length?' — '+[l.marque,l.modele].filter(Boolean).join(' '):''}${l.resume?'<div style="font-size:11px;color:var(--txt-l)">'+l.resume+'</div>':''}${hg?'<div style="font-size:11px;color:#b45309;font-weight:700">⚠ Prix hors grille</div>':''}</td>
+      <td style="padding:8px 6px;border-bottom:1px solid #eee;text-align:center">${l.quantite}</td>
+      <td style="padding:8px 6px;border-bottom:1px solid #eee;text-align:right">${eur(pe)}</td>
+      <td style="padding:8px 6px;border-bottom:1px solid #eee;text-align:right;font-weight:700">${eur(l.quantite*pe)}</td></tr>`}).join('');
+  const totalAn=_lignes.reduce((s,l)=>s+(+l.quantite)*puEffectif(l),0);
+  const totalDuree=totalAn*duree;
+  const nbHG=_lignes.filter(l=>l.pu_source!=='grille').length;
+  const fraisLib=(typeof libelleFraisDeplacement==='function'?libelleFraisDeplacement(donneesDeplacementContrat()):null)||'—';
+  const debut=$('nk-debut').value;let fin='';
+  if(debut){const d=new Date(debut);d.setFullYear(d.getFullYear()+duree);fin=d.toISOString().slice(0,10)}
+  const ref=duree===5?'':duree<5?`Durée inférieure à la référence de 5 ans : le tarif annuel est <b>majoré</b> (le coût des entretiens quinquennaux est réparti sur ${duree} an${duree>1?'s':''} au lieu de 5).`:`Durée supérieure à la référence de 5 ans : le tarif annuel est <b>minoré</b>.`;
+  $('vc-content').innerHTML=`
+    <div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;font-size:13px;line-height:1.6">
+      <div style="font-weight:700;font-size:15px">${client?.raison_sociale||'—'}</div>
+      <div>Durée d'engagement : <b>${duree} an${duree>1?'s':''}</b>${debut?' — du '+fmt(debut)+(fin?' au '+fmt(fin):''):''}</div>
+      <div>Périodicité des visites : <b>${LIB_PERIOD[per]||per}</b></div>
+      <div>Frais de déplacement : <b>${fraisLib}</b></div>
+    </div>
+    ${nbHG?`<div style="background:#fef3c7;border:1.5px solid #fcd34d;color:#92400e;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:13px">⚠ ${nbHG} ligne(s) au prix <b>hors grille</b> : à faire valider par le bureau.</div>`:''}
+    <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:12px;font-size:13px;margin-bottom:12px">
+      <thead><tr style="background:#f3f4f6;font-size:11px;text-transform:uppercase;color:#6b7280"><th style="padding:8px 6px;text-align:left">Équipement</th><th>Qté</th><th style="text-align:right;padding:8px 6px">Prix annuel HT / appareil</th><th style="text-align:right;padding:8px 6px">Total annuel HT</th></tr></thead>
+      <tbody>${lignesHtml}</tbody></table>
+    <div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:15px"><span>Total annuel HT</span><b>${eur(totalAn)}</b></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--txt-l);margin-top:2px"><span>soit TTC indicatif (TVA 20 %)</span><span>${eur(totalAn*1.2)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:15px;margin-top:10px;padding-top:10px;border-top:1px solid #eee"><span>Montant total HT sur ${duree} an${duree>1?'s':''}</span><b style="color:var(--rouge)">${eur(totalDuree)}</b></div>
+    </div>
+    <div style="background:#eff6ff;border-radius:12px;padding:12px 14px;font-size:12.5px;line-height:1.55;color:#1e3a8a">
+      <b>Comment est calculé le tarif ?</b><br>
+      Le prix par appareil est un tarif annuel de référence pour un engagement de 5 ans. ${ref}<br>
+      L'engagement permet un <b>tarif annuel unique</b> : il lisse sur la durée le coût des entretiens quinquennaux (maintenance approfondie, charges, traitement des déchets) inclus dans le budget.<br>
+      <b>Reconduction :</b> à l'issue de la durée d'engagement, le contrat est reconduit tacitement par périodes d'un an ; BFS vous prévient par écrit environ un mois et demi avant l'échéance, et vous pouvez refuser la reconduction jusqu'à la date d'échéance.<br>
+      <b>Résiliation anticipée :</b> des frais peuvent être facturés au prorata de la durée restante, correspondant à la part non encore amortie des entretiens quinquennaux.
+    </div>`;
+  $('vc-ok').checked=false;$('vc-btn').disabled=true;
+  $('vc-btn').textContent=_vcSigner?'✅ Valider et passer à la signature':'✅ Valider et créer le contrat';
+  goTo('s-verif-contrat');
+}
+
 async function _saveContratComInterne(signer){
   const clientId=$('nk-client').value;
   if(!clientId){toast('Choisis un client','err');return}
@@ -859,6 +976,7 @@ async function _saveContratComInterne(signer){
     types_couverts:[...new Set(_lignes.map(l=>l.type))],lignes:_lignes,
     date_debut:debut,date_fin:fin,duree_engagement:duree,
     tarif_annuel:total||null,periodicite_visite:$('nk-period').value,
+    tarif_verifie_le:new Date().toISOString(),lignes_hors_grille:_lignes.filter(l=>l.pu_source!=='grille').length,
     statut:'actif',notes:$('nk-notes').value.trim(),
     ...donneesDeplacementContrat()
   }).select('*,clients(raison_sociale)').single();
@@ -1002,7 +1120,7 @@ async function signerContrat(id,ct){
   $('sk-nom').value='';
   $('sk-recap').innerHTML=`<strong>${ct.clients?.raison_sociale||'—'}</strong><br>
     ${ct.numero_contrat?'N° '+ct.numero_contrat+' · ':''}${ct.type_contrat} · ${fmt(ct.date_debut)} → ${fmt(ct.date_fin)}<br>
-    ${(Array.isArray(ct.lignes)?ct.lignes.length:0)} ligne(s) — <strong>${ct.tarif_annuel?(+ct.tarif_annuel).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})+' HT':'—'}</strong>`;
+    ${(Array.isArray(ct.lignes)?ct.lignes.length:0)} ligne(s) — <strong>${ct.tarif_annuel?(+ct.tarif_annuel).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})+' HT par an':'—'}</strong>${ct.tarif_annuel&&ct.duree_engagement?'<br>Engagement '+ct.duree_engagement+' an'+(ct.duree_engagement>1?'s':'')+' — montant total <strong>'+(ct.tarif_annuel*ct.duree_engagement).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})+' HT</strong>':''}`;
   goTo('s-sign-contrat');
   setTimeout(setupSigCom,150);
 }

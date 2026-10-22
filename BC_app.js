@@ -2430,6 +2430,54 @@ async function loadTarifs(){
   await chargerTarifPhotos();
   renderTarifs();
 }
+
+// ============================================================
+// GRILLE DES TARIFS DE CONTRAT (type x périodicité, référence 5 ans)
+// ============================================================
+let _grilleContrat=[];
+const LIB_PERIOD_GRILLE={annuelle:'Annuelle (1 visite/an)',semestrielle:'Semestrielle (2/an)',trimestrielle:'Trimestrielle (4/an)',mensuelle:'Mensuelle (12/an)'};
+async function ouvrirGrilleContrat(){
+  OM('mo-grille-contrat');
+  $('grille-contrat-corps').innerHTML='<div class="loading"><span class="spin"></span></div>';
+  const {data,error}=await db.from('grille_tarifs_contrat').select('*').order('type_equipement_code').order('periodicite');
+  if(error){$('grille-contrat-corps').innerHTML='<div class="t-empty">Erreur : '+error.message+'</div>';return}
+  _grilleContrat=data||[];renderGrilleContrat();
+}
+function renderGrilleContrat(){
+  const droit=peutGererTarifs();
+  const lib=c=>{const t=typesEquip.find(t=>t.code===c);return t?(t.icone||'')+' '+t.libelle:c};
+  const lignes=_grilleContrat.map(g=>`<tr>
+    <td>${lib(g.type_equipement_code)}</td><td>${LIB_PERIOD_GRILLE[g.periodicite]||g.periodicite}</td>
+    <td style="text-align:right">${droit?`<input type="number" step="0.01" min="0" id="gr-${g.id}" value="${(+g.prix_ref_5ans).toFixed(2)}" style="width:90px;text-align:right"> €`:(+g.prix_ref_5ans).toFixed(2)+' €'}</td>
+    <td>${droit?`<button class="btn btn-s btn-xs" onclick="saveLigneGrille('${g.id}')" title="Enregistrer">💾</button> <button class="btn btn-s btn-xs" style="color:#dc2626" onclick="supprimerLigneGrille('${g.id}')" title="Supprimer">🗑</button>`:''}</td></tr>`).join('');
+  const ajout=droit?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid #e5e7eb;align-items:flex-end">
+    <div class="fg" style="flex:1;min-width:150px"><label>Type</label><select id="gr-new-type">${typesEquip.map(t=>`<option value="${t.code}">${t.icone||''} ${t.libelle}</option>`).join('')}</select></div>
+    <div class="fg" style="flex:1;min-width:150px"><label>Périodicité</label><select id="gr-new-per">${Object.entries(LIB_PERIOD_GRILLE).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
+    <div class="fg" style="width:110px"><label>Prix réf. 5 ans (€ HT)</label><input type="number" step="0.01" min="0" id="gr-new-prix"></div>
+    <button class="btn btn-p" onclick="ajouterLigneGrille()">+ Ajouter</button></div>`:'<div style="font-size:12px;color:var(--txt-l);margin-top:10px">🔒 Consultation seule — la modification est réservée à la gestion des tarifs.</div>';
+  $('grille-contrat-corps').innerHTML=(_grilleContrat.length?`<table><thead><tr><th>Type</th><th>Périodicité</th><th style="text-align:right">Prix annuel / appareil (réf. 5 ans)</th><th></th></tr></thead><tbody>${lignes}</tbody></table>`:'<div class="t-empty">Aucun tarif de contrat</div>')+ajout;
+}
+async function saveLigneGrille(id){
+  const v=parseFloat($('gr-'+id).value);
+  if(isNaN(v)||v<0){toast('Prix invalide','err');return}
+  const {error}=await db.from('grille_tarifs_contrat').update({prix_ref_5ans:v,maj_par:ME.id,updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  toast('Tarif enregistré ✓');ouvrirGrilleContrat();
+}
+async function ajouterLigneGrille(){
+  const v=parseFloat($('gr-new-prix').value);
+  if(isNaN(v)||v<0){toast('Prix invalide','err');return}
+  const {error}=await db.from('grille_tarifs_contrat').insert({type_equipement_code:$('gr-new-type').value,periodicite:$('gr-new-per').value,prix_ref_5ans:v,maj_par:ME.id});
+  if(error){toast(/duplicate|unique/i.test(error.message)?'Ce type existe déjà pour cette périodicité':'Erreur : '+error.message,'err');return}
+  toast('Tarif ajouté ✓');ouvrirGrilleContrat();
+}
+async function supprimerLigneGrille(id){
+  if(!confirm('Supprimer ce tarif de la grille ? Les nouveaux contrats de ce type/périodicité passeront « hors grille ».'))return;
+  const {error}=await db.from('grille_tarifs_contrat').delete().eq('id',id);
+  if(error){toast('Erreur : '+error.message,'err');return}
+  toast('Tarif supprimé');ouvrirGrilleContrat();
+}
+
 const catTarif=c=>({prestation:'🛠 Prestation',piece:'🔩 Pièce',equipement:'🧯 Équipement neuf',accessoire:'🏷 Accessoire'}[c]||c);
 const eur=v=>v!=null?(+v).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}):'<span style="font-weight:400;color:var(--txt-l)">—</span>';
 // Filtres par colonne (tableau Tarifs) — état conservé entre deux rendus.

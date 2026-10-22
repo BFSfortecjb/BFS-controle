@@ -356,6 +356,9 @@ async function construireContratPDF(id){
   const eur=n=>(+n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
   const lib=code=>{const t=(typeof typesEquip!=='undefined'?typesEquip:[]).find(t=>t.code===code);return t?t.libelle:code};
   const nAns=(()=>{let n=+c.duree_engagement||0;if(!n&&c.date_debut&&c.date_fin)n=Math.round((new Date(c.date_fin)-new Date(c.date_debut))/(365.25*864e5));return n})();
+  // Tarification selon la durée d'engagement : lignes stockées au prix de référence (5 ans) ; prix annuel réel = pu x 5 / durée
+  const coefDuree=(+c.duree_engagement>0)?5/(+c.duree_engagement):1;
+  const puEff=l=>(+l.pu||0)*coefDuree;
   const fraisMode=c.frais_deplacement_mode||'inclus';
   const fraisInclus=fraisMode!=='facture';
   const TOP=54,BOTTOM=276,L=14,R=14,W=182;
@@ -413,8 +416,9 @@ async function construireContratPDF(id){
   para(nAns>0?`${nAns} an${nAns>1?'s':''} à compter ${c.date_debut?'du '+fmt(c.date_debut):'de la date de signature'}, avec au minimum ${nEch} échéance${nEch>1?'s':''} de vérification (${frequenceVisitesLib(c.periodicite_visite).toLowerCase()}), renouvelable à son échéance par tacite reconduction annuelle.`:`À compter ${debutTxt}, renouvelable à son échéance par tacite reconduction annuelle.`);
   para(`Période initiale : ${dureeContratLib(c)}.`);
   para("Reconduction : à l'issue de la période initiale, le contrat est reconduit tacitement par périodes d'un an. BFS informe le client par écrit environ un mois et demi avant chaque échéance. Le client peut refuser la reconduction par écrit (courrier ou courriel à contact@bfs-prevention.fr) au plus tard à la date d'échéance, qui est la date limite de refus.");
-  if(nAns>=5)para("L'engagement de 5 ans permet de bénéficier d'un tarif annuel unique : il lisse sur la durée du contrat le coût des entretiens quinquennaux (maintenance additionnelle approfondie, charges, traitement des déchets) inclus dans le budget.");
-  if(nAns>=5)para("Résiliation anticipée : ce tarif annuel unique repose sur ce lissage, y compris lorsque des entretiens quinquennaux sont réalisés dès la première année (notamment lors de la reprise d'un parc ou d'un contrat existant). En cas de résiliation avant le terme de la période initiale, des frais peuvent être facturés au prorata de la durée restante, correspondant à la part non encore amortie de ces entretiens. Aucun frais n'est dû lorsque la résiliation fait suite à un manquement de BFS à ses obligations.");
+  if(nAns>=2&&nAns<5)para(`La durée d'engagement de ${nAns} an${nAns>1?'s':''} est inférieure à la durée de référence de 5 ans : le tarif annuel est majoré en conséquence, le coût des entretiens quinquennaux étant réparti sur ${nAns} an${nAns>1?'s':''} au lieu de 5.`);
+  if(nAns>=5)para(`L'engagement de ${nAns} ans permet de bénéficier d'un tarif annuel unique : il lisse sur la durée du contrat le coût des entretiens quinquennaux (maintenance additionnelle approfondie, charges, traitement des déchets) inclus dans le budget.${nAns>5?' La durée supérieure à la référence de 5 ans minore le tarif annuel en conséquence.':''}`);
+  if(nAns>=2)para("Résiliation anticipée : ce tarif annuel unique repose sur ce lissage, y compris lorsque des entretiens quinquennaux sont réalisés dès la première année (notamment lors de la reprise d'un parc ou d'un contrat existant). En cas de résiliation avant le terme de la période initiale, des frais peuvent être facturés au prorata de la durée restante, correspondant à la part non encore amortie de ces entretiens. Aucun frais n'est dû lorsque la résiliation fait suite à un manquement de BFS à ses obligations.");
   if(c.type_contrat==='ponctuel')para('Nature : intervention ponctuelle.');
   y+=3;
 
@@ -456,11 +460,11 @@ async function construireContratPDF(id){
   let totalGeneral=0;
   familles.forEach(t=>{
     const ls=lignes.filter(l=>l.type===t);
-    const tot=ls.reduce((s,l)=>s+(+l.quantite||0)*(+l.pu||0),0);totalGeneral+=tot;
+    const tot=ls.reduce((s,l)=>s+(+l.quantite||0)*puEff(l),0);totalGeneral+=tot;
     ensure(60);
     section('Récapitulatif financier — '+lib(t));
     tbl({head:[['Activités',"Nombre de vérifications\n(Qté d'appareils x périodicité)",'Prix unitaire HT\n(tarif forfaitaire lissé)','Prix total HT']],
-      body:[...ls.map(l=>[[l.marque,l.modele].filter(Boolean).join(' ')||lib(t),String((+l.quantite||0)*visites),eur((+l.pu||0)/visites),eur((+l.quantite||0)*(+l.pu||0))]),
+      body:[...ls.map(l=>[[l.marque,l.modele].filter(Boolean).join(' ')||lib(t),String((+l.quantite||0)*visites),eur(puEff(l)/visites),eur((+l.quantite||0)*puEff(l))]),
         [{content:'Budget total',colSpan:3,styles:{fontStyle:'bold',halign:'right'}},{content:eur(tot),styles:{fontStyle:'bold'}}]],
       columnStyles:{1:{halign:'center',cellWidth:48},2:{halign:'right',cellWidth:34},3:{halign:'right',cellWidth:30}}});
     const tx=TEXTES_CONTRAT[t];
@@ -503,7 +507,7 @@ async function construireContratPDF(id){
 
   // ======== Extrait des tarifs ========
   // Seulement les prestations/pièces HORS budget du contrat (la vérification, la maintenance approfondie et la maintenance PP sont incluses)
-  const tf=(tarifsData||[]).filter(t=>t.prix_ht!=null&&!/^(DEPL|VAP-|MAA-|MAINT-|BAES-VERIF)/.test(String(t.code||'')));
+  const tf=(tarifsData||[]).filter(t=>t.prix_ht!=null&&!/^(DEPL|VAP-|MAA-|MAINT-|BAES-VERIF|CONTRAT-)/.test(String(t.code||'')));
   const prest=tf.filter(t=>t.categorie==='prestation'),pieces=tf.filter(t=>t.categorie==='piece');
   if(prest.length||pieces.length){
     doc.addPage();y=TOP;
