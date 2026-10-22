@@ -1439,6 +1439,7 @@ async function loadContrats(){
   if(!clients.length)await loadClients();
   const {data}=await db.from('contrats').select('*,clients(raison_sociale,contact_email),agences(nom)').order('date_debut',{ascending:false});
   contrats=data||[];renderContrats();
+  try{await renderPreavisContrats()}catch(e){console.warn('Préavis contrats',e)}
 }
 function renderContrats(){
   const q=$('q-contrats').value.toLowerCase();
@@ -1455,6 +1456,57 @@ function renderContrats(){
     <td><div class="ia"><button class="btn btn-s btn-xs" onclick="editContrat('${c.id}')">✏️</button>${!c.signature_data?`<button class="btn btn-s btn-xs" onclick="openSignContrat('${c.id}')" title="Faire signer le client">✍ Signer</button>`:''}<button class="btn btn-s btn-xs" onclick="exportContratPDF('${c.id}')" title="Télécharger le contrat PDF">📄</button><button class="btn btn-s btn-xs" onclick="envoyerContratMail('${c.id}')" title="Envoyer par mail au client">✉️</button><button class="btn btn-s btn-xs" onclick="deleteContrat('${c.id}')">🗑</button></div></td>
   </tr>`).join('')}</tbody></table>`;
 }
+
+// ============================================================
+// PRÉAVIS DE RECONDUCTION TACITE (courrier d'information client)
+// Envoi prévu 1,5 mois (45 jours) avant l'échéance ; la loi (art. L215-1 Code de la consommation) impose
+// une information écrite entre 3 mois et 1 mois avant la date limite de refus de reconduction.
+// Après la période initiale, le contrat se reconduit d'un an : un courrier est dû avant chaque échéance annuelle.
+// ============================================================
+const PREAVIS_JOURS_AVANT=45;     // 1,5 mois
+const PREAVIS_FENETRE_MIN=30;     // au plus tard 1 mois avant la date limite
+function jourMs(d){return new Date(d+'T12:00:00').getTime()}
+function echeanceReconduction(c){
+  if(!c.date_fin||c.statut!=='actif'||c.type_contrat==='ponctuel')return null;
+  const auj=Date.now();let e=new Date(c.date_fin+'T12:00:00');
+  // contrat reconduit tacitement : échéance annuelle suivante tant que la précédente est passée
+  let n=0;while(e.getTime()<auj-86400000&&n<30){e.setFullYear(e.getFullYear()+1);n++}
+  const echeance=e.toISOString().slice(0,10);
+  const envoi=new Date(e.getTime()-PREAVIS_JOURS_AVANT*864e5).toISOString().slice(0,10);
+  const limiteLegale=new Date(e.getTime()-PREAVIS_FENETRE_MIN*864e5).toISOString().slice(0,10);
+  return {echeance,envoi,limiteLegale,reconduit:n>0};
+}
+async function renderPreavisContrats(){
+  const el=$('preavis-contrats');if(!el)return;
+  const auj=new Date().toISOString().slice(0,10);
+  const cand=contrats.map(c=>({c,e:echeanceReconduction(c)})).filter(x=>x.e&&x.e.envoi<=new Date(Date.now()+30*864e5).toISOString().slice(0,10));
+  if(!cand.length){el.innerHTML='';return}
+  const {data:envs}=await db.from('envois_documents').select('reference_id,echeance,succes').eq('type','preavis_reconduction').in('reference_id',cand.map(x=>x.c.id));
+  const dejaEnvoye=(id,ech)=>(envs||[]).some(v=>v.reference_id===id&&v.echeance===ech&&v.succes);
+  const lignes=cand.map(({c,e})=>{
+    const fait=dejaEnvoye(c.id,e.echeance);
+    const tard=auj>e.limiteLegale;
+    const statut=fait?'<span class="badge bv">✓ Courrier envoyé</span>':tard?'<span class="badge br" title="La fenêtre légale (1 à 3 mois avant la date limite) est dépassée">⚠ Fenêtre dépassée</span>':auj>=e.envoi?'<span class="badge bo">À envoyer</span>':'<span class="badge bg">Prévu le '+fmt(e.envoi)+'</span>';
+    return `<tr><td><strong>${c.numero_contrat||'—'}</strong></td><td>${c.clients?.raison_sociale||'—'}</td><td>${fmt(e.echeance)}${e.reconduit?' <span class="badge bb" title="Contrat déjà reconduit tacitement">reconduit</span>':''}</td><td>${statut}</td>
+      <td>${fait?'':`<button class="btn btn-p btn-xs" onclick="envoyerPreavisReconduction('${c.id}')">✉ Envoyer le courrier</button>`}</td></tr>`;
+  });
+  el.innerHTML=`<div class="card" style="margin-bottom:14px"><div style="padding:12px 16px 4px;font-weight:700">📬 Contrats à prévenir avant reconduction tacite</div>
+    <div style="padding:0 16px 8px;font-size:12px;color:var(--txt-l)">Courrier d'information envoyé ${PREAVIS_JOURS_AVANT} jours (1,5 mois) avant l'échéance.</div>
+    <table><thead><tr><th>N° contrat</th><th>Client</th><th>Échéance</th><th>Statut</th><th></th></tr></thead><tbody>${lignes.join('')}</tbody></table></div>`;
+}
+function envoyerPreavisReconduction(id){
+  const c=contrats.find(x=>x.id===id);if(!c)return;
+  const e=echeanceReconduction(c);if(!e){toast('Pas d\'échéance à notifier pour ce contrat','err');return}
+  const dateLim=fmt(e.echeance);
+  const message=`Bonjour,\n\nVotre contrat de maintenance n°${c.numero_contrat||''} arrive à échéance le ${dateLim}.\n\nSans opposition de votre part, il sera reconduit tacitement pour une durée d'un an, aux conditions du contrat (tarifs révisés selon la clause de révision annuelle).\n\n=====================================\nDATE LIMITE POUR REFUSER LA RECONDUCTION : ${dateLim}\n=====================================\n\nSi vous ne souhaitez pas reconduire ce contrat, merci de nous en informer par écrit (courrier ou courriel à ${EMAIL_COPIE_INTERNE}) au plus tard à cette date.\n\nPour toute question, nous restons à votre disposition.\n\nCordialement,\nL'équipe BFS`;
+  ouvrirEnvoiMail({
+    type:'preavis_reconduction',referenceId:c.id,clientId:c.client_id,echeance:e.echeance,
+    destinataireDefaut:c.clients?.contact_email||'',
+    sujet:`BFS — Contrat de maintenance ${c.numero_contrat||''} — échéance du ${dateLim} et reconduction`,
+    message,libelleDocument:'Courrier de reconduction',messageSeul:true
+  });
+}
+
 async function openContratModal(prefill=null){
   if(!clients.length)await loadClients();
   if(!tarifs.length){const {data:trf}=await db.from('tarifs').select('*').eq('actif',true).order('designation');tarifs=trf||[]}
@@ -1818,13 +1870,13 @@ function arrayBufferVersBase64(buffer){
 
 // pieceJointe: {nom, base64} optionnel — si absent, le mail contient un lien
 // vers le document (ex : fichier trop volumineux, ou non disponible en base64).
-function ouvrirEnvoiMail({type,referenceId,clientId,destinataireDefaut,sujet,message,libelleDocument,url,pieceJointe}){
-  if(!url&&!pieceJointe){toast('Aucun document disponible à envoyer pour le moment','err');return}
-  window._envoiMailContexte={type,referenceId,clientId,url,libelleDocument,pieceJointe};
+function ouvrirEnvoiMail({type,referenceId,clientId,destinataireDefaut,sujet,message,libelleDocument,url,pieceJointe,messageSeul,echeance}){
+  if(!url&&!pieceJointe&&!messageSeul){toast('Aucun document disponible à envoyer pour le moment','err');return}
+  window._envoiMailContexte={type,referenceId,clientId,url,libelleDocument,pieceJointe,echeance:echeance||null};
   $('em-destinataire').value=destinataireDefaut||'';
   $('em-sujet').value=sujet||'';
   $('em-message').value=message||'';
-  $('em-doc-info').textContent=pieceJointe?`Pièce jointe : ${pieceJointe.nom}`:`Document : ${libelleDocument} (lien valable 30 jours)`;
+  $('em-doc-info').textContent=pieceJointe?`Pièce jointe : ${pieceJointe.nom}`:messageSeul?'Courrier sans pièce jointe':`Document : ${libelleDocument} (lien valable 30 jours)`;
   $('em-copie-info').textContent=`Une copie sera automatiquement envoyée à ${EMAIL_COPIE_INTERNE}`;
   OM('mo-envoi-mail');
 }
@@ -1849,7 +1901,7 @@ async function _confirmerEnvoiMailInterne(){
   const succes=!error&&data?.envoye;
   await db.from('envois_documents').insert({
     type:ctx.type,reference_id:ctx.referenceId,client_id:ctx.clientId||null,
-    destinataires,sujet,url_document:ctx.url||null,envoye_par:ME.id,
+    destinataires,sujet,url_document:ctx.url||null,envoye_par:ME.id,echeance:ctx.echeance||null,
     succes:!!succes,erreur:error?(error.message||'Erreur inconnue'):null
   });
   if(!succes){toast('Erreur envoi : '+(error?.message||'échec inconnu'),'err');return}

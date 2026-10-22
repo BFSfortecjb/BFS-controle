@@ -46,9 +46,9 @@ async function exportVerifPDF(verifId){
   y=doc.lastAutoTable.finalY+8;
   if(res?.length){
     doc.autoTable({startY:y,margin:{left:14,right:14},head:[['Point de contrôle','Résultat']],
-      body:res.map(r=>{let val='—';if(r.type_reponse==='oui_non')val=r.valeur_oui_non===true?'✓ OK':r.valeur_oui_non===false?'✗ NON':'—';else if(r.type_reponse==='numerique')val=r.valeur_numerique!=null?String(r.valeur_numerique):'—';else if(r.type_reponse==='texte')val=r.valeur_texte||'—';else if(r.type_reponse==='date')val=fmt(r.valeur_date);return[r.libelle_snapshot,val]}),
+      body:res.map(r=>{let val='—';if(r.type_reponse==='oui_non')val=r.valeur_oui_non===true?'OK':r.valeur_oui_non===false?'NON':'—';else if(r.type_reponse==='numerique')val=r.valeur_numerique!=null?String(r.valeur_numerique):'—';else if(r.type_reponse==='texte')val=r.valeur_texte||'—';else if(r.type_reponse==='date')val=fmt(r.valeur_date);return[r.libelle_snapshot,val]}),
       styles:{fontSize:9},headStyles:{fillColor:[230,100,40]},
-      didParseCell:(d)=>{if(d.column.index===1){if(d.cell.text[0]==='✓ OK')d.cell.styles.textColor=[22,163,74];if(d.cell.text[0]==='✗ NON')d.cell.styles.textColor=[220,38,38]}}
+      didParseCell:(d)=>{if(d.column.index===1){if(d.cell.text[0]==='OK')d.cell.styles.textColor=[22,163,74];if(d.cell.text[0]==='NON')d.cell.styles.textColor=[220,38,38]}}
     });y=doc.lastAutoTable.finalY+8;
   }
   if(v.observations){doc.setFontSize(10);doc.text('Observations: '+v.observations.slice(0,150),14,y);y+=10}
@@ -301,88 +301,273 @@ async function exportVGPPDF(v,res){
 // ============================================================
 // Construit le PDF du contrat sans le sauvegarder — réutilisé par
 // exportContratPDF() (téléchargement) et envoyerContratMail() (upload + lien).
+const AGENCES_PDF={
+  briec:{nom:'Bretagne Formation Sécurité',adresse:['Zone industrielle du lumunoch','325 rue Pierre et Marie CURIE','29510 BRIEC'],siret:'794 817 437 00062'},
+  sevremont:{nom:'Bocage Formation Sécurité',adresse:["Zone économique de l'épaud",'85700 SEVREMONT'],siret:'794 817 437 00054'}
+};
+const VISITES_AN={annuelle:1,semestrielle:2,trimestrielle:4,mensuelle:12};
+const LETTRE_PERIOD={annuelle:'A',semestrielle:'S',trimestrielle:'T',mensuelle:'M'};
+// Engagement d'intervention : un délai d'intervention, pas une garantie de remise en service
+const AVANTAGE_72H="Intervention sous 72 h à compter de votre demande pour les opérations de maintenance corrective, afin de procéder à la remise en service ou, si nécessaire, d'établir un devis. Le délai de 72 h porte sur l'intervention : la remise en service n'est pas garantie dans ce délai.";
+const TEXTES_CONTRAT={
+  extincteur:{
+    titre:'Contrat de maintenance Extincteur',pack:'maintenance extincteur',
+    inclut:['la prestation de vérification','les frais de gestion des rapports de vérification','FRAIS_DEPL',"l'information d'utilisation et la manipulation, la maintenance préventive des extincteurs : les pièces détachées, les charges, la maintenance additionnelle approfondie et le traitement des déchets"],
+    nInclut:["maintenance préventive des extincteurs : le remplacement des extincteurs dont l'âge dépasse 10 ans et la révision décennale","maintenance corrective des extincteurs : les pièces détachées, les charges et le traitement des déchets (vandalisme ou suite à l'utilisation de l'appareil)"],
+    corps:["Notre technicien entretient vos extincteurs et garantit leur bon fonctionnement selon la norme NF S 61-919.","Conformément à notre devoir de conseil, notre technicien vous communique les actions correctives à mettre en place.","À la fin de son intervention, notre technicien renseigne et signe votre registre de sécurité.","Le prix de la maintenance syndiquée couvre la maintenance préventive (y compris les pièces détachées et le traitement des déchets)."],
+    avantages:[AVANTAGE_72H,'ATTEST_SDIS',"15 % de réduction sur les formations de sécurité incendie","Démonstration d'utilisation","Information d'utilisation","Enquête de satisfaction à l'issue de la prestation","Identification des appareils de plus de 10 ans"]
+  },
+  baes:{
+    titre:'Contrat de maintenance BAES',pack:'maintenance BAES',
+    inclut:['la prestation de vérification','les frais de gestion des rapports de vérification','FRAIS_DEPL'],
+    nInclut:['maintenance corrective des BAES : les pièces détachées (batterie, ampoules, affichage, numérotation)'],
+    corps:["Notre technicien vérifie et entretient vos BAES et blocs d'ambiance selon les recommandations constructeur.","Conformément à notre devoir de conseil, notre technicien vous communique les actions correctives à mettre en place.","À la fin de son intervention, notre technicien renseigne et signe votre registre de sécurité.","Le prix de la maintenance syndiquée couvre la maintenance préventive (y compris les pièces détachées et le traitement des déchets)."],
+    avantages:[AVANTAGE_72H,"15 % de réduction sur les formations d'évacuation","Enquête de satisfaction à l'issue de la prestation"]
+  },
+  alarme_t4:{
+    titre:'Contrat de maintenance Alarme Type IV',pack:'maintenance Alarme Type IV',
+    inclut:['la prestation de vérification','les frais de gestion des rapports de vérification','FRAIS_DEPL','la maintenance préventive (remplacement des piles ou accumulateurs suivant les recommandations périodiques)'],
+    nInclut:["maintenance corrective : les pièces détachées, le remplacement et le traitement des déchets (vandalisme ou suite à l'utilisation de l'appareil)"],
+    corps:["Notre technicien vérifie et entretient vos alarmes selon les recommandations constructeur.","Conformément à notre devoir de conseil, notre technicien vous communique les actions correctives à mettre en place.","À la fin de son intervention, notre technicien renseigne et signe votre registre de sécurité.","Le prix de la maintenance syndiquée couvre la maintenance préventive (y compris les pièces détachées et le traitement des déchets)."],
+    avantages:[AVANTAGE_72H,"15 % de réduction sur les formations d'évacuation","Enquête de satisfaction à l'issue de la prestation"]
+  }
+};
+const MENTION_COMMANDE="Pour ces raisons, si vous réalisez une commande correspondant au montant de ce budget, le montant de votre facture pourra être différent du montant de votre commande.";
+
+function dureeContratLib(c){
+  let n=+c.duree_engagement||0;
+  if(!n&&c.date_debut&&c.date_fin){n=Math.round((new Date(c.date_fin)-new Date(c.date_debut))/(365.25*864e5))}
+  const periode=`du ${fmt(c.date_debut)} au ${fmt(c.date_fin)}`;
+  return n>0?`${n} an${n>1?'s':''} — ${periode}`:periode;
+}
+function frequenceVisitesLib(p){
+  const m={annuelle:'1 visite par an',semestrielle:'2 visites par an',trimestrielle:'4 visites par an',mensuelle:'12 visites par an'};
+  return m[p]||p||'—';
+}
+
 async function construireContratPDF(id){
   const {data:c}=await db.from('contrats').select('*,clients(*),agences(nom,code)').eq('id',id).single();if(!c)return null;
-  const {jsPDF}=window.jspdf;const doc=new jsPDF();const cl=c.clients;
-  const raisonSoc=c.agences?.code==='sevremont'?'Bocage Formation Sécurité':'Bretagne Formation Sécurité';
-  // Filigrane flamme (sous le contenu)
-  try{doc.saveGraphicsState();doc.setGState(new doc.GState({opacity:0.05}));doc.addImage(LOGO_BFS,'PNG',50,93,110,110);doc.restoreGraphicsState();}catch(e){}
-  // En-tête charte BFS
-  try{doc.addImage(LOGO_BFS,'PNG',12,5,16,16)}catch(e){}
-  doc.setFontSize(20);doc.setFont('helvetica','bold');doc.setTextColor(50,50,50);doc.text('BFS',29,15);
-  doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');doc.text(raisonSoc,29,19.5);
-  doc.setFillColor(230,100,40);doc.rect(65,8,130,10,'F');
-  doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
-  doc.text('CONTRAT DE MAINTENANCE INCENDIE',130,15,{align:'center'});
-  doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
-  doc.text(`N° ${c.numero_contrat||'—'} — Agence ${c.agences?.nom||'—'}`,14,26);
-  doc.text(`Édité le ${new Date().toLocaleDateString('fr-FR')}`,162,26);
-  let y=31;
-  doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[['Prestataire','BFS — '+raisonSoc],['Client',cl?.raison_sociale||'—'],['Adresse',`${cl?.adresse||''} ${cl?.code_postal||''} ${cl?.ville||''}`.trim()||'—'],['SIRET',cl?.siret||'—'],['Contact',`${cl?.contact_nom||'—'}${cl?.contact_telephone?' — '+cl.contact_telephone:''}`],['Type de contrat',c.type_contrat],['Période',`${fmt(c.date_debut)} → ${fmt(c.date_fin)}`],['Périodicité des visites',c.periodicite_visite||'—'],...(typeof libelleFraisDeplacement==='function'&&libelleFraisDeplacement(c)?[['Frais de déplacement',libelleFraisDeplacement(c)]]:[])],styles:{fontSize:9.5},columnStyles:{0:{fontStyle:'bold',cellWidth:52}}});
-  y=doc.lastAutoTable.finalY+7;
-  // Chiffrage détaillé
+  const {data:tarifsData}=await db.from('tarifs').select('categorie,code,designation,prix_ht,unite').in('categorie',['prestation','piece']).order('categorie').order('designation');
+  const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});const cl=c.clients||{};
+  const ag=AGENCES_PDF[c.agences?.code]||AGENCES_PDF.briec;
+  const raisonSoc=ag.nom;
   const lignes=Array.isArray(c.lignes)?c.lignes:[];
-  if(lignes.length){
-    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('DÉTAIL DES ÉQUIPEMENTS SOUS CONTRAT',14,y);y+=3;
-    const lib=code=>{const t=(typeof typesEquip!=='undefined'?typesEquip:[]).find(t=>t.code===code);return t?t.libelle:code};
-    const total=lignes.reduce((s,l)=>s+(+l.quantite||0)*(+l.pu||0),0);
-    const eur=n=>n.toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
-    doc.autoTable({startY:y,margin:{left:14,right:14},
-      head:[['Équipement','Marque','Modèle','Qté','PU HT','Total HT']],
-      body:[...lignes.map(l=>[lib(l.type),l.marque||'—',(l.modele||'—')+(l.resume?'\n'+l.resume:''),String(l.quantite),eur(+l.pu||0),eur((+l.quantite||0)*(+l.pu||0))]),
-        [{content:'TOTAL HT',colSpan:5,styles:{fontStyle:'bold',halign:'right'}},{content:eur(total),styles:{fontStyle:'bold'}}]],
-      styles:{fontSize:9},headStyles:{fillColor:[230,100,40]},
-      columnStyles:{3:{halign:'center',cellWidth:14},4:{halign:'right',cellWidth:26},5:{halign:'right',cellWidth:28}}});
-    y=doc.lastAutoTable.finalY+7;
-  } else if(c.tarif_annuel){
-    doc.setFont('helvetica','bold');doc.setFontSize(10);
-    doc.text('Tarif annuel HT : '+c.tarif_annuel.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}),14,y);y+=7;
+  const visites=VISITES_AN[c.periodicite_visite]||1;
+  const eur=n=>(+n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+  const lib=code=>{const t=(typeof typesEquip!=='undefined'?typesEquip:[]).find(t=>t.code===code);return t?t.libelle:code};
+  const nAns=(()=>{let n=+c.duree_engagement||0;if(!n&&c.date_debut&&c.date_fin)n=Math.round((new Date(c.date_fin)-new Date(c.date_debut))/(365.25*864e5));return n})();
+  const fraisMode=c.frais_deplacement_mode||'inclus';
+  const fraisInclus=fraisMode!=='facture';
+  const TOP=54,BOTTOM=276,L=14,R=14,W=182;
+  let y=TOP;
+  const ensure=h=>{if(y+h>BOTTOM){doc.addPage();y=TOP}};
+  const section=t=>{ensure(14);doc.setFillColor(238,238,238);doc.rect(L,y,W,6.5,'F');doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(192,57,43);doc.text(t,L+2,y+4.6);doc.setTextColor(0);y+=9};
+  const para=(t,{size=8.5,bold=false,indent=0,gap=1.2}={})=>{doc.setFont('helvetica',bold?'bold':'normal');doc.setFontSize(size);const ls=doc.splitTextToSize(t,W-indent);ensure(ls.length*4+gap);doc.text(ls,L+indent,y+3);y+=ls.length*4+gap};
+  const tbl=(opts)=>{doc.autoTable({startY:y,margin:{left:L,right:R,top:TOP},styles:{fontSize:8.5,cellPadding:1.6},headStyles:{fillColor:[230,100,40]},...opts});y=doc.lastAutoTable.finalY+5};
+
+  // ======== PAGE 1 ========
+  // Informations clients / agence
+  section('Informations clients');
+  const adresseCl=[cl.adresse,[cl.code_postal,cl.ville].filter(Boolean).join(' ')].filter(Boolean).join(' — ');
+  tbl({head:[],body:[
+    ['Raison sociale',cl.raison_sociale||'—','Agence',c.agences?.nom||'—'],
+    ['Adresse',cl.adresse||'—','Adresse',ag.adresse.join(', ')],
+    ['CP & ville',[cl.code_postal,cl.ville].filter(Boolean).join(' ')||'—','SIRET',ag.siret],
+    ['Téléphone',cl.contact_telephone||'—','Courriel','contact@bfs-prevention.fr'],
+    ['Courriel',cl.contact_email||'—','',''],
+    ['Contact',cl.contact_nom||'—','',''],
+    ['N° SIRET',cl.siret||'—','','']
+  ],columnStyles:{0:{fontStyle:'bold',cellWidth:26},1:{cellWidth:65},2:{fontStyle:'bold',cellWidth:20},3:{cellWidth:'auto'}}});
+
+  // Produits en maintenance / nombre d'appareils
+  const qteParType={};lignes.forEach(l=>{qteParType[l.type]=(qteParType[l.type]||0)+(+l.quantite||0)});
+  const std=[['extincteur','Extincteur'],['baes','BAES'],['alarme_t4','Alarme T4'],['ria','RIA'],['dae','DAE']];
+  const autres=Object.keys(qteParType).filter(t=>!std.find(s=>s[0]===t)).map(t=>[t,lib(t)]);
+  const lignesProd=[...std,...autres].map(([t,l])=>[l,qteParType[t]?'oui':'non',qteParType[t]?c.periodicite_visite?c.periodicite_visite.charAt(0).toUpperCase()+c.periodicite_visite.slice(1):'—':'—',qteParType[t]?String(qteParType[t]):'—']);
+  const totalApp=Object.values(qteParType).reduce((s,n)=>s+n,0);
+  section('Produit(s) en maintenance');
+  tbl({head:[['Type','En contrat','Fréquence','Nombre d\'appareils']],body:[...lignesProd,[{content:"Nombre d'appareils total",colSpan:3,styles:{fontStyle:'bold',halign:'right'}},{content:String(totalApp),styles:{fontStyle:'bold'}}]],
+    columnStyles:{1:{halign:'center',cellWidth:24},2:{cellWidth:34},3:{halign:'center',cellWidth:38}}});
+
+  // Facturation et règlement
+  section('Facturation et règlement');
+  tbl({head:[],body:[
+    ['Mode de règlement','Virement'],['Délai de règlement','30 jours date de facture'],
+    ['Type de facture','Facture unitaire par site et par prestation réalisée'],
+    ['Bon de commande','Un bon de commande est obligatoire pour les prestations de vérification et la vente de produits.'],
+    ['Frais de déplacement',libelleFraisDeplacement(c)||'Inclus dans le contrat'],
+  ],columnStyles:{0:{fontStyle:'bold',cellWidth:45}}});
+
+  // Révision annuelle des tarifs (page 2, avec la durée et la signature)
+  doc.addPage();y=TOP;
+  section('Révision annuelle des tarifs');
+  doc.setFont('helvetica','bold');doc.setFontSize(9);ensure(8);
+  doc.text('P = Po x (0,15 + 0,30 x (IDFD / IDFDo) + 0,55 x (ICHTrev-TS / ICHTrev-TSo))',L+2,y+3);y+=7;
+  para("Les indices IDFD et ICHTrev-TS qui concernent cette formule de révision de prix sont ceux les plus adaptés à notre métier (P = prix après révision, Po = dernier prix révisé). L'augmentation annuelle des prix après application de la formule de révision ci-dessus ne pourra être inférieure à 1 %. Les prix s'entendent pour l'année calendaire. Ils seront révisés, selon la formule, au premier janvier de chaque année.");
+  y+=2;
+
+  // Durée du contrat
+  section('Durée du contrat');
+  const nEch=nAns*visites;
+  const debutTxt=c.date_debut?`du ${fmt(c.date_debut)}`:'de la date de signature';
+  para(nAns>0?`${nAns} an${nAns>1?'s':''} à compter ${c.date_debut?'du '+fmt(c.date_debut):'de la date de signature'}, avec au minimum ${nEch} échéance${nEch>1?'s':''} de vérification (${frequenceVisitesLib(c.periodicite_visite).toLowerCase()}), renouvelable à son échéance par tacite reconduction annuelle.`:`À compter ${debutTxt}, renouvelable à son échéance par tacite reconduction annuelle.`);
+  para(`Période initiale : ${dureeContratLib(c)}.`);
+  if(nAns>=5)para("L'engagement de 5 ans permet de bénéficier d'un tarif annuel unique : il lisse sur la durée du contrat le coût des entretiens quinquennaux (maintenance additionnelle approfondie, charges, traitement des déchets) inclus dans le budget.");
+  if(c.type_contrat==='ponctuel')para('Nature : intervention ponctuelle.');
+  y+=3;
+
+  // Bon pour accord
+  ensure(44);
+  doc.setDrawColor(150);doc.rect(L,y,88,36);doc.rect(L+94,y,88,36);
+  doc.setFont('helvetica','bold');doc.setFontSize(8);
+  doc.text('Bon pour accord du client',L+44,y+4.5,{align:'center'});
+  doc.setFont('helvetica','normal');doc.setFontSize(7.5);
+  doc.text('Signature / Cachet / Nom du signataire',L+44,y+8.5,{align:'center'});
+  doc.text('Date : '+(c.signe_le?fmt(c.signe_le):''),L+3,y+33);
+  doc.setFont('helvetica','bold');doc.setFontSize(8);doc.text('Pour '+raisonSoc,L+94+44,y+4.5,{align:'center'});
+  if(c.signature_data){
+    try{doc.addImage(c.signature_data,'PNG',L+8,y+11,72,18)}catch(e){}
+    doc.setFontSize(8);doc.text((c.signataire_nom||'')+(c.signe_le?' — signé le '+fmt(c.signe_le):''),L+44,y+33,{align:'center'});
   }
-  // Avenants (ajouts / retraits signés)
-  const avenants=Array.isArray(c.avenants)?c.avenants:[];
-  avenants.forEach(av=>{
-    if(y>230){doc.addPage();y=20}
-    doc.setFont('helvetica','bold');doc.setFontSize(10);
-    doc.text(`AVENANT N°${av.num} — ${fmt(av.date)}${av.signataire_nom?' — signé par '+av.signataire_nom:''}`,14,y);y+=3;
-    const lib2=code=>{const t=(typeof typesEquip!=='undefined'?typesEquip:[]).find(t=>t.code===code);return t?t.libelle:code};
-    const eur2=n=>n.toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
-    const deltaAv=(av.lignes||[]).reduce((s,l)=>s+(l.sens==='retrait'?-1:1)*(+l.quantite||0)*(+l.pu||0),0);
-    doc.autoTable({startY:y,margin:{left:14,right:14},
-      head:[['','Équipement','Marque / Modèle','Qté','PU HT','Total HT']],
-      body:[...(av.lignes||[]).map(l=>[l.sens==='retrait'?'−':'+',lib2(l.type),[l.marque,l.modele].filter(Boolean).join(' ')+(l.resume?'\n'+l.resume:''),String(l.quantite),eur2(+l.pu||0),(l.sens==='retrait'?'−':'')+eur2((+l.quantite||0)*(+l.pu||0))]),
-        [{content:'IMPACT ANNUEL HT',colSpan:5,styles:{fontStyle:'bold',halign:'right'}},{content:(deltaAv>=0?'+':'')+eur2(deltaAv),styles:{fontStyle:'bold'}}]],
-      styles:{fontSize:8.5},headStyles:{fillColor:[230,100,40]},
-      columnStyles:{0:{cellWidth:8,halign:'center',fontStyle:'bold'},3:{halign:'center',cellWidth:12},4:{halign:'right',cellWidth:24},5:{halign:'right',cellWidth:26}},
-      didParseCell:(d)=>{if(d.section==='body'&&d.column.index===0){d.cell.styles.textColor=d.cell.text[0]==='−'?[220,38,38]:[22,163,74]}}});
-    y=doc.lastAutoTable.finalY+3;
-    if(av.signature_data){try{doc.addImage(av.signature_data,'PNG',150,y,40,12)}catch(e){}y+=14}
+  y+=42;
+
+  // ======== Adresses de vérification ========
+  section('Adresse(s) de vérification');
+  const debut=c.date_debut?new Date(c.date_debut):null;
+  const echeance=debut?`${String(debut.getMonth()+1).padStart(2,'0')}/${debut.getFullYear()}-${LETTRE_PERIOD[c.periodicite_visite]||'A'}`:'—';
+  const refs=t=>t==='extincteur'?'CT, CCH, N4':'CT, CCH';
+  const types=Object.keys(qteParType);
+  tbl({head:[['Raison sociale','Adresse CP – VILLE','Échéance (1)','Référentiels (2)','Activité','Qté']],
+    body:(types.length?types:['']).map(t=>[cl.raison_sociale||'—',adresseCl||'—',echeance,t?refs(t):'—',t?lib(t):'—',t?String(qteParType[t]):'—']),
+    styles:{fontSize:8,cellPadding:1.6},columnStyles:{5:{halign:'center',cellWidth:12},2:{cellWidth:24}}});
+  para("(1) - Échéance et périodicité de vérification (Mois/Année-Périodicité). Périodicité : A = Annuelle, S = Semestrielle, T = Trimestrielle.",{size:7.5});
+  para("(2) - Référentiels : CT = Code du Travail - CCH = Code de la Construction et de l'Habitation - N4 = Règles APSAD R4.",{size:7.5});
+  y+=4;
+
+  // ======== Récapitulatif financier par famille ========
+  const familles=[];lignes.forEach(l=>{if(!familles.includes(l.type))familles.push(l.type)});
+  let totalGeneral=0;
+  familles.forEach(t=>{
+    const ls=lignes.filter(l=>l.type===t);
+    const tot=ls.reduce((s,l)=>s+(+l.quantite||0)*(+l.pu||0),0);totalGeneral+=tot;
+    ensure(60);
+    section('Récapitulatif financier — '+lib(t));
+    tbl({head:[['Activités',"Nombre de vérifications\n(Qté d'appareils x périodicité)",'Prix unitaire HT\nde vérification','Prix total HT']],
+      body:[...ls.map(l=>[[l.marque,l.modele].filter(Boolean).join(' ')||lib(t),String((+l.quantite||0)*visites),eur((+l.pu||0)/visites),eur((+l.quantite||0)*(+l.pu||0))]),
+        [{content:'Budget total',colSpan:3,styles:{fontStyle:'bold',halign:'right'}},{content:eur(tot),styles:{fontStyle:'bold'}}]],
+      columnStyles:{1:{halign:'center',cellWidth:48},2:{halign:'right',cellWidth:34},3:{halign:'right',cellWidth:30}}});
+    const tx=TEXTES_CONTRAT[t];
+    const inclut=(tx?tx.inclut:['la prestation de vérification','les frais de gestion des rapports de vérification','FRAIS_DEPL']).filter(x=>x!=='FRAIS_DEPL'||fraisInclus).map(x=>x==='FRAIS_DEPL'?'les frais de déplacement':x);
+    const nInclut=[...(tx?tx.nInclut:[]),...(fraisInclus?[]:['les frais de déplacement (facturés en sus à chaque passage)'])];
+    para('Le budget total inclut :',{bold:true,gap:.5});inclut.forEach(x=>para('- '+x,{indent:3,gap:.3}));
+    if(nInclut.length){y+=1.5;para("Le budget total n'inclut pas :",{bold:true,gap:.5});nInclut.forEach(x=>para('- '+x,{indent:3,gap:.3}))}
+    y+=1.5;para(MENTION_COMMANDE,{size:8});y+=4;
+  });
+  if(familles.length>1){ensure(10);doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('BUDGET TOTAL ANNUEL HT : '+eur(totalGeneral),L+W,y+3,{align:'right'});y+=9}
+  else if(!familles.length&&c.tarif_annuel){para('Tarif annuel HT : '+eur(c.tarif_annuel),{bold:true,size:10})}
+
+  // ======== Pack de maintenance par famille ========
+  familles.forEach(t=>{
+    const tx=TEXTES_CONTRAT[t];if(!tx)return;
+    ensure(70);
+    section(tx.titre);
+    para('Compte tenu de votre pack de '+tx.pack+' :',{bold:true});
+    tx.corps.forEach(x=>para('• '+x,{indent:2,gap:1}));
+    para('Avec notre solution de maintenance vous bénéficiez des avantages suivants :',{indent:2,gap:.8});
+    tx.avantages.forEach(x=>para('- '+(x==='ATTEST_SDIS'?(c.agences?.code==='sevremont'?"Remise de l'attestation de vérification des extincteurs d'incendie portatifs":"Remise de l'attestation de vérification des extincteurs d'incendie portatifs SDIS 29"):x),{indent:8,gap:.4}));
     y+=4;
   });
-  if(c.notes){
-    doc.setFont('helvetica','bolditalic');doc.setFontSize(8.5);doc.text('Conditions particulières :',14,y);
+
+  // ======== Avenants ========
+  const avenants=Array.isArray(c.avenants)?c.avenants:[];
+  avenants.forEach(av=>{
+    ensure(40);
+    doc.setFont('helvetica','bold');doc.setFontSize(10);
+    doc.text(`AVENANT N°${av.num} — ${fmt(av.date)}${av.signataire_nom?' — signé par '+av.signataire_nom:''}`,L,y+3);y+=6;
+    const deltaAv=(av.lignes||[]).reduce((s,l)=>s+(l.sens==='retrait'?-1:1)*(+l.quantite||0)*(+l.pu||0),0);
+    tbl({head:[['','Équipement','Marque / Modèle','Qté','PU HT','Total HT']],
+      body:[...(av.lignes||[]).map(l=>[l.sens==='retrait'?'−':'+',lib(l.type),[l.marque,l.modele].filter(Boolean).join(' ')+(l.resume?'\n'+l.resume:''),String(l.quantite),eur(+l.pu||0),(l.sens==='retrait'?'−':'')+eur((+l.quantite||0)*(+l.pu||0))]),
+        [{content:'IMPACT ANNUEL HT',colSpan:5,styles:{fontStyle:'bold',halign:'right'}},{content:(deltaAv>=0?'+':'')+eur(deltaAv),styles:{fontStyle:'bold'}}]],
+      columnStyles:{0:{cellWidth:8,halign:'center',fontStyle:'bold'},3:{halign:'center',cellWidth:12},4:{halign:'right',cellWidth:24},5:{halign:'right',cellWidth:26}},
+      didParseCell:(d)=>{if(d.section==='body'&&d.column.index===0){d.cell.styles.textColor=d.cell.text[0]==='−'?[220,38,38]:[22,163,74]}}});
+    if(av.signature_data){ensure(16);try{doc.addImage(av.signature_data,'PNG',150,y,40,12)}catch(e){}y+=14}
+  });
+  if(c.notes){section('Conditions particulières');para(c.notes)}
+
+  // ======== Extrait des tarifs ========
+  // Seulement les prestations/pièces HORS budget du contrat (la vérification, la maintenance approfondie et la maintenance PP sont incluses)
+  const tf=(tarifsData||[]).filter(t=>t.prix_ht!=null&&!/^(DEPL|VAP-|MAA-|MAINT-|BAES-VERIF)/.test(String(t.code||'')));
+  const prest=tf.filter(t=>t.categorie==='prestation'),pieces=tf.filter(t=>t.categorie==='piece');
+  if(prest.length||pieces.length){
+    doc.addPage();y=TOP;
+    section('Extrait des tarifs — hors budget du contrat');
+    const corps=t=>[t.designation,t.unite||'',eur(t.prix_ht)];
+    if(prest.length){tbl({head:[['Prestations','Unité','Prix HT']],body:prest.map(corps),columnStyles:{1:{cellWidth:22},2:{halign:'right',cellWidth:28}}})}
+    if(pieces.length){tbl({head:[['Pièces détachées courantes','Unité','Prix HT']],body:pieces.map(corps),columnStyles:{1:{cellWidth:22},2:{halign:'right',cellWidth:28}}})}
+    para("Prestations et pièces non comprises dans le budget du contrat (maintenance corrective, remplacement, recharge après utilisation). Tarifs HT en vigueur à la date d'édition, révisables selon la formule de révision annuelle ci-dessus.",{size:7.5});
+  }
+
+  // ======== En-tête, filigrane, pied de page sur chaque page ========
+  const nb=doc.getNumberOfPages();
+  const dateDoc=c.signe_le?fmt(c.signe_le):new Date().toLocaleDateString('fr-FR');
+  for(let p=1;p<=nb;p++){
+    doc.setPage(p);
+    try{doc.saveGraphicsState();doc.setGState(new doc.GState({opacity:0.05}));doc.addImage(LOGO_BFS,'PNG',50,93,110,110);doc.restoreGraphicsState();}catch(e){}
+    try{doc.addImage(LOGO_BFS,'PNG',12,5,16,16)}catch(e){}
+    doc.setFontSize(20);doc.setFont('helvetica','bold');doc.setTextColor(50,50,50);doc.text('BFS',29,15);
+    doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');doc.text(raisonSoc,29,19.5);
+    doc.setFillColor(230,100,40);doc.rect(65,8,130,10,'F');
+    doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
+    doc.text('CONTRAT DE MAINTENANCE',130,15,{align:'center'});
+    doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(8);
+    doc.text([raisonSoc,...ag.adresse,'SIRET : '+ag.siret],14,25);
+    doc.setFont('helvetica','bold');doc.text('N° : '+(c.numero_contrat||'—'),196,25,{align:'right'});
     doc.setFont('helvetica','normal');
-    const nl=doc.splitTextToSize(c.notes,178);doc.text(nl,14,y+4.5);y+=4.5+nl.length*4+4;
+    doc.text('Date : '+dateDoc,196,29.5,{align:'right'});
+    doc.text('Durée initiale : '+(c.date_fin?'jusqu\'au '+fmt(c.date_fin):'—'),196,34,{align:'right'});
+    doc.text('Client : '+(cl.raison_sociale||'—'),196,38.5,{align:'right'});
+    doc.setDrawColor(200);doc.line(14,46,196,46);
+    doc.setFontSize(7);doc.setTextColor(150);
+    if(p>1)doc.text('Paraphe :',170,283);
+    doc.text(`${raisonSoc} — Contrat ${c.numero_contrat||''} — Page ${p}/${nb}`,105,291,{align:'center'});
+    doc.setTextColor(0);
   }
-  // Signatures
-  const sigY=Math.min(Math.max(y+6,235),255);
-  doc.setDrawColor(150);doc.rect(14,sigY,85,32);doc.rect(110,sigY,82,32);
-  doc.setFont('helvetica','normal');doc.setFontSize(8);
-  doc.text('Signature du CLIENT (précédée de « Bon pour accord »)',14+42.5,sigY+4,{align:'center',maxWidth:80});
-  doc.text('Pour '+raisonSoc,110+41,sigY+4,{align:'center'});
-  if(c.signature_data){
-    try{doc.addImage(c.signature_data,'PNG',22,sigY+8,68,18)}catch(e){}
-    doc.setFontSize(8);doc.setFont('helvetica','bold');
-    doc.text((c.signataire_nom||'')+(c.signe_le?' — signé le '+fmt(c.signe_le):''),14+42.5,sigY+30,{align:'center'});
-  }
-  doc.setFontSize(7);doc.setTextColor(150);
-  doc.text('Généré le '+new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),105,290,{align:'center'});
   return {c,doc};
 }
 
+
+// PDF d'un contrat SIGNÉ : figé à la première génération après signature, puis toujours restitué à l'identique
+// (évite qu'une modification ultérieure des textes/prix change le document que le client a signé).
+async function pdfContratFige(id){
+  try{
+    const {data:r}=await db.from('contrats').select('signature_data,pdf_signe_path').eq('id',id).single();
+    if(!r||!r.signature_data||!r.pdf_signe_path)return null;
+    const {data:s}=await db.storage.from('contrats').createSignedUrl(r.pdf_signe_path,300);
+    if(!s?.signedUrl)return null;
+    const rep=await fetch(s.signedUrl);if(!rep.ok)return null;
+    return await rep.arrayBuffer();
+  }catch(e){return null}
+}
+async function figerPdfContratSigne(id,arrayBuffer){
+  try{
+    const path=`contrat_signe_${id}.pdf`;
+    const {error}=await db.storage.from('contrats').upload(path,arrayBuffer,{contentType:'application/pdf',upsert:false});
+    if(error&&!/exist|duplicate/i.test(error.message||''))return;
+    await db.from('contrats').update({pdf_signe_path:path,pdf_signe_le:new Date().toISOString()}).eq('id',id).is('pdf_signe_path',null);
+  }catch(e){console.warn('Gel PDF contrat',e)}
+}
 async function exportContratPDF(id){
+  const fige=await pdfContratFige(id);
+  if(fige){
+    const {data:c0}=await db.from('contrats').select('numero_contrat').eq('id',id).single();
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([fige],{type:'application/pdf'}));
+    a.download=`BFS_contrat_${c0?.numero_contrat||id}_signe.pdf`;document.body.appendChild(a);a.click();a.remove();
+    toast('Contrat signé (exemplaire d\'origine)');return;
+  }
   const res=await construireContratPDF(id);
   if(!res){toast('Contrat introuvable','err');return}
   const {c,doc}=res;
+  if(c.signature_data)await figerPdfContratSigne(id,doc.output('arraybuffer'));
   doc.save(`BFS_contrat_${c.numero_contrat||id}${c.signature_data?'_signe':''}.pdf`);toast('Contrat PDF généré');
 }
 
@@ -392,12 +577,18 @@ async function exportContratPDF(id){
 // envoyer-mail) et le lien archivé en complément.
 async function envoyerContratMail(id){
   toast('Préparation du PDF…');
-  const res=await construireContratPDF(id);
-  if(!res){toast('Contrat introuvable','err');return}
-  const {c,doc}=res;
+  let arrayBuffer=await pdfContratFige(id),c;
+  if(arrayBuffer){
+    const {data:cc}=await db.from('contrats').select('*,clients(*)').eq('id',id).single();c=cc;
+    if(!c){toast('Contrat introuvable','err');return}
+  }else{
+    const res=await construireContratPDF(id);
+    if(!res){toast('Contrat introuvable','err');return}
+    c=res.c;arrayBuffer=res.doc.output('arraybuffer');
+    if(c.signature_data)await figerPdfContratSigne(id,arrayBuffer);
+  }
   const cl=c.clients;
   const fileName=`contrat_${id}_${Date.now()}.pdf`;
-  const arrayBuffer=doc.output('arraybuffer');
   const {error:upErr}=await db.storage.from('contrats').upload(fileName,arrayBuffer,{contentType:'application/pdf'});
   if(upErr){toast('Erreur archivage PDF : '+upErr.message,'err');return}
   const {data:signedData}=await db.storage.from('contrats').createSignedUrl(fileName,60*60*24*30);
@@ -656,7 +847,7 @@ async function rapportComplet(bonId){
 
   // ---- Détail par équipement
   const valRes=r=>{
-    if(r.type_reponse==='oui_non')return r.valeur_oui_non===true?'✓ OK':r.valeur_oui_non===false?'✗ NON':'—';
+    if(r.type_reponse==='oui_non')return r.valeur_oui_non===true?'OK':r.valeur_oui_non===false?'NON':'—';
     if(r.type_reponse==='numerique')return r.valeur_numerique!=null?String(r.valeur_numerique):'—';
     if(r.type_reponse==='texte')return r.valeur_texte||'—';
     if(r.type_reponse==='date')return fmt(r.valeur_date);
@@ -693,8 +884,8 @@ async function rapportComplet(bonId){
         styles:{fontSize:8.5,cellPadding:1.5},headStyles:{fillColor:[230,100,40],fontSize:8.5},
         columnStyles:{1:{cellWidth:30,halign:'center'}},
         didParseCell:(d)=>{if(d.column.index===1){
-          if(d.cell.text[0]==='✓ OK')d.cell.styles.textColor=[22,163,74];
-          if(d.cell.text[0]==='✗ NON')d.cell.styles.textColor=[220,38,38];
+          if(d.cell.text[0]==='OK')d.cell.styles.textColor=[22,163,74];
+          if(d.cell.text[0]==='NON')d.cell.styles.textColor=[220,38,38];
         }}
       });
       y=doc.lastAutoTable.finalY+3;
@@ -767,24 +958,25 @@ async function rapportInventairePDF(invId){
   doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
   const par=inv.profils?`${inv.profils.prenom||''} ${inv.profils.nom}`.trim():'—';
   doc.text(`Agence ${inv.agences?.nom||'—'} — démarré le ${new Date(inv.demarre_le).toLocaleString('fr-FR')} par ${par}`,14,26);
-  doc.text(inv.termine_le?`Terminé le ${new Date(inv.termine_le).toLocaleString('fr-FR')}`:'⏳ En cours',150,26);
+  doc.text(inv.termine_le?`Terminé le ${new Date(inv.termine_le).toLocaleString('fr-FR')}`:'En cours',150,26);
   let y=33;
   const lst=mvts||[];
   if(!lst.length){doc.setFontSize(11);doc.text('Aucune pièce comptée dans cet inventaire.',14,y+6);}
   else{
     const entrees=lst.filter(m=>(+m.delta)>0),rectifs=lst.filter(m=>(+m.delta)<0),conformes=lst.filter(m=>(+m.delta)===0);
-    // Synthèse
+    // Synthèse (le détail des écarts figure uniquement dans le tableau ci-dessous)
+    const nbEcarts=entrees.length+rectifs.length;
+    const solde=lst.reduce((t,m)=>t+(+m.delta),0);
     doc.autoTable({startY:y,margin:{left:14,right:14},head:[],body:[
       ['Pièces comptées',String(lst.length)],
-      ['➕ Entrées (stock réel > théorique)',entrees.length+' pièce(s), +'+entrees.reduce((s,m)=>s+(+m.delta),0)],
-      ['✎ Rectifications (stock réel < théorique)',rectifs.length+' pièce(s), '+rectifs.reduce((s,m)=>s+(+m.delta),0)],
-      ['✓ Conformes (aucun écart)',String(conformes.length)],
+      ['Sans écart',String(conformes.length)],
+      ['Avec écart',nbEcarts+(nbEcarts?'  (solde net : '+(solde>0?'+':'')+solde+' unité(s))':'')],
     ],styles:{fontSize:10},columnStyles:{0:{fontStyle:'bold',cellWidth:95}}});
     y=doc.lastAutoTable.finalY+8;
     doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('DÉTAIL DES COMPTAGES',14,y);y+=3;
     doc.autoTable({startY:y,margin:{left:14,right:14},
       head:[['Code','Désignation','Théorique','Compté','Écart','Constat']],
-      body:lst.map(m=>[m.stock_pieces?.code||'—',m.stock_pieces?.designation||'—',String(m.quantite_avant),String(m.quantite_apres),((+m.delta)>0?'+':'')+m.delta,(+m.delta)>0?'Entrée':(+m.delta)<0?'Rectification':'Conforme']),
+      body:[...lst].sort((x,y2)=>Math.abs(+y2.delta)-Math.abs(+x.delta)).map(m=>[m.stock_pieces?.code||'—',m.stock_pieces?.designation||'—',String(m.quantite_avant),String(m.quantite_apres),((+m.delta)>0?'+':'')+m.delta,(+m.delta)>0?'Entrée':(+m.delta)<0?'Rectification':'Conforme']),
       styles:{fontSize:8.5,cellPadding:1.5},headStyles:{fillColor:[230,100,40]},
       columnStyles:{2:{halign:'center'},3:{halign:'center'},4:{halign:'center',fontStyle:'bold'},5:{halign:'center'}},
       didParseCell:(d)=>{if(d.section==='body'&&(d.column.index===4||d.column.index===5)){

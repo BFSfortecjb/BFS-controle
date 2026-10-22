@@ -4110,6 +4110,88 @@ function genererPdfSession(signatureDataUrl, signataireNom, signatureTechDataUrl
 }
 
 
+// ---- PDF intervention ponctuelle : même mise en page que le bulletin d'intervention ----
+function genererPdfPonctuelle({numero,typeValue,description,pieces,signataire,signatureClient,signatureTech}){
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'mm',format:'a4'});
+  const c=currentClient;
+  const dateStr=new Date().toLocaleDateString('fr-FR');
+  const agenceCode=currentClient?.agences?.code||ME.agences?.code||'';
+  const raisonSociale=agenceCode==='sevremont'?'Bocage Formation Sécurité':'Bretagne Formation Sécurité';
+  try{
+    if(window._bfsLogoB64){doc.saveGraphicsState();doc.setGState(new doc.GState({opacity:0.05}));doc.addImage(window._bfsLogoB64,'PNG',50,93,110,110);doc.restoreGraphicsState();}
+  }catch(e){}
+  try{if(window._bfsLogoB64)doc.addImage(window._bfsLogoB64,'PNG',12,5,16,16)}catch(e){}
+  doc.setFont('helvetica','bold');doc.setFontSize(20);doc.setTextColor(50,50,50);doc.text('BFS',29,15);
+  doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');doc.text(raisonSociale,29,19.5);
+  doc.setFillColor(230,100,40);doc.rect(65,8,130,10,'F');
+  doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
+  doc.text('BULLETIN D\'INTERVENTION INCENDIE',130,15,{align:'center'});
+  doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
+  doc.text('Transmis pour facturation le :',65,26);
+  doc.setDrawColor(0);doc.rect(120,22,55,6);
+  doc.setFont('helvetica','bold');doc.text(dateStr,147,27,{align:'center'});
+  const drawCheckbox=(x,y,checked)=>{
+    doc.setDrawColor(0);doc.rect(x,y,3.5,3.5);
+    if(checked){doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(192,57,43);doc.text('X',x+0.5,y+3);doc.setTextColor(0);}
+  };
+  doc.setFont('helvetica','normal');doc.setFontSize(8);
+  drawCheckbox(155,30,true);doc.text('Intervention ponctuelle',160,33);
+  [['dépannage','Dépannage'],['vente_pièces','Vente de pièces'],['remplacement_urgent','Remplacement urgent'],['autre','Autre']].forEach(([v,l],i)=>{
+    drawCheckbox(155,38+i*5,typeValue===v);doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.text(l,160,41+i*5);
+  });
+  doc.setFontSize(9);doc.setFont('helvetica','normal');
+  let y=31;
+  doc.text('Date de l\'intervention :',14,y);doc.setFont('helvetica','bold');doc.text(dateStr,65,y);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Nom du Client :',14,y);doc.setFont('helvetica','bold');doc.text(c?.raison_sociale||'—',65,y);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Lieu d\'intervention :',14,y);
+  const adresse=[c?.adresse,c?.code_postal,c?.ville].filter(Boolean).join(', ');
+  doc.text(doc.splitTextToSize(adresse||c?.ville||'—',85),65,y);
+  y+=12;
+  doc.text('N° bon :',14,y);doc.setFont('helvetica','bold');doc.setTextColor(192,57,43);doc.text(numero||'—',65,y);doc.setTextColor(0);
+  y+=6;doc.setFont('helvetica','normal');doc.text('Technicien :',14,y);doc.text(`${ME.prenom||''} ${ME.nom}`.trim(),65,y);
+
+  // Nature de l'intervention
+  y=Math.max(y+10,74);
+  doc.setFillColor(238,238,238);doc.rect(14,y,182,6,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.text('NATURE DE L\'INTERVENTION',16,y+4.2);
+  y+=8;
+  doc.setFont('helvetica','normal');doc.setFontSize(9);
+  const dl=doc.splitTextToSize(description||'—',176);
+  doc.text(dl,16,y+3);
+  y+=dl.length*4.2+8;
+
+  // Pièces / fournitures
+  if(pieces&&pieces.length){
+    doc.setFillColor(238,238,238);doc.rect(14,y,182,6,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.text('PIÈCES ET FOURNITURES',16,y+4.2);
+    y+=7;
+    const eur=n=>n.toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+    const total=pieces.reduce((t,p)=>t+(p.prix_unitaire_ht?p.prix_unitaire_ht*p.quantite:0),0);
+    const body=pieces.map(p=>[p.libelle,p.reference||'—',String(p.quantite),p.prix_unitaire_ht?eur(p.prix_unitaire_ht):'—',p.prix_unitaire_ht?eur(p.prix_unitaire_ht*p.quantite):'—']);
+    if(total>0)body.push([{content:'TOTAL HT',colSpan:4,styles:{fontStyle:'bold',halign:'right'}},{content:eur(total),styles:{fontStyle:'bold',halign:'right'}}]);
+    doc.autoTable({startY:y,margin:{left:14,right:14},head:[['Désignation','Référence','Qté','PU HT','Total HT']],body,
+      styles:{fontSize:8.5,cellPadding:1.5},headStyles:{fillColor:[230,100,40]},
+      columnStyles:{2:{halign:'center',cellWidth:14},3:{halign:'right',cellWidth:26},4:{halign:'right',cellWidth:28}}});
+    y=doc.lastAutoTable.finalY+6;
+  }
+
+  // Signatures
+  const sigY=Math.max(y+6,250);
+  doc.setDrawColor(150);doc.rect(14,sigY,85,28);doc.rect(110,sigY,82,28);
+  doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(0);
+  doc.text('NOM, signature et cachet du CLIENT',14+42,sigY+4,{align:'center'});
+  doc.text('NOM et signature du technicien',110+41,sigY+4,{align:'center'});
+  if(signatureClient){try{doc.addImage(signatureClient,'PNG',18,sigY+6,76,18)}catch(e){}}
+  if(signataire)doc.text(signataire,14+42,sigY+26,{align:'center'});
+  if(signatureTech){try{doc.addImage(signatureTech,'PNG',113,sigY+6,74,18)}catch(e){}}
+  doc.text(`${ME.prenom||''} ${ME.nom}`.trim(),110+41,sigY+26,{align:'center'});
+  doc.setFontSize(7);doc.setTextColor(150);
+  doc.text('Généré le '+new Date().toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}),105,290,{align:'center'});
+  return doc;
+}
+
+
 // ============================================================
 // SIGNATURE CANVAS (tactile)
 // ============================================================
@@ -5707,48 +5789,10 @@ async function _validerInterventionPonctuelleInterne(){
     })));
   }
 
-  // Générer le PDF
-  const {jsPDF} = window.jspdf;
-  const doc = new jsPDF();
-  doc.setFillColor(192,57,43); doc.rect(0,0,210,26,'F');
-  doc.setTextColor(255); doc.setFontSize(13); doc.setFont('helvetica','bold');
-  doc.text('BFS — Bon d\'intervention ponctuelle', 14, 11);
-  doc.setFontSize(9); doc.setFont('helvetica','normal');
-  doc.text(`${currentClient.raison_sociale} · ${currentClient.ville||''}`, 14, 19);
-  doc.text(`${new Date().toLocaleDateString('fr-FR')} · ${ME.prenom||''} ${ME.nom}`, 130, 19);
-  doc.setTextColor(30); let y = 35;
-
-  doc.autoTable({startY:y, margin:{left:14,right:14}, head:[], body:[
-    ['Type', $('ip-type').options[$('ip-type').selectedIndex].text],
-    ['Description', description]
-  ], styles:{fontSize:10}, columnStyles:{0:{fontStyle:'bold',cellWidth:40}}});
-  y = doc.lastAutoTable.finalY + 10;
-
-  if(ipPieces.length){
-    doc.setFont('helvetica','bold'); doc.text('Pièces', 14, y); y += 2;
-    doc.autoTable({startY:y, margin:{left:14,right:14},
-      head:[['Désignation','Référence','Qté','PU HT','Total HT']],
-      body: ipPieces.map(p=>[p.libelle, p.reference||'—', p.quantite, p.prix_unitaire_ht?p.prix_unitaire_ht.toFixed(2)+'€':'—', p.prix_unitaire_ht?(p.prix_unitaire_ht*p.quantite).toFixed(2)+'€':'—']),
-      styles:{fontSize:9}, headStyles:{fillColor:[192,57,43]}
-    });
-    y = doc.lastAutoTable.finalY + 10;
-  }
-
-  y = Math.max(y+10, 230);
-  doc.setDrawColor(200);
-  doc.text('Technicien', 14, y);
-  doc.text('Client / Signataire', 122, y);
-  doc.line(14,y+3,82,y+3); doc.line(122,y+3,196,y+3);
-  doc.setFontSize(9);
-  doc.text(`${ME.prenom||''} ${ME.nom}`, 14, y+8);
-  try{doc.addImage(_sigs['ip-sig-tech'].canvas.toDataURL('image/png'),'PNG',14,y-22,60,22)}catch(e){}
-  if(signatureUrl){
-    doc.addImage(signatureUrl,'PNG',122,y-22,70,24);
-    doc.text(signataire||'', 122, y+8);
-  } else {
-    doc.text('(non signé)', 122, y+8);
-  }
-
+  // Générer le PDF (mise en page du bulletin d'intervention)
+  const ipNumero='IP-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+String(ipData.id).slice(0,4).toUpperCase();
+  const doc=genererPdfPonctuelle({numero:ipNumero,typeValue:$('ip-type').value,description,pieces:ipPieces,signataire,
+    signatureClient:signatureUrl,signatureTech:_sigs['ip-sig-tech']?.has?_sigs['ip-sig-tech'].canvas.toDataURL('image/png'):null});
   let ipPdfUrl = null;
   const pdfBlob = doc.output('blob');
   const pdfFileName = `bon_ip_${currentClient.id}_${Date.now()}.pdf`;
@@ -5766,12 +5810,12 @@ async function _validerInterventionPonctuelleInterne(){
     nb_equipements_verifies: 0, signataire_nom: signataire,
     pdf_url: ipPdfUrl, pdf_path: ipPdfUrl ? pdfFileName : null,
     statut_facturation: 'à_facturer',
-    numero_session: 'IP-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + String(ipData.id).slice(0,4).toUpperCase()
+    numero_session: ipNumero
   });
   if(bonIpErr) toast('⚠️ Bon non enregistré dans la facturation : '+bonIpErr.message,'err');
   else{
     toast('Bon d\'intervention signé et enregistré ✓');
-    await notifierSecretariatBon(pdfBlob,{titre:"Bon d'intervention ponctuelle",numero:'IP-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'-'+String(ipData.id).slice(0,4).toUpperCase(),detail:'Type : '+$('ip-type').options[$('ip-type').selectedIndex].text});
+    await notifierSecretariatBon(pdfBlob,{titre:"Bon d'intervention ponctuelle",numero:ipNumero,detail:'Type : '+$('ip-type').options[$('ip-type').selectedIndex].text});
   }
   btn.disabled = false; btn.textContent = '✅ Signer et enregistrer le bon';
   goTo('s-client');

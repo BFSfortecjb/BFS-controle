@@ -169,7 +169,7 @@ function zoneLibelle(code){const z=ZONES_DEPLACEMENT.find(x=>x.code===code);retu
 const DEPLACEMENT_TARIF_ACTIF=false;
 function libelleFraisDeplacement(c){
   if(!c||!c.frais_deplacement_mode)return null;
-  if(!DEPLACEMENT_TARIF_ACTIF&&c.frais_deplacement_mode==='facture'&&!c.frais_deplacement_ht)return 'Facturés en sus à chaque passage';
+  if(!DEPLACEMENT_TARIF_ACTIF&&c.frais_deplacement_mode==='facture'&&!c.frais_deplacement_ht)return 'Facturés en sus à chaque passage, au tarif en vigueur (communiqué sur demande)';
   if(c.frais_deplacement_mode==='inclus')return 'Inclus dans le contrat';
   if(c.frais_deplacement_mode==='offert')return 'Offerts';
   const eur=(+c.frais_deplacement_ht||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
