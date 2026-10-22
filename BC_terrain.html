@@ -3834,8 +3834,8 @@ let _chkMateriel = [true,false,false,false,false]; // Extincteur coché par déf
 let _chkRegl = {}; // {0:'oui', 1:'non', ...}
 
 function ouvrirChecklist(){
-  // Reset état
-  _chkTypeInt = {controle:true, installation:false};
+  // Reset état (session d'installation : type « Installation » coché d'office)
+  _chkTypeInt = currentSession?.nature==='installation' ? {controle:false, installation:true} : {controle:true, installation:false};
   _chkMateriel = [true,false,false,false,false];
   _chkRegl = {};
 
@@ -3956,10 +3956,6 @@ function genererPdfSession(signatureDataUrl, signataireNom, signatureTechDataUrl
   doc.setFillColor(230,100,40);doc.rect(65,8,130,10,'F');
   doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
   doc.text('BULLETIN D\'INTERVENTION INCENDIE',130,15,{align:'center'});
-  if(currentSession?.nature==='installation'){
-    doc.setTextColor(0);doc.setFont('helvetica','bold');doc.setFontSize(8);
-    doc.text('Installation — vérification de mise en service',195,21,{align:'right'});
-  }
 
   // ---- TRANSMIS POUR FACTURATION ----
   doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
