@@ -2764,7 +2764,7 @@ async function chargerUnitesExtincteurs(){
   }
   renderUnitesExtincteurs();
 }
-const statutUnite=s=>({en_service:'🟢 En service (client)',en_atelier_a_reviser:'🟠 À réviser',en_atelier_revise:'🔵 Révisé — prêt',reforme:'⚫ Réformé'}[s]||s);
+const statutUnite=s=>({en_service:'🟢 En service (client)',en_atelier_a_reviser:'🟠 À réviser',en_atelier_revise:'🔵 Révisé — prêt',reforme:'⚫ Réformé',en_location:'🔁 En location'}[s]||s);
 // Catégorie commerciale du stock atelier (neuf vs tampon échange/location).
 // N'a de sens que pour une unité qui est en stock atelier (pas en_service/reforme).
 // Un "neuf" bascule automatiquement en tampon 1 an après sa fabrication (calculé à
@@ -3148,6 +3148,7 @@ async function importUnitesTamponExcel(input){
       const statutRaw=String(col(r,'statut')).trim().toLowerCase();
       const statut=statutRaw.startsWith('révis')||statutRaw.startsWith('revis')?'en_atelier_revise'
         :statutRaw.startsWith('réform')||statutRaw.startsWith('reform')?'reforme'
+        :(statutRaw===''&&fabPourMES&&new Date(fabPourMES)>new Date(Date.now()-365*864e5))?'en_atelier_revise' // neuf (< 1 an) : prêt à poser, rien à réviser
         :'en_atelier_a_reviser'; // défaut : la plupart des unités reprises doivent repasser par l'atelier
       const verifRaw=String(col(r,'vérification requise','verification requise')).trim().toLowerCase();
       const noteVerif=verifRaw.startsWith('maa')?'Vérification requise à l\'entrée : MAA (maintenance approfondie 5 ans).'

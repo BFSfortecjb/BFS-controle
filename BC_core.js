@@ -290,7 +290,7 @@ function navigate(page){
     profil:'Mon profil',clients:'Clients',equipements:'Équipements',verifications:'Vérifications',
     contrats:'Contrats',planning:'Planning',utilisateurs:'Utilisateurs','config-points':'Points de contrôle',
     commandes:'Commandes à prévoir',bons:'Bons d\'intervention',audit:'Journal d\'audit',stock:'Stock pièces',tarifs:'Base tarifaire',
-    sauvegarde:'Sauvegarde'
+    sauvegarde:'Sauvegarde',locations:'Locations'
   };
   $('page-title').textContent=titles[page]||page;
   if(page==='dash-admin')loadDashAdmin();
@@ -308,6 +308,7 @@ function navigate(page){
   if(page==='bons')loadBons();
   if(page==='config-points')loadConfigPage();
   if(page==='stock')loadStock();
+  if(page==='locations')loadLocations();
   if(page==='tarifs')loadTarifs();
   if(page==='sauvegarde')loadSauvegarde();
 }

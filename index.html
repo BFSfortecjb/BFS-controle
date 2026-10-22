@@ -474,6 +474,7 @@ tr:hover td{background:#fafafa}
         <div style="display:flex;gap:8px;margin-bottom:14px">
           <button class="ag-tab" onclick="navigate('stock')">🧰 Stock</button>
           <button class="ag-tab active">📦 Commandes à prévoir</button>
+          <button class="ag-tab" onclick="navigate('locations')">🔁 Locations</button>
         </div>
                 <div class="stats-grid" id="commandes-stats"></div>
         <div class="search-bar">
@@ -535,11 +536,29 @@ tr:hover td{background:#fafafa}
         <div class="card"><div id="tbl-tarifs"><div class="loading"><span class="spin"></span></div></div></div>
       </div>
 
+      <!-- LOCATIONS -->
+      <div class="page" id="page-locations">
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+          <button class="ag-tab" onclick="navigate('stock')">🧰 Stock</button>
+          <button class="ag-tab" onclick="navigate('commandes')">📦 Commandes à prévoir</button>
+          <button class="ag-tab active">🔁 Locations</button>
+        </div>
+        <div class="search-bar">
+          <input type="text" id="q-locations" placeholder="Rechercher…" oninput="renderLocations()">
+          <select id="f-statut-loc" onchange="renderLocations()" style="max-width:160px"><option value="">Tous statuts</option><option value="brouillon">À signer</option><option value="en_cours">En cours</option><option value="terminee">Terminées</option></select>
+          <button class="btn btn-s" onclick="ouvrirGrilleLocation()">📐 Tarifs location</button>
+          <button class="btn btn-p" onclick="ouvrirNouvelleLocation('evenement')">🎪 + Événementiel</button>
+          <button class="btn btn-p" onclick="ouvrirNouvelleLocation()">+ Location</button>
+        </div>
+        <div class="card"><div id="tbl-locations"><div class="loading"><span class="spin"></span></div></div></div>
+      </div>
+
       <!-- STOCK PIÈCES -->
       <div class="page" id="page-stock">
         <div style="display:flex;gap:8px;margin-bottom:14px">
           <button class="ag-tab active">🧰 Stock</button>
           <button class="ag-tab" onclick="navigate('commandes')">📦 Commandes à prévoir</button>
+          <button class="ag-tab" onclick="navigate('locations')">🔁 Locations</button>
         </div>
         <div id="stock-ag-tabs" style="display:flex;gap:8px;margin-bottom:14px"></div>
         <div class="ag-tabs" style="margin-bottom:14px;flex-wrap:wrap">
@@ -929,6 +948,44 @@ tr:hover td{background:#fafafa}
   </div></div>
 </div>
 
+<!-- Modals locations -->
+<div class="mo" id="mo-location">
+  <div class="modal" style="max-width:720px"><div class="mh"><h3 id="mo-location-titre">🔁 Nouvelle location</h3><button class="mclose" onclick="CM('mo-location')">✕</button></div>
+  <div class="mc">
+    <div class="form-grid">
+      <div class="fg"><label>Client *</label><select id="loc-client"></select></div>
+      <div class="fg"><label>Agence *</label><select id="loc-ag" onchange="renderUnitesLouables()"></select></div>
+      <div class="fg"><label>Date de début</label><input type="date" id="loc-debut"></div>
+      <div class="fg" id="loc-bloc-long"><label>Durée minimale (mois)</label><input type="number" id="loc-duree" min="1"></div>
+      <div id="loc-bloc-evt" style="display:none;grid-column:1/-1"><div class="form-grid">
+        <div class="fg"><label>Événement *</label><input type="text" id="loc-evt-nom" placeholder="Ex. Festival …"></div>
+        <div class="fg"><label>Lieu</label><input type="text" id="loc-evt-lieu"></div>
+        <div class="fg"><label>Date de fin *</label><input type="date" id="loc-evt-fin"></div>
+        <div class="fg"><label>Livraison + reprise (€ HT, forfait)</label><input type="number" id="loc-evt-livraison" min="0" step="0.01"></div>
+        <div class="fg"><label>Technicien sur site (jours)</label><input type="number" id="loc-evt-tech-j" min="0" step="0.5"></div>
+        <div class="fg"><label>Tarif technicien (€ HT / jour)</label><input type="number" id="loc-evt-tech-t" min="0" step="0.01"></div>
+        <div class="fg"><label>Recharge après usage (€ HT / appareil)</label><input type="number" id="loc-evt-recharge" min="0" step="0.01"></div>
+      </div></div>
+      <div class="fg"><label>Dépôt de garantie (€)</label><input type="number" id="loc-depot" min="0" step="0.01"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="loc-notes"></textarea></div>
+    </div>
+    <div style="font-size:12.5px;color:var(--txt-l);margin:8px 0">Extincteurs tampon « révisés — prêts » disponibles (loyer pris dans la grille de location ; saisie libre si hors grille) :</div>
+    <div id="loc-unites" style="max-height:260px;overflow:auto"></div>
+    <div class="fa"><button class="btn btn-s" onclick="CM('mo-location')">Annuler</button><button class="btn btn-p" onclick="saveLocation()">Créer et générer le contrat</button></div>
+  </div></div>
+</div>
+<div class="mo" id="mo-location-detail">
+  <div class="modal" style="max-width:720px"><div class="mh"><h3 id="loc-detail-titre">Location</h3><button class="mclose" onclick="CM('mo-location-detail')">✕</button></div>
+  <div class="mc"><div id="loc-detail-corps"></div></div></div>
+</div>
+<div class="mo" id="mo-grille-location">
+  <div class="modal" style="max-width:640px"><div class="mh"><h3>📐 Tarifs de location</h3><button class="mclose" onclick="CM('mo-grille-location')">✕</button></div>
+  <div class="mc">
+    <div style="font-size:12.5px;color:var(--txt-l);margin-bottom:10px">Loyer mensuel HT <b>par appareil</b> et valeur de remplacement (perte / vol / destruction), par agent et capacité.</div>
+    <div id="grille-location-corps"></div>
+  </div></div>
+</div>
+
 <!-- Modal grille des tarifs de contrat -->
 <div class="mo" id="mo-grille-contrat">
   <div class="modal" style="max-width:640px"><div class="mh"><h3>📐 Grille des tarifs de contrat</h3><button class="mclose" onclick="CM('mo-grille-contrat')">✕</button></div>
@@ -1150,6 +1207,7 @@ tr:hover td{background:#fafafa}
 <script src="BC_catalogue.js"></script>
 <script src="BC_app.js"></script>
 <script src="BC_pdf.js"></script>
+<script src="BC_location.js"></script>
 <script src="BC_backup.js"></script>
 </body>
 </html>
