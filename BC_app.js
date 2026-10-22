@@ -3163,12 +3163,12 @@ async function importUnitesTamponExcel(input){
         marque:String(col(r,'marque')).trim()||null,modele:String(col(r,'modèle','modele')).trim()||null,
         numero_serie:String(col(r,'n° série','n serie','numero de serie')).trim()||null,
         date_fabrication:fabrication,date_mise_en_service:anneeMES?anneeMES+'-01-01':null,
-        agence_id:agence.id,statut,usage_stock:'echange_location',en_attente_confirmation:true,
+        agence_id:agence.id,statut,usage_stock:null,en_attente_confirmation:true,
         date_derniere_revision_atelier:statut==='en_atelier_revise'?new Date().toISOString().slice(0,10):null,
         notes:notesFinales,updated_at:new Date().toISOString()};
       const {data:nu,error}=await db.from('extincteurs_unites').insert(p).select().single();
       if(error){erreurs.push(`Ligne ${ligne} : ${error.message}`);err++;continue}
-      await db.from('extincteurs_mouvements').insert({unite_id:nu.id,type:'remise_en_stock',technicien_id:ME.id,agence_id:agence.id,notes:'Import en masse — stock tampon'});
+      await db.from('extincteurs_mouvements').insert({unite_id:nu.id,type:'remise_en_stock',technicien_id:ME.id,agence_id:agence.id,notes:'Import en masse'});
       crees++;creees.push({identification:nu.identification,agence_code:agence.code});
     }
     chargerUnitesExtincteurs();
