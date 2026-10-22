@@ -2922,14 +2922,14 @@ function copierTexteBureau(txt){
 }
 function openUniteExtincteurModal(prefill=null){
   ['ue-id','ue-marque','ue-modele','ue-serie','ue-lot','ue-notes','ue-fabrication'].forEach(id=>{if($(id))$(id).value=''});
-  $('ue-mode').value='PP';$('ue-capacite-unite').value='L';$('ue-annee').value=new Date().getFullYear();$('ue-statut').value='en_atelier_revise';
+  $('ue-mode').value='PP';$('ue-capacite-unite').value='L';$('ue-annee').value='';$('ue-statut').value='en_atelier_revise';
   $('mo-ue-t').textContent="Nouvelle unité d'extincteur";$('ue-id-generee').textContent='';
   $('ue-btn-enregistrer').style.display='';$('ue-btn-enregistrer').textContent='Enregistrer';$('ue-btn-annuler').textContent='Annuler';
   if(prefill){
     $('ue-id').value=prefill.id;$('ue-mode').value=prefill.mode_pressurisation;$('ue-agent').value=prefill.agent_code||'';
     $('ue-capacite').value=prefill.capacite_valeur||'';$('ue-capacite-unite').value=prefill.capacite_unite||'L';
     $('ue-fabrication').value=prefill.date_fabrication?new Date(prefill.date_fabrication).getFullYear():'';
-    $('ue-annee').value=prefill.date_mise_en_service?new Date(prefill.date_mise_en_service).getFullYear():new Date().getFullYear();
+    $('ue-annee').value=prefill.date_mise_en_service?new Date(prefill.date_mise_en_service).getFullYear():'';
     $('ue-agence').value=prefill.agence_id||'';$('ue-marque').value=prefill.marque||'';$('ue-modele').value=prefill.modele||'';
     $('ue-serie').value=prefill.numero_serie||'';$('ue-lot').value=prefill.numero_lot||'';$('ue-statut').value=prefill.statut;$('ue-notes').value=prefill.notes||'';
     $('mo-ue-t').textContent='Modifier l\'unité';$('ue-id-generee').textContent='Identification : '+prefill.identification+' (non modifiable)';
@@ -2943,7 +2943,8 @@ async function _saveUniteExtincteurInterne(){
   const anneeFab=parseInt($('ue-fabrication').value);
   const fabrication=anneeFab?anneeFab+'-01-01':null;
   const annee=parseInt($('ue-annee').value),agenceId=$('ue-agence').value;
-  if(!agent||isNaN(capacite)||!annee||!agenceId){toast('Agent, capacité, année de mise en service et agence sont obligatoires','err');return}
+  if(!agent||isNaN(capacite)||!agenceId){toast('Agent, capacité et agence sont obligatoires','err');return}
+  if(!annee&&!anneeFab){toast('Renseigne au moins l\'année de fabrication (ou de mise en service)','err');return}
   const p={mode_pressurisation:mode,agent_code:agent,capacite_valeur:capacite,capacite_unite:$('ue-capacite-unite').value,
     marque:$('ue-marque').value.trim()||null,modele:$('ue-modele').value.trim()||null,numero_serie:$('ue-serie').value.trim()||null,
     numero_lot:$('ue-lot').value.trim()||null,
@@ -2959,7 +2960,7 @@ async function _saveUniteExtincteurInterne(){
     const anneeIdentification=anneeFab||annee;
     const {data:idGen,error:eg}=await db.rpc('generer_identification_extincteur',{p_mode_pressurisation:mode,p_agent_code:agent,p_capacite:capacite,p_annee_mise_en_service:anneeIdentification});
     if(eg){toast('Erreur génération identification : '+eg.message,'err');return}
-    p.identification=idGen;p.date_mise_en_service=annee+'-01-01';
+    p.identification=idGen;p.date_mise_en_service=annee?annee+'-01-01':null; // neuf : pas de mise en service tant que non posé
     // Réception neuf en carton (ou tout ajout manuel) : le numéro est généré tout de suite pour
     // pouvoir imprimer l'étiquette, mais elle ne sera collée sur l'appareil physique qu'à la pose
     // — même logique de confirmation que l'import en masse (risque de décalage étiquette/appareil).
@@ -3001,7 +3002,7 @@ async function exporterModeleImportUnites(){
   ]);
   wsNum['!cols']=[{wch:10},{wch:18}];
   XLSX.utils.book_append_sheet(wb,wsNum,'Numérotation');
-  const headers=['Agent*','Capacité*','Unité (L/kg)','Mode (PP/PA)*','Marque','Modèle','N° série','Année de fabrication','Année mise en service*','Agence*','Statut*','Vérification requise','Notes'];
+  const headers=['Agent*','Capacité*','Unité (L/kg)','Mode (PP/PA)*','Marque','Modèle','N° série','Année de fabrication','Année mise en service (vide si neuf)','Agence*','Statut*','Vérification requise','Notes'];
   const wsImport=XLSX.utils.aoa_to_sheet([headers]);
   wsImport['!cols']=headers.map(h=>({wch:Math.max(16,h.length)}));
   XLSX.utils.book_append_sheet(wb,wsImport,'Import');
@@ -3135,14 +3136,14 @@ async function importUnitesTamponExcel(input){
       // une date complète ou une année seule ; à défaut, reprend l'année de fabrication.
       const brutMES=colMotsCles(r,['mise','service']);
       const fabPourMES=parseDateFabrication(col(r,'année de fabrication','annee de fabrication','date fabrication','date de fabrication'));
-      const anneeMES=extraireAnnee(brutMES)||(fabPourMES?new Date(fabPourMES).getFullYear():null);
+      const anneeMES=extraireAnnee(brutMES)||null;
       const agenceNom=String(col(r,'agence')).trim();
       const agence=(_stockAgences||[]).find(a=>norm(a.nom)===norm(agenceNom)||norm(a.code||'')===norm(agenceNom));
       if(!agentRaw&&!capacite&&!mode&&!agenceNom)continue; // ligne vide
       if(!agentMatch){erreurs.push(`Ligne ${ligne} : agent "${agentRaw}" inconnu (voir onglet Légende)`);err++;continue}
       if(isNaN(capacite)||capacite<=0){erreurs.push(`Ligne ${ligne} : capacité invalide`);err++;continue}
       if(mode!=='PP'&&mode!=='PA'){erreurs.push(`Ligne ${ligne} : mode "${mode}" invalide (PP ou PA)`);err++;continue}
-      if(!anneeMES){erreurs.push(`Ligne ${ligne} : année de mise en service manquante`);err++;continue}
+      if(!anneeMES&&!fabPourMES){erreurs.push(`Ligne ${ligne} : renseigner l'année de fabrication ou de mise en service`);err++;continue}
       if(!agence){erreurs.push(`Ligne ${ligne} : agence "${agenceNom}" inconnue (voir onglet Légende)`);err++;continue}
       const statutRaw=String(col(r,'statut')).trim().toLowerCase();
       const statut=statutRaw.startsWith('révis')||statutRaw.startsWith('revis')?'en_atelier_revise'
@@ -3161,7 +3162,7 @@ async function importUnitesTamponExcel(input){
         capacite_unite:String(col(r,'unité (l/kg)','unite','unité')).trim()||'L',
         marque:String(col(r,'marque')).trim()||null,modele:String(col(r,'modèle','modele')).trim()||null,
         numero_serie:String(col(r,'n° série','n serie','numero de serie')).trim()||null,
-        date_fabrication:fabrication,date_mise_en_service:anneeMES+'-01-01',
+        date_fabrication:fabrication,date_mise_en_service:anneeMES?anneeMES+'-01-01':null,
         agence_id:agence.id,statut,usage_stock:'echange_location',en_attente_confirmation:true,
         date_derniere_revision_atelier:statut==='en_atelier_revise'?new Date().toISOString().slice(0,10):null,
         notes:notesFinales,updated_at:new Date().toISOString()};
