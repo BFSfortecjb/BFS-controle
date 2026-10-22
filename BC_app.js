@@ -1007,7 +1007,7 @@ async function loadVerifs(){
           <td class="${ecClass(v.date_prochaine_echeance)}">${fmt(v.date_prochaine_echeance)}</td>
           <td style="font-size:12px">${v.technicien||'—'}</td>
           <td>${v.realisee_par_bfs===false?`<span class="badge bg" style="font-size:10px">⚠ Ext.</span>`:''}</td>
-          <td><div class="ia"><button class="btn btn-s btn-xs" onclick="exportVerifPDF('${v.id}')" title="Télécharger le rapport PDF de cette vérification">📄</button><button class="btn btn-s btn-xs" onclick="deleteVerifAvecMotif('${v.id}')">🗑</button></div></td>
+          <td><div class="ia"><button class="btn btn-s btn-xs" onclick="deleteVerifAvecMotif('${v.id}')">🗑</button></div></td>
         </tr>`).join('')}</tbody></table>`:'<div class="t-empty" style="padding:12px">Aucun équipement vérifié dans cette session</div>'}
       </div>
     </div>`;
@@ -1031,7 +1031,7 @@ async function loadVerifs(){
           <td>${fmt(v.date_verification)}</td>
           <td>${badgeR(v.resultat)}</td>
           <td>${v.technicien||'—'}${v.realisee_par_bfs===false?'<br><small class="badge bg" style="font-size:10px">⚠ Ext.</small>':''}</td>
-          <td><div class="ia"><button class="btn btn-s btn-xs" onclick="exportVerifPDF('${v.id}')" title="Télécharger le rapport PDF de cette vérification">📄</button><button class="btn btn-s btn-xs" onclick="deleteVerifAvecMotif('${v.id}')">🗑</button></div></td>
+          <td><div class="ia"><button class="btn btn-s btn-xs" onclick="deleteVerifAvecMotif('${v.id}')">🗑</button></div></td>
         </tr>`).join('')}
         </tbody></table>
       </div>
