@@ -398,6 +398,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <button class="btn btn-s btn-sm" onclick="creerEquipement()" style="margin-bottom:8px">
         ➕ Ajouter un équipement
       </button>
+      <button class="btn btn-s btn-sm" onclick="ouvrirInstallation()" style="margin-bottom:8px;background:#dcfce7;color:#166534">
+        🧯 Installation / mise en service (équipements neufs)
+      </button>
       <button class="btn btn-s btn-sm" onclick="ouvrirInterventionPonctuelle()" style="background:var(--orange-l);color:var(--orange)">
         🔧 Intervention ponctuelle (hors planning)
       </button>
@@ -480,6 +483,32 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 </div>
 
 <!-- ===== SESSION DE CONTRÔLE ===== -->
+<!-- ===== INSTALLATION / MISE EN SERVICE ===== -->
+<div class="screen" id="s-installation">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-client')">←</button>
+    <div style="flex:1;min-width:0">
+      <h1>Installation / mise en service</h1>
+      <div class="hdr-sub" id="inst-client">—</div>
+    </div>
+  </div>
+  <div class="content">
+    <div class="card" style="margin-bottom:12px"><div style="padding:12px 14px;font-size:13px;color:var(--txt-l)">
+      Seuls les équipements <b>jamais vérifiés</b> (ou « à mettre en service ») sont proposés : le parc déjà contrôlé n'est pas touché. Coche ceux que tu viens d'installer, vérifie-les un par un, puis fais signer le bon d'intervention.
+    </div></div>
+    <div class="fg" style="margin-bottom:10px"><label>Date réelle de l'installation</label><input type="date" id="inst-date"></div>
+    <label style="display:flex;gap:10px;align-items:flex-start;font-size:13px;margin-bottom:14px;padding:10px 12px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;cursor:pointer">
+      <input type="checkbox" id="inst-regul" style="width:20px;height:20px;flex-shrink:0;margin-top:1px">
+      <span><b>Rattrapage : le bon est déjà signé</b><br><span style="color:var(--txt-l)">Les vérifications sont enregistrées à la date réelle ci-dessus, sans nouvelle signature, sans second bon ni mail.</span></span>
+    </label>
+    <button class="btn btn-s btn-sm" onclick="creerEquipement()" style="margin-bottom:12px">➕ Ajouter un extincteur / équipement neuf</button>
+    <div id="inst-list"></div>
+  </div>
+  <div class="footer">
+    <button class="btn btn-vert" id="btn-inst-demarrer" onclick="demarrerInstallation()">▶ Démarrer la mise en service</button>
+  </div>
+</div>
+
 <div class="screen" id="s-session">
   <div class="hdr">
     <button class="hdr-back" onclick="confirmQuitSession()">←</button>
@@ -1552,6 +1581,81 @@ async function voirFicheEquip(id){
   toast(`${e.types_equipements?.icone} ${e.numero_identification||'—'} · ${e.statut}`);
 }
 
+
+// ============================================================
+// INSTALLATION / MISE EN SERVICE — session limitée aux équipements neufs choisis
+// (le reste du parc, déjà sous contrôle, n'est jamais ajouté à cette session)
+// ============================================================
+let _instEquips=[],_instSel=new Set();
+async function ouvrirInstallation(){
+  if(!currentClient){toast('Aucun client sélectionné','err');return}
+  $('inst-client').textContent=currentClient.raison_sociale;
+  if(!$('inst-date').value)$('inst-date').value=new Date().toISOString().slice(0,10);
+  $('inst-date').max=new Date().toISOString().slice(0,10);
+  $('inst-list').innerHTML='<div class="loading"><div class="spin spin-dark"></div></div>';
+  goTo('s-installation');
+  const {data:eqs,error}=await db.from('equipements')
+    .select('*,types_equipements(libelle,icone,code),extincteurs_unites!equipements_unite_extincteur_actuelle_id_fkey(*)')
+    .eq('client_id',currentClient.id).neq('statut','réformé').order('created_at',{ascending:false});
+  if(error){$('inst-list').innerHTML='<div style="padding:20px;text-align:center;color:var(--txt-l)">Erreur : '+error.message+'</div>';return}
+  const ids=(eqs||[]).map(e=>e.id);
+  let dejaVerifies=new Set();
+  if(ids.length){
+    const {data:vs}=await db.from('verifications').select('equipement_id').in('equipement_id',ids);
+    dejaVerifies=new Set((vs||[]).map(v=>v.equipement_id));
+  }
+  const statutsAMettre=['à mettre en service','à remettre en service'];
+  _instEquips=(eqs||[]).filter(e=>!dejaVerifies.has(e.id)||statutsAMettre.includes(e.statut));
+  const limite=Date.now()-14*86400000;
+  // Pré-cochés : créés il y a moins de 14 jours (ou déjà cochés)
+  _instEquips.forEach(e=>{if(!_instSel.has(e.id)&&new Date(e.created_at).getTime()>=limite)_instSel.add(e.id)});
+  [..._instSel].forEach(id=>{if(!_instEquips.find(e=>e.id===id))_instSel.delete(id)});
+  renderInstallation();
+}
+function renderInstallation(){
+  const el=$('inst-list');
+  if(!_instEquips.length){
+    el.innerHTML='<div style="padding:24px;text-align:center;color:var(--txt-l);font-size:13px">Aucun équipement neuf à mettre en service.<br>Utilise « ➕ Ajouter » pour créer ceux que tu viens d\'installer.</div>';
+  }else{
+    el.innerHTML=_instEquips.map(e=>{
+      const sel=_instSel.has(e.id);
+      const dt=new Date(e.created_at).toLocaleDateString('fr-FR');
+      return `<label class="equip-item" style="display:flex;align-items:center;gap:10px;cursor:pointer;${sel?'border-color:var(--vert);background:#f0fdf4':''}">
+        <input type="checkbox" ${sel?'checked':''} onchange="toggleInstallation('${e.id}',this.checked)" style="width:20px;height:20px;flex-shrink:0">
+        <div class="equip-ico">${e.types_equipements?.icone||'🔧'}</div>
+        <div class="equip-info">
+          <div class="equip-name">${e.types_equipements?.libelle||'—'} — ${e.numero_identification||'Non numéroté'}</div>
+          <div class="equip-loc">${e.localisation||'—'}${e.marque?' · '+e.marque:''} · ajouté le ${dt}</div>
+        </div></label>`;
+    }).join('');
+  }
+  const n=_instSel.size;
+  const b=$('btn-inst-demarrer');
+  b.textContent=n?`▶ Démarrer la mise en service (${n})`:'Coche au moins un équipement';
+  b.disabled=!n;
+}
+function toggleInstallation(id,on){if(on)_instSel.add(id);else _instSel.delete(id);renderInstallation()}
+
+async function _demarrerInstallationInterne(){
+  const choisis=_instEquips.filter(e=>_instSel.has(e.id));
+  if(!choisis.length){toast('Coche au moins un équipement','err');return}
+  const dateInst=$('inst-date').value||new Date().toISOString().slice(0,10);
+  if(dateInst>new Date().toISOString().slice(0,10)){toast('La date ne peut pas être dans le futur','err');return}
+  if($('inst-regul').checked&&!confirm('Rattrapage : les vérifications seront enregistrées au '+new Date(dateInst+'T12:00:00').toLocaleDateString('fr-FR')+' SANS nouveau bon ni signature (bon déjà signé). Confirmer ?'))return;
+  const {data:sess,error}=await db.from('sessions_controle').insert({
+    client_id:currentClient.id,technicien_id:ME.id,agence_id:currentClient.agence_id,
+    date_session:dateInst,statut:'en_cours',
+    nb_equip_total:choisis.length,nature:'installation',equipements_ids:choisis.map(e=>e.id),regularisation:!!$('inst-regul').checked
+  }).select().single();
+  if(error){toast('Erreur création session : '+error.message,'err');return}
+  currentSession=sess;sessionVerifs={};currentEquipements=choisis;
+  sauvegarderSessionLocale();
+  $('session-client-nom').textContent=currentClient.raison_sociale+' — Installation';
+  updateSessionProgress();renderSessionEquipList();
+  goTo('s-session');
+}
+window.demarrerInstallation=antiDoublon(_demarrerInstallationInterne);
+
 // ============================================================
 // SESSION DE CONTRÔLE
 // ============================================================
@@ -1705,6 +1809,10 @@ async function reprendreSession(sessionId){
     .neq('statut','réformé')
     .order('type_equipement_code');
   currentEquipements=equips||[];
+  if(sess.nature==='installation'){
+    const ids=sess.equipements_ids||[];
+    currentEquipements=currentEquipements.filter(e=>ids.includes(e.id));
+  }
 
   // Reconstruire sessionVerifs depuis les vérifications déjà enregistrées en base
   const {data:verifs}=await db.from('verifications').select('*').eq('session_id',sessionId);
@@ -1880,7 +1988,10 @@ async function traiterScanEquip(numeroId){
     if(equip.client_id!==currentClient?.id){
       toast('Cet équipement appartient à un autre client','err');return;
     }
-    if(!currentEquipements.find(e=>e.id===equip.id))currentEquipements.push(equip);
+    if(!currentEquipements.find(e=>e.id===equip.id)){
+      if(currentSession?.nature==='installation'){toast('Hors installation : cet équipement n\'est pas dans la mise en service','err');return}
+      currentEquipements.push(equip);
+    }
   }
   ouvrirVerif(equip.id);
 }
@@ -2648,7 +2759,12 @@ async function ouvrirVerif(equipId){
   // le référencer avant sa déclaration plus bas provoquait un plantage
   // silencieux de ouvrirVerif() sur tout équipement ayant un point marqué
   // [quinquennal] dans son libellé, typiquement les RIA)
-  const {data:paliers}=await db.from('paliers_maintenance').select('*').eq('type_equipement_code',equip.type_equipement_code).eq('actif',true).order('ordre');
+  let {data:paliers}=await db.from('paliers_maintenance').select('*').eq('type_equipement_code',equip.type_equipement_code).eq('actif',true).order('ordre');
+  // Session d'installation : seul le palier « mise en service » est proposé (palier inactif, hors contrôles normaux)
+  if(currentSession?.nature==='installation'){
+    const {data:pm}=await db.from('paliers_maintenance').select('*').eq('type_equipement_code',equip.type_equipement_code).eq('code','mise_en_service').maybeSingle();
+    if(pm)paliers=[pm];
+  }
   const palierSuggere = calculerPalierSuggere(equip, paliers||[]);
   // Mémorisé pour ouvrirEchangeStandard()/confirmerEchangeStandard() (fonctions hors de cette closure)
   window._palierApprofondieCourant = (paliers||[]).find(p=>p.code==='approfondie')||null;
@@ -2695,7 +2811,7 @@ async function ouvrirVerif(equipId){
   const savedPts=savedState.points||{};
   const savedStatut=savedState.resultat||'';
   const savedObs=savedState.obs||'';
-  const savedEch=savedState.echeance||getDefaultEcheance();
+  const savedEch=savedState.echeance||getDefaultEcheance(currentSession?.nature==='installation'?currentSession.date_session:null);
 
   // Dernière vérification
   const {data:lastV}=await db.from('verifications').select('date_verification,date_prochaine_echeance,resultat').eq('equipement_id',equipId).order('date_verification',{ascending:false}).limit(1);
@@ -2895,8 +3011,8 @@ function onPalierChange(){
   // (à étendre plus tard si des points spécifiques par palier sont définis)
 }
 
-function getDefaultEcheance(){
-  const d=new Date();d.setFullYear(d.getFullYear()+1);return d.toISOString().slice(0,10);
+function getDefaultEcheance(base){
+  const d=base?new Date(base+'T12:00:00'):new Date();d.setFullYear(d.getFullYear()+1);return d.toISOString().slice(0,10);
 }
 
 // Points de contrôle
@@ -3469,7 +3585,7 @@ async function _validerVerifInterne(equip){
     equipement_id:currentEquipId, client_id:currentClient.id,
     agence_id:currentClient.agence_id, technicien_id:ME.id,
     type_equipement_code:equip.type_equipement_code,
-    date_verification:new Date().toISOString().slice(0,10),
+    date_verification:(currentSession?.nature==='installation'&&currentSession.date_session)||new Date().toISOString().slice(0,10),
     date_prochaine_echeance:echeance||null,
     technicien:`${ME.prenom||''} ${ME.nom}`.trim(),
     resultat:resultatDB, observations:obs,
@@ -3794,6 +3910,8 @@ function setChkRegl(i, val){
 function validerChecklistEtSigner(){
   // Récupérer les observations
   window._chkObservations = document.getElementById('chk-observations')?.value?.trim()||'';
+  // Rattrapage d'installation : bon déjà signé → clôture directe, sans signature ni nouveau bon
+  if(currentSession?.regularisation){cloturerRegularisation();return}
   // Aller à la signature
   document.getElementById('sig-nom').value='';
   goTo('s-signature');
@@ -3817,7 +3935,7 @@ function genererPdfSession(signatureDataUrl, signataireNom, signatureTechDataUrl
   }catch(e){}
   const c=currentClient;
   const numSession=currentSession?.numero||'—';
-  const today=new Date();
+  const today=(currentSession?.nature==='installation'&&currentSession.date_session)?new Date(currentSession.date_session+'T12:00:00'):new Date();
   const dateStr=today.toLocaleDateString('fr-FR');
 
   // ---- LOGO BFS (image) + raison sociale selon agence ----
@@ -3838,6 +3956,10 @@ function genererPdfSession(signatureDataUrl, signataireNom, signatureTechDataUrl
   doc.setFillColor(230,100,40);doc.rect(65,8,130,10,'F');
   doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
   doc.text('BULLETIN D\'INTERVENTION INCENDIE',130,15,{align:'center'});
+  if(currentSession?.nature==='installation'){
+    doc.setTextColor(0);doc.setFont('helvetica','bold');doc.setFontSize(8);
+    doc.text('Installation — vérification de mise en service',195,21,{align:'right'});
+  }
 
   // ---- TRANSMIS POUR FACTURATION ----
   doc.setTextColor(0);doc.setFont('helvetica','normal');doc.setFontSize(9);
@@ -4051,6 +4173,18 @@ async function notifierSecretariatBon(pdfBlob,{titre,numero,detail}){
   }catch(e){console.warn('Mail secrétariat',e);toast('⚠️ Mail au secrétariat non envoyé (le bon est bien enregistré)','err');return false}
 }
 
+async function cloturerRegularisation(){
+  const nb=Object.keys(sessionVerifs).length;
+  if(!nb){toast('Aucun équipement vérifié','err');return}
+  if(!confirm(nb+' équipement(s) vérifié(s) au '+new Date(currentSession.date_session+'T12:00:00').toLocaleDateString('fr-FR')+'.\nClôturer sans nouveau bon ni signature ?'))return;
+  await db.from('sessions_controle').update({statut:'terminée',observations_generales:'Rattrapage installation — bon déjà signé',updated_at:new Date().toISOString()}).eq('id',currentSession.id);
+  currentSession=null;sessionVerifs={};currentEquipements=[];_instSel.clear();
+  effacerSessionLocale();
+  toast('Mise en service enregistrée ✓ (sans nouveau bon)');
+  await loadParc();
+  goTo('s-parc');
+}
+
 async function _validerSignatureEtCloturerInterne(){
   const nom=document.getElementById('sig-nom').value.trim();
   if(!nom){toast('Nom du signataire obligatoire','err');return}
@@ -4097,7 +4231,7 @@ async function _validerSignatureEtCloturerInterne(){
       client_id:currentClient.id,
       agence_id:currentClient.agence_id,
       technicien_id:ME.id,
-      date_intervention:new Date().toISOString().slice(0,10),
+      date_intervention:(currentSession?.nature==='installation'&&currentSession.date_session)||new Date().toISOString().slice(0,10),
       nb_equipements_verifies:nbVerifies,
       signataire_nom:nom,
       pdf_url:pdfUrl,
@@ -4113,7 +4247,7 @@ async function _validerSignatureEtCloturerInterne(){
   }catch(e){console.warn('Erreur enregistrement bon:',e);toast('⚠️ Bon d\'intervention NON enregistré','err');}
 
   // Mail automatique au secrétariat (bon enregistré uniquement)
-  if(bonEnregistre)await notifierSecretariatBon(pdfBlob,{titre:"Bon d'intervention",numero:currentSession?.numero,detail:`Équipements vérifiés : ${nbVerifies}`});
+  if(bonEnregistre)await notifierSecretariatBon(pdfBlob,{titre:"Bon d'intervention",numero:currentSession?.numero,detail:(currentSession?.nature==='installation'?'Installation / mise en service — ':'')+`Équipements vérifiés : ${nbVerifies}`});
 
   // Clôturer la session — toujours exécuté
   if(currentSession){
@@ -4121,7 +4255,7 @@ async function _validerSignatureEtCloturerInterne(){
     await db.from('sessions_controle').update({statut:'terminée',observations_generales:obs,updated_at:new Date().toISOString()}).eq('id',currentSession.id);
   }
 
-  currentSession=null;sessionVerifs={};currentEquipements=[];
+  currentSession=null;sessionVerifs={};currentEquipements=[];_instSel.clear();
   effacerSessionLocale();
   if(bonEnregistre){
     toast(pdfUrl?'Bon d\'intervention signé et enregistré ✓':'Bon enregistré ✓ (PDF à configurer: créer bucket bons-intervention dans Supabase Storage)');
@@ -5182,6 +5316,7 @@ async function _saveEquipTerrainInterne(){
   }
   toast(id?'Équipement modifié ✓':'Équipement créé ✓'+(estExtCreation?' — '+num:''));
   _ficheEquipId = data.id;
+  if(!id&&_screenAvantEquipForm==='s-installation'){_instSel.add(data.id);await ouvrirInstallation();return}
   await ouvrirFicheEquip(data.id, _screenAvantEquipForm);
 }
 
