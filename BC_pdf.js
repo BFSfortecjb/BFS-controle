@@ -308,27 +308,27 @@ const AGENCES_PDF={
 const VISITES_AN={annuelle:1,semestrielle:2,trimestrielle:4,mensuelle:12};
 const LETTRE_PERIOD={annuelle:'A',semestrielle:'S',trimestrielle:'T',mensuelle:'M'};
 // Engagement d'intervention : un délai d'intervention, pas une garantie de remise en service
-const AVANTAGE_72H="Intervention sous 72 h à compter de votre demande pour les opérations de maintenance corrective, afin de procéder à la remise en service ou, si nécessaire, d'établir un devis. Le délai de 72 h porte sur l'intervention : la remise en service n'est pas garantie dans ce délai.";
+const AVANTAGE_72H="Intervention sous 72 h à compter de la réception de votre demande écrite (courriel à contact@bfs-prevention.fr) pour les opérations de maintenance corrective, afin de procéder à la remise en service ou, si nécessaire, d'établir un devis. Le délai de 72 h porte sur l'intervention : la remise en service n'est pas garantie dans ce délai.";
 const TEXTES_CONTRAT={
   extincteur:{
     titre:'Contrat de maintenance Extincteur',pack:'maintenance extincteur',
     inclut:['la prestation de vérification','les frais de gestion des rapports de vérification','FRAIS_DEPL',"l'information d'utilisation et la manipulation, la maintenance préventive des extincteurs : les pièces détachées, les charges, la maintenance additionnelle approfondie et le traitement des déchets"],
     nInclut:["maintenance préventive des extincteurs : le remplacement des extincteurs dont l'âge dépasse 10 ans et la révision décennale","maintenance corrective des extincteurs : les pièces détachées, les charges et le traitement des déchets (vandalisme ou suite à l'utilisation de l'appareil)"],
-    corps:["Notre technicien entretient vos extincteurs et garantit leur bon fonctionnement selon la norme NF S 61-919.","Conformément à notre devoir de conseil, notre technicien vous communique les actions correctives à mettre en place.","À la fin de son intervention, notre technicien renseigne et signe votre registre de sécurité.","Le prix de la maintenance syndiquée couvre la maintenance préventive (y compris les pièces détachées et le traitement des déchets)."],
+    corps:["Notre technicien s'engage à entretenir vos extincteurs conformément à la norme NF S 61-919.","Conformément à notre devoir de conseil, notre technicien vous communique les actions correctives à mettre en place.","À la fin de son intervention, notre technicien renseigne et signe votre registre de sécurité.","Le prix de la maintenance forfaitaire couvre la maintenance préventive, y compris les pièces détachées, les charges et le traitement des déchets mentionnés dans le budget ci-dessus."],
     avantages:[AVANTAGE_72H,'ATTEST_SDIS',"15 % de réduction sur les formations de sécurité incendie","Démonstration d'utilisation","Information d'utilisation","Enquête de satisfaction à l'issue de la prestation","Identification des appareils de plus de 10 ans"]
   },
   baes:{
     titre:'Contrat de maintenance BAES',pack:'maintenance BAES',
     inclut:['la prestation de vérification','les frais de gestion des rapports de vérification','FRAIS_DEPL'],
     nInclut:['maintenance corrective des BAES : les pièces détachées (batterie, ampoules, affichage, numérotation)'],
-    corps:["Notre technicien vérifie et entretient vos BAES et blocs d'ambiance selon les recommandations constructeur.","Conformément à notre devoir de conseil, notre technicien vous communique les actions correctives à mettre en place.","À la fin de son intervention, notre technicien renseigne et signe votre registre de sécurité.","Le prix de la maintenance syndiquée couvre la maintenance préventive (y compris les pièces détachées et le traitement des déchets)."],
+    corps:["Notre technicien vérifie et entretient vos BAES et blocs d'ambiance selon les recommandations constructeur.","Conformément à notre devoir de conseil, notre technicien vous communique les actions correctives à mettre en place.","À la fin de son intervention, notre technicien renseigne et signe votre registre de sécurité.","Le prix de la maintenance forfaitaire couvre la vérification et la maintenance préventive. Les pièces détachées (batterie, ampoules, affichage, numérotation) ne sont pas comprises et font l'objet d'un devis."],
     avantages:[AVANTAGE_72H,"15 % de réduction sur les formations d'évacuation","Enquête de satisfaction à l'issue de la prestation"]
   },
   alarme_t4:{
     titre:'Contrat de maintenance Alarme Type IV',pack:'maintenance Alarme Type IV',
     inclut:['la prestation de vérification','les frais de gestion des rapports de vérification','FRAIS_DEPL','la maintenance préventive (remplacement des piles ou accumulateurs suivant les recommandations périodiques)'],
     nInclut:["maintenance corrective : les pièces détachées, le remplacement et le traitement des déchets (vandalisme ou suite à l'utilisation de l'appareil)"],
-    corps:["Notre technicien vérifie et entretient vos alarmes selon les recommandations constructeur.","Conformément à notre devoir de conseil, notre technicien vous communique les actions correctives à mettre en place.","À la fin de son intervention, notre technicien renseigne et signe votre registre de sécurité.","Le prix de la maintenance syndiquée couvre la maintenance préventive (y compris les pièces détachées et le traitement des déchets)."],
+    corps:["Notre technicien vérifie et entretient vos alarmes selon les recommandations constructeur.","Conformément à notre devoir de conseil, notre technicien vous communique les actions correctives à mettre en place.","À la fin de son intervention, notre technicien renseigne et signe votre registre de sécurité.","Le prix de la maintenance forfaitaire couvre la vérification et la maintenance préventive (remplacement des piles ou accumulateurs suivant les recommandations périodiques). Les autres pièces détachées font l'objet d'un devis."],
     avantages:[AVANTAGE_72H,"15 % de réduction sur les formations d'évacuation","Enquête de satisfaction à l'issue de la prestation"]
   }
 };
@@ -393,8 +393,8 @@ async function construireContratPDF(id){
   section('Facturation et règlement');
   tbl({head:[],body:[
     ['Mode de règlement','Virement'],['Délai de règlement','30 jours date de facture'],
-    ['Type de facture','Facture unitaire par site et par prestation réalisée'],
-    ['Bon de commande','Un bon de commande est obligatoire pour les prestations de vérification et la vente de produits.'],
+    ['Type de facture','Facture par site, à chaque visite de vérification réalisée, pour la part du tarif annuel forfaitaire correspondant à cette visite. Les prestations hors budget sont facturées à leur réalisation.'],
+    ['Bon de commande','Le présent contrat vaut commande pour les visites de vérification prévues. Un bon de commande est obligatoire pour les prestations hors budget et la vente de produits.'],
     ['Frais de déplacement',libelleFraisDeplacement(c)||'Inclus dans le contrat'],
   ],columnStyles:{0:{fontStyle:'bold',cellWidth:45}}});
 
@@ -412,24 +412,31 @@ async function construireContratPDF(id){
   const debutTxt=c.date_debut?`du ${fmt(c.date_debut)}`:'de la date de signature';
   para(nAns>0?`${nAns} an${nAns>1?'s':''} à compter ${c.date_debut?'du '+fmt(c.date_debut):'de la date de signature'}, avec au minimum ${nEch} échéance${nEch>1?'s':''} de vérification (${frequenceVisitesLib(c.periodicite_visite).toLowerCase()}), renouvelable à son échéance par tacite reconduction annuelle.`:`À compter ${debutTxt}, renouvelable à son échéance par tacite reconduction annuelle.`);
   para(`Période initiale : ${dureeContratLib(c)}.`);
+  para("Reconduction : à l'issue de la période initiale, le contrat est reconduit tacitement par périodes d'un an. BFS informe le client par écrit environ un mois et demi avant chaque échéance. Le client peut refuser la reconduction par écrit (courrier ou courriel à contact@bfs-prevention.fr) au plus tard à la date d'échéance, qui est la date limite de refus.");
   if(nAns>=5)para("L'engagement de 5 ans permet de bénéficier d'un tarif annuel unique : il lisse sur la durée du contrat le coût des entretiens quinquennaux (maintenance additionnelle approfondie, charges, traitement des déchets) inclus dans le budget.");
+  if(nAns>=5)para("Résiliation anticipée : ce tarif annuel unique repose sur ce lissage, y compris lorsque des entretiens quinquennaux sont réalisés dès la première année (notamment lors de la reprise d'un parc ou d'un contrat existant). En cas de résiliation avant le terme de la période initiale, des frais peuvent être facturés au prorata de la durée restante, correspondant à la part non encore amortie de ces entretiens. Aucun frais n'est dû lorsque la résiliation fait suite à un manquement de BFS à ses obligations.");
   if(c.type_contrat==='ponctuel')para('Nature : intervention ponctuelle.');
   y+=3;
 
   // Bon pour accord
-  ensure(44);
-  doc.setDrawColor(150);doc.rect(L,y,88,36);doc.rect(L+94,y,88,36);
+  ensure(56);
+  para("Fait en deux exemplaires originaux. Le client fait précéder sa signature de la mention « Lu et approuvé, bon pour accord ».",{size:8});
+  y+=1;
+  doc.setDrawColor(150);doc.rect(L,y,88,40);doc.rect(L+94,y,88,40);
   doc.setFont('helvetica','bold');doc.setFontSize(8);
   doc.text('Bon pour accord du client',L+44,y+4.5,{align:'center'});
+  doc.text('Pour '+raisonSoc,L+94+44,y+4.5,{align:'center'});
   doc.setFont('helvetica','normal');doc.setFontSize(7.5);
-  doc.text('Signature / Cachet / Nom du signataire',L+44,y+8.5,{align:'center'});
-  doc.text('Date : '+(c.signe_le?fmt(c.signe_le):''),L+3,y+33);
-  doc.setFont('helvetica','bold');doc.setFontSize(8);doc.text('Pour '+raisonSoc,L+94+44,y+4.5,{align:'center'});
+  doc.text('Signature / Cachet',L+44,y+8.5,{align:'center'});
+  doc.text('Signature / Cachet',L+94+44,y+8.5,{align:'center'});
+  doc.text('Nom et qualité : '+(c.signataire_nom||''),L+3,y+33);
+  doc.text('Date : '+(c.signe_le?fmt(c.signe_le):'')+'     Lieu :',L+3,y+37.5);
+  doc.text('Nom et qualité :',L+94+3,y+33);
+  doc.text('Date :                         Lieu :',L+94+3,y+37.5);
   if(c.signature_data){
     try{doc.addImage(c.signature_data,'PNG',L+8,y+11,72,18)}catch(e){}
-    doc.setFontSize(8);doc.text((c.signataire_nom||'')+(c.signe_le?' — signé le '+fmt(c.signe_le):''),L+44,y+33,{align:'center'});
   }
-  y+=42;
+  y+=46;
 
   // ======== Adresses de vérification ========
   section('Adresse(s) de vérification');
@@ -452,7 +459,7 @@ async function construireContratPDF(id){
     const tot=ls.reduce((s,l)=>s+(+l.quantite||0)*(+l.pu||0),0);totalGeneral+=tot;
     ensure(60);
     section('Récapitulatif financier — '+lib(t));
-    tbl({head:[['Activités',"Nombre de vérifications\n(Qté d'appareils x périodicité)",'Prix unitaire HT\nde vérification','Prix total HT']],
+    tbl({head:[['Activités',"Nombre de vérifications\n(Qté d'appareils x périodicité)",'Prix unitaire HT\n(tarif forfaitaire lissé)','Prix total HT']],
       body:[...ls.map(l=>[[l.marque,l.modele].filter(Boolean).join(' ')||lib(t),String((+l.quantite||0)*visites),eur((+l.pu||0)/visites),eur((+l.quantite||0)*(+l.pu||0))]),
         [{content:'Budget total',colSpan:3,styles:{fontStyle:'bold',halign:'right'}},{content:eur(tot),styles:{fontStyle:'bold'}}]],
       columnStyles:{1:{halign:'center',cellWidth:48},2:{halign:'right',cellWidth:34},3:{halign:'right',cellWidth:30}}});
@@ -504,7 +511,7 @@ async function construireContratPDF(id){
     const corps=t=>[t.designation,t.unite||'',eur(t.prix_ht)];
     if(prest.length){tbl({head:[['Prestations','Unité','Prix HT']],body:prest.map(corps),columnStyles:{1:{cellWidth:22},2:{halign:'right',cellWidth:28}}})}
     if(pieces.length){tbl({head:[['Pièces détachées courantes','Unité','Prix HT']],body:pieces.map(corps),columnStyles:{1:{cellWidth:22},2:{halign:'right',cellWidth:28}}})}
-    para("Prestations et pièces non comprises dans le budget du contrat (maintenance corrective, remplacement, recharge après utilisation). Tarifs HT en vigueur à la date d'édition, révisables selon la formule de révision annuelle ci-dessus.",{size:7.5});
+    para("Prestations et pièces non comprises dans le budget du contrat (maintenance corrective, remplacement, recharge consécutive à une utilisation ou à une décharge). Les charges des entretiens quinquennaux sont, elles, comprises dans le budget. Tarifs HT en vigueur à la date d'édition, révisables selon la formule de révision annuelle ci-dessus.",{size:7.5});
   }
 
   // ======== En-tête, filigrane, pied de page sur chaque page ========
