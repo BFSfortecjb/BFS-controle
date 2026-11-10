@@ -295,7 +295,7 @@ function renderEcheancesTable(data,el){
   const groupes = {};
   data.forEach(e=>{
     const key = e.client_id || e.raison_sociale;
-    if(!groupes[key]) groupes[key] = {raison_sociale:e.raison_sociale, ville:e.ville, agence_nom:e.agence_nom, items:[]};
+    if(!groupes[key]) groupes[key] = {client_id:e.client_id, tech_id:e.tech_id, raison_sociale:e.raison_sociale, ville:e.ville, agence_nom:e.agence_nom, items:[]};
     groupes[key].items.push(e);
   });
   // Classement demandé par Jeremy : catégorie de gravité d'abord (retard > urgent > proche >
@@ -310,7 +310,7 @@ function renderEcheancesTable(data,el){
     return dateA<dateB?-1:dateA>dateB?1:0;
   });
 
-  el.innerHTML = `<table><thead><tr><th></th><th>Client</th><th>Agence</th><th>Équipements concernés</th><th>Plus proche échéance</th></tr></thead><tbody>${clientsList.map(([key,g],idx)=>{
+  el.innerHTML = `<table><thead><tr><th></th><th>Client</th><th>Agence</th><th>Équipements concernés</th><th>Plus proche échéance</th><th></th></tr></thead><tbody>${clientsList.map(([key,g],idx)=>{
     const plusProche = g.items.reduce((min,i)=>!min||i.date_prochaine_echeance<min?i.date_prochaine_echeance:min,null);
     const nbRetard = g.items.filter(i=>i.statut_echeance==='en retard').length;
     const nbUrgent = g.items.filter(i=>i.statut_echeance==='urgent').length;
@@ -320,8 +320,9 @@ function renderEcheancesTable(data,el){
       <td><span class="badge bg">${g.agence_nom||'—'}</span></td>
       <td>${g.items.length} équip.${nbRetard?' · <span style="color:#dc2626;font-weight:600">'+nbRetard+' en retard</span>':''}${nbUrgent?' · <span style="color:#d97706;font-weight:600">'+nbUrgent+' urgent</span>':''}</td>
       <td class="${ecClass(plusProche)}">${fmt(plusProche)}</td>
+      <td style="white-space:nowrap">${g.client_id?`<button class="btn btn-p btn-xs" onclick="event.stopPropagation();prendreRdvClient('${g.client_id}','${g.tech_id||''}')" title="Fixer un rendez-vous (affiche le téléphone)">📞 RDV</button>`:''}</td>
     </tr>
-    <tr id="detail-${idx}" style="display:none"><td></td><td colspan="4" style="padding:0">
+    <tr id="detail-${idx}" style="display:none"><td></td><td colspan="5" style="padding:0">
       <table style="width:100%;background:var(--bg)"><tbody>${g.items.map(e=>`<tr>
         <td style="width:30%">${e.icone||''} ${e.numero_identification||'—'}<br><small>${e.marque||''} ${e.modele||''}</small></td>
         <td style="width:20%">${e.type_libelle||'—'}</td>
@@ -429,7 +430,23 @@ async function openRdvModal(prefill=null){
   if(prefill){Object.assign($,{});$('rdv-id').value=prefill.id||'';$('rdv-client').value=prefill.client_id||'';$('rdv-tech').value=prefill.technicien_id||'';$('rdv-date').value=prefill.date_rdv||'';$('rdv-heure').value=prefill.heure_debut?.slice(0,5)||'';$('rdv-duree').value=prefill.duree_minutes||60;$('rdv-type-int').value=prefill.type_intervention||'';$('rdv-statut').value=prefill.statut||'planifié';$('rdv-notes').value=prefill.notes||'';$('mo-rdv-t').textContent='Modifier le RDV';
     if(prefill.id)$('btn-delete-rdv').style.display='inline-flex';
   }
-  OM('mo-rdv');
+  majInfoClientRdv();OM('mo-rdv');
+}
+// Bandeau téléphone dans la fenêtre de RDV : permet d'appeler le client (lien tel: / copie) pendant la prise de RDV
+function majInfoClientRdv(){
+  const box=$('rdv-tel-box');if(!box)return;
+  const c=clients.find(x=>x.id===$('rdv-client').value);
+  if(!c){box.style.display='none';return}
+  const tel=(c.contact_telephone||'').trim(),esc=s=>String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+  box.style.display='block';
+  box.innerHTML=`<div style="font-weight:600">${esc(c.raison_sociale)}${c.ville?' — '+esc(c.ville):''}</div>`+
+    (tel?`<div style="margin-top:4px">📞 <a href="tel:${esc(tel.replace(/\s/g,''))}" style="font-weight:700;font-size:15px;color:var(--rouge)">${esc(tel)}</a>${c.contact_nom?' · '+esc(c.contact_nom):''} <button class="btn btn-s btn-xs" type="button" onclick="copierTexteBureau('${esc(tel)}')">📋 Copier</button></div>`
+      :`<div style="margin-top:4px;color:#b45309">Aucun numéro de téléphone enregistré pour ce client${c.contact_email?' — e-mail : '+esc(c.contact_email):''}</div>`);
+}
+async function prendreRdvClient(clientId,techId){
+  if(!clients.length)await loadClients();
+  await openRdvModal({client_id:clientId,technicien_id:techId||(ME.role==='technicien'?ME.id:'')});
+  if(!$('rdv-tech').value&&$('rdv-tech').options.length)$('rdv-tech').selectedIndex=0;
 }
 window.editRdv=function(id){const r=rdvs.find(x=>x.id===id);if(r)openRdvModal(r)};
 async function _saveRdvInterne(){

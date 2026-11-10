@@ -828,8 +828,9 @@ tr:hover td{background:#fafafa}
 <div class="mo" id="mo-rdv">
   <div class="modal"><div class="mh"><h3 id="mo-rdv-t">Nouveau RDV</h3><button class="mclose" onclick="CM('mo-rdv')">✕</button></div>
   <div class="mc"><input type="hidden" id="rdv-id">
+    <div id="rdv-tel-box" style="display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:13.5px"></div>
     <div class="form-grid">
-      <div class="fg"><label>Client *</label><select id="rdv-client"></select></div>
+      <div class="fg"><label>Client *</label><select id="rdv-client" onchange="majInfoClientRdv()"></select></div>
       <div class="fg"><label>Technicien *</label><select id="rdv-tech"></select></div>
       <div class="fg"><label>Date *</label><input type="date" id="rdv-date"></div>
       <div class="fg"><label>Heure</label><input type="time" id="rdv-heure"></div>

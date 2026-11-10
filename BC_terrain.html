@@ -5998,7 +5998,7 @@ async function openRdvFormTerrain(prefill){
   $('btn-delete-rdv-terrain').style.display = 'none';
 
   if(prefill){
-    $('rf-id').value = prefill.id;
+    $('rf-id').value = prefill.id || '';
     $('rf-client').value = prefill.client_id || '';
     $('rf-date').value = prefill.date_rdv;
     $('rf-heure').value = (prefill.heure_debut||'09:00').slice(0,5);
@@ -6006,8 +6006,10 @@ async function openRdvFormTerrain(prefill){
     $('rf-type').value = prefill.type_intervention || 'vérification extincteurs';
     $('rf-statut').value = prefill.statut || 'planifié';
     $('rf-notes').value = prefill.notes || '';
-    $('rdv-form-titre').textContent = 'Modifier le RDV';
-    $('btn-delete-rdv-terrain').style.display = 'block';
+    if(prefill.id){
+      $('rdv-form-titre').textContent = 'Modifier le RDV';
+      $('btn-delete-rdv-terrain').style.display = 'block';
+    }
   }
   goTo('s-rdv-form');
 }
