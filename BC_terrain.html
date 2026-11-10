@@ -2732,6 +2732,10 @@ function vgpEnergiesCourantes(){return _vgp?[..._vgp.energies]:null}
 async function ouvrirVerif(equipId){
   currentEquipId=equipId;
   currentPieces=sessionVerifs[equipId]?.pieces||[];
+  // Le statut final ne doit pas « fuiter » d'un équipement au suivant : on repart de zéro
+  // (ou on restaure le statut déjà saisi si on rouvre une vérification de la session).
+  currentStatut='';document.querySelectorAll('#s-verif .statut-btn').forEach(b=>b.className='statut-btn');
+  if(sessionVerifs[equipId]?.resultat)setStatut(sessionVerifs[equipId].resultat);
   const equip=currentEquipements.find(e=>e.id===equipId);
   if(!equip){toast('Équipement introuvable','err');return}
 
@@ -5374,7 +5378,8 @@ async function _saveEquipTerrainInterne(){
       identification:num,mode_pressurisation:uniteMode,agent_code:uniteAgent,
       capacite_valeur:uniteCapacite,capacite_unite:uniteUnite,
       marque:payload.marque,modele:payload.modele,numero_serie:payload.numero_serie,
-      agence_id:currentClient.agence_id,statut:'en_service',date_mise_en_service:dateMis
+      agence_id:currentClient.agence_id,statut:'en_service',date_mise_en_service:dateMis,
+      date_fabrication:payload.date_fabrication
     }).select().single();
     if(eu){
       toast('Équipement créé, mais erreur unité physique : '+eu.message,'err');
@@ -5987,6 +5992,12 @@ async function openRdvFormTerrain(prefill){
   _missionEnPlanificationTerrain=null;
   if(!clientsPourRdv.length) await chargerClientsPourRdv();
   $('rf-client').innerHTML = clientsPourRdv.map(c=>`<option value="${c.id}">${c.raison_sociale}</option>`).join('');
+  // Client du RDV absent de la liste (ajouté depuis, hors périmètre, archivé…) : on l'ajoute pour qu'il reste affiché
+  if(prefill?.client_id && !clientsPourRdv.some(c=>c.id===prefill.client_id)){
+    const {data:cl} = await db.from('clients').select('id,raison_sociale').eq('id', prefill.client_id).maybeSingle();
+    const o=document.createElement('option');o.value=prefill.client_id;o.textContent=cl?.raison_sociale||prefill.raison_sociale||'Client du RDV';
+    $('rf-client').appendChild(o);
+  }
   $('rf-id').value='';
   $('rf-date').value = dateLocaleT(new Date());
   $('rf-heure').value = '09:00';
@@ -6028,7 +6039,10 @@ async function editerRdvTerrain(id){
   if(!r){toast('RDV introuvable','err');return}
   // Récupérer le client_id réel (la vue ne l'expose pas forcément)
   const {data:rdvFull} = await db.from('rdv').select('*').eq('id', id).single();
-  await openRdvFormTerrain({...r, client_id: rdvFull?.client_id});
+  if(!clientsPourRdv.length) await chargerClientsPourRdv();
+  // Repli : si le client_id n'est pas lisible, on retrouve le client par son nom (champ du planning)
+  const cId = rdvFull?.client_id || clientsPourRdv.find(c=>c.raison_sociale===r.raison_sociale)?.id || '';
+  await openRdvFormTerrain({...r, client_id: cId, raison_sociale: r.raison_sociale});
 }
 
 async function _saveRdvTerrainInterne(){
