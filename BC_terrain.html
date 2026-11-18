@@ -1,7 +1,10 @@
+<!-- © 2026 BFS Contrôle — Jérémy Bizeul — Vigie-lance, pour BFS Prévention (Bretagne Formation Sécurité). Tous droits réservés. Toute reproduction, distribution ou réutilisation de ce code, en tout ou partie, sans autorisation écrite préalable est interdite. Auteur : Jérémy Bizeul — Vigie-lance — https://www.bfs-prevention.fr -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<meta name="author" content="Jérémy Bizeul — Vigie-lance (pour BFS Prévention)">
+<meta name="copyright" content="© 2026 Jérémy Bizeul — Vigie-lance / BFS Prévention. Tous droits réservés.">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>BFS Terrain</title>
 <!-- PWA / Icônes app -->
@@ -17,6 +20,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="BC_catalogue.js"></script>
 <script src="BC_preconisations.js"></script>
+<script src="BC_carte.js"></script>
+<script src="BC_offre.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -220,6 +225,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button class="btn btn-p" onclick="doLogin()">Se connecter</button>
     <p style="text-align:center;margin-top:12px"><a href="#" onclick="demanderResetPassword(event)" style="font-size:13px;color:var(--rouge)">Mot de passe oublié ?</a></p>
     <a href="index.html" style="display:block;text-align:center;margin-top:10px;font-size:13px;color:var(--txt-l)">← Version bureau</a>
+    <p class="site-copyright" style="margin:14px 0 0;text-align:center;font-size:11px;color:#464645;opacity:.7;line-height:1.5;">Outil mis à disposition par BFS Prévention (Bretagne Formation Sécurité) — © 2026 — Tous droits réservés. Copie, reproduction ou réutilisation interdites sans autorisation.</p>
   </div>
 </div>
 
@@ -262,6 +268,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <button class="tab-item" onclick="ouvrirPlanning()"><span class="tab-ico">📅</span>Planning</button>
     <button class="tab-item" onclick="ouvrirMesSessions()"><span class="tab-ico">📋</span>Sessions</button>
     <button class="tab-item" onclick="ouvrirStock()"><span class="tab-ico">🧰</span>Stock</button>
+    <button class="tab-item" onclick="ouvrirCarteTerrain()"><span class="tab-ico">🗺️</span>Carte</button>
     <button class="tab-item" onclick="location.href='BC_commercial.html'"><span class="tab-ico">💼</span>Commercial</button>
   </div>
 </div>
@@ -401,8 +408,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <button class="btn btn-s btn-sm" onclick="ouvrirInstallation()" style="margin-bottom:8px;background:#dcfce7;color:#166534">
         🧯 Installation / mise en service (équipements neufs)
       </button>
-      <button class="btn btn-s btn-sm" onclick="ouvrirInterventionPonctuelle()" style="background:var(--orange-l);color:var(--orange)">
+      <button class="btn btn-s btn-sm" onclick="ouvrirInterventionPonctuelle()" style="margin-bottom:8px;background:var(--orange-l);color:var(--orange)">
         🔧 Intervention ponctuelle (hors planning)
+      </button>
+      <button class="btn btn-s btn-sm" onclick="offreOuvrir()" style="background:#e0f2fe;color:#075985">
+        💶 Offre de prix (proposition au client)
       </button>
     </div>
   </div>
@@ -482,6 +492,22 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <div class="content no-pad" id="equip-list-content"></div>
 </div>
 
+<!-- ===== CARTE & TOURNÉES ===== -->
+<div class="screen" id="s-carte">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-parc')">←</button>
+    <div style="flex:1"><div style="font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:1px">BFS Terrain</div><h1>Carte &amp; tournées</h1></div>
+  </div>
+  <div class="content" style="padding:12px"><div id="carte-root"></div></div>
+</div>
+<!-- ===== OFFRE DE PRIX ===== -->
+<div class="screen" id="s-offre">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-client')">←</button>
+    <div style="flex:1"><div style="font-size:11px;opacity:.7;text-transform:uppercase;letter-spacing:1px">BFS Terrain</div><h1>Offre de prix</h1></div>
+  </div>
+  <div class="content" id="of-root"></div>
+</div>
 <!-- ===== SESSION DE CONTRÔLE ===== -->
 <!-- ===== INSTALLATION / MISE EN SERVICE ===== -->
 <div class="screen" id="s-installation">
@@ -4170,7 +4196,7 @@ function genererPdfPonctuelle({numero,typeValue,description,pieces,signataire,si
     doc.setFillColor(238,238,238);doc.rect(14,y,182,6,'F');
     doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.text('PIÈCES ET FOURNITURES',16,y+4.2);
     y+=7;
-    const eur=n=>n.toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+    const eur=n=>n.toLocaleString('fr-FR',{style:'currency',currency:'EUR'}).replace(/[\u202f\u00a0]/g,' ')
     const total=pieces.reduce((t,p)=>t+(p.prix_unitaire_ht?p.prix_unitaire_ht*p.quantite:0),0);
     const body=pieces.map(p=>[p.libelle,p.reference||'—',String(p.quantite),p.prix_unitaire_ht?eur(p.prix_unitaire_ht):'—',p.prix_unitaire_ht?eur(p.prix_unitaire_ht*p.quantite):'—']);
     if(total>0)body.push([{content:'TOTAL HT',colSpan:4,styles:{fontStyle:'bold',halign:'right'}},{content:eur(total),styles:{fontStyle:'bold',halign:'right'}}]);
@@ -4830,7 +4856,7 @@ function voirContratTerrain(i){
   const ct=_contratsClient[i];if(!ct)return;
   $('ctd-titre').textContent=ct.numero_contrat||'Contrat sans n°';
   $('ctd-sub').textContent=(currentClient?.raison_sociale||'')+' · '+ct.type_contrat;
-  const eur=n=>(+n).toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+  const eur=n=>(+n).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}).replace(/[\u202f\u00a0]/g,' ')
   const libT=code=>{const t=(typesTerrainCache||[]).find(t=>t.code===code);return t?(t.icone?t.icone+' ':'')+t.libelle:code};
   const lignes=Array.isArray(ct.lignes)?ct.lignes:[];
   const avenants=Array.isArray(ct.avenants)?ct.avenants:[];
@@ -5921,6 +5947,17 @@ function dateLocaleT(d){
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 }
 
+// Carte des échéances + tournées (selon la visibilité du technicien : perso = ses clients, agence = son agence, tout = choix)
+async function ouvrirCarteTerrain(){
+  goTo('s-carte');
+  const vis=ME.visibilite||'perso';
+  await carteMonter('carte-root',{
+    choixAgence:vis==='tout',
+    agenceFixe:vis==='perso_agence'?(ME.agences?.code||''):'',
+    techFixe:vis==='perso'?ME.id:'',
+    ouvrirClient:'ouvrirClientDepuisCarte',hauteur:340});
+}
+function ouvrirClientDepuisCarte(id){ouvrirClient(id)}
 async function ouvrirPlanning(){
   goTo('s-planning');
   await chargerPlanning();
@@ -6149,6 +6186,10 @@ window.validerInterventionPonctuelle=antiDoublon(_validerInterventionPonctuelleI
 window.saveRdvTerrain=antiDoublon(_saveRdvTerrainInterne);
 window.enregistrerCorrectionUnite=antiDoublon(_enregistrerCorrectionUniteInterne);
 window.confirmerIdentiteUnite=antiDoublon(_confirmerIdentiteUniteInterne);
+
+// BFS-VL-fc3c613b
+console.log('%c© 2026 Jérémy Bizeul — Vigie-lance, pour BFS Prévention.', 'color:#c9a227; font-weight:bold; font-size:12px;');
+console.log('BFS Contrôle — outil original. Toute reproduction ou réutilisation de ce code sans autorisation écrite est interdite. Contact : https://www.bfs-prevention.fr');
 </script>
 </body>
 </html>

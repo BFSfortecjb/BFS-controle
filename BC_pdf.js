@@ -1,3 +1,4 @@
+// © 2026 Jérémy Bizeul — Vigie-lance, pour BFS Prévention. Tous droits réservés. [BFS-VL-562ee89e]
 // ============================================================
 // BFS Contrôle — MODULE PDF (pdf.js)
 // ============================================================
@@ -348,12 +349,12 @@ function frequenceVisitesLib(p){
 async function construireContratPDF(id){
   const {data:c}=await db.from('contrats').select('*,clients(*),agences(nom,code)').eq('id',id).single();if(!c)return null;
   const {data:tarifsData}=await db.from('tarifs').select('categorie,code,designation,prix_ht,unite').in('categorie',['prestation','piece']).order('categorie').order('designation');
-  const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});const cl=c.clients||{};
+  const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});doc.setProperties({author:'BFS Contrôle — Vigie-lance',keywords:'BFS-VL-562ee89e'});const cl=c.clients||{};
   const ag=AGENCES_PDF[c.agences?.code]||AGENCES_PDF.briec;
   const raisonSoc=ag.nom;
   const lignes=Array.isArray(c.lignes)?c.lignes:[];
   const visites=VISITES_AN[c.periodicite_visite]||1;
-  const eur=n=>(+n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+  const eur=n=>(+n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}).replace(/[\u202f\u00a0]/g,' ')
   const lib=code=>{const t=(typeof typesEquip!=='undefined'?typesEquip:[]).find(t=>t.code===code);return t?t.libelle:code};
   const nAns=(()=>{let n=+c.duree_engagement||0;if(!n&&c.date_debut&&c.date_fin)n=Math.round((new Date(c.date_fin)-new Date(c.date_debut))/(365.25*864e5));return n})();
   // Tarification selon la durée d'engagement : lignes stockées au prix de référence (5 ans) ; prix annuel réel = pu x 5 / durée

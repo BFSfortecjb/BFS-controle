@@ -1,8 +1,11 @@
+<!-- © 2026 BFS Contrôle — Jérémy Bizeul — Vigie-lance, pour BFS Prévention (Bretagne Formation Sécurité). Tous droits réservés. Toute reproduction, distribution ou réutilisation de ce code, en tout ou partie, sans autorisation écrite préalable est interdite. Auteur : Jérémy Bizeul — Vigie-lance — https://www.bfs-prevention.fr -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
 <script src="BC_debug.js"></script>
 <meta charset="UTF-8">
+<meta name="author" content="Jérémy Bizeul — Vigie-lance (pour BFS Prévention)">
+<meta name="copyright" content="© 2026 Jérémy Bizeul — Vigie-lance / BFS Prévention. Tous droits réservés.">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BFS Contrôle</title>
 <!-- PWA / Icônes app -->
@@ -223,6 +226,7 @@ tr:hover td{background:#fafafa}
     <button class="btn btn-p" style="width:100%;justify-content:center;padding:11px" onclick="doLogin()">Se connecter</button>
     <p style="text-align:center;margin-top:12px"><a href="#" onclick="demanderResetPassword(event)" style="font-size:13px;color:var(--rouge)">Mot de passe oublié ?</a></p>
     <p style="text-align:center;margin-top:6px;font-size:12px;color:var(--txt-l)">Première connexion ? Contactez l'administrateur.</p>
+    <p class="site-copyright" style="margin:14px 0 0;text-align:center;font-size:11px;color:#464645;opacity:.7;line-height:1.5;">Outil mis à disposition par BFS Prévention (Bretagne Formation Sécurité) — © 2026 — Tous droits réservés. Copie, reproduction ou réutilisation interdites sans autorisation.</p>
   </div>
 </div>
 
@@ -447,6 +451,19 @@ tr:hover td{background:#fafafa}
         </div>
         <div id="preavis-contrats"></div>
         <div class="card"><div id="tbl-contrats"><div class="loading"><span class="spin"></span></div></div></div>
+      </div>
+
+      <!-- CARTE & TOURNÉES -->
+      <div class="page" id="page-carte"><div id="carte-root"></div></div>
+
+      <!-- OFFRES DE PRIX -->
+      <div class="page" id="page-offres">
+        <div class="search-bar">
+          <input type="text" id="q-offres" placeholder="Rechercher…" oninput="offresRendreBureau()">
+          <select id="f-statut-offre" onchange="offresRendreBureau()" style="max-width:160px"><option value="">Tous statuts</option><option value="envoyee">Envoyées</option><option value="acceptee">Acceptées</option><option value="refusee">Refusées</option><option value="expiree">Expirées</option></select>
+        </div>
+        <div style="font-size:12.5px;color:var(--txt-l);margin-bottom:8px">Les offres sont créées par les techniciens depuis l'appli terrain (fiche client → « Offre de prix »). ⚠ = prix modifiés par rapport au tarif.</div>
+        <div class="card"><div id="tbl-offres"><div class="loading"><span class="spin"></span></div></div></div>
       </div>
 
       <!-- PLANNING -->
@@ -1209,6 +1226,12 @@ tr:hover td{background:#fafafa}
 <script src="BC_app.js"></script>
 <script src="BC_pdf.js"></script>
 <script src="BC_location.js"></script>
-<script src="BC_backup.js"></script>
+<script src="BC_carte.js"></script>
+<script src="BC_offre.js"></script>
+<script src="BC_backup.js">
+// BFS-VL-1f3ca19b
+console.log('%c© 2026 Jérémy Bizeul — Vigie-lance, pour BFS Prévention.', 'color:#c9a227; font-weight:bold; font-size:12px;');
+console.log('BFS Contrôle — outil original. Toute reproduction ou réutilisation de ce code sans autorisation écrite est interdite. Contact : https://www.bfs-prevention.fr');
+</script>
 </body>
 </html>

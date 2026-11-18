@@ -1,3 +1,4 @@
+// © 2026 Jérémy Bizeul — Vigie-lance, pour BFS Prévention. Tous droits réservés. [BFS-VL-d7e0b7f4]
 // ============================================================
 // BFS Contrôle — CORE (core.js)
 // ============================================================
@@ -250,6 +251,8 @@ function buildNav(){
   html+=navA('verifications','✅','Vérifications');
   html+=navA('contrats','📋','Contrats');
   html+=navA('planning','📅','Planning');
+  html+=navA('carte','🗺️','Carte & tournées');
+  html+=navA('offres','💶','Offres de prix');
   html+=navA('stock','📦','Stock & commandes'); // accessible à tous les rôles (écriture limitée à leur agence par la RLS)
   if(role==='admin'||role==='secretariat'){
     html+=navA('bons','📝','Bons d\'intervention');
@@ -290,7 +293,7 @@ function navigate(page){
     profil:'Mon profil',clients:'Clients',equipements:'Équipements',verifications:'Vérifications',
     contrats:'Contrats',planning:'Planning',utilisateurs:'Utilisateurs','config-points':'Points de contrôle',
     commandes:'Commandes à prévoir',bons:'Bons d\'intervention',audit:'Journal d\'audit',stock:'Stock pièces',tarifs:'Base tarifaire',
-    sauvegarde:'Sauvegarde',locations:'Locations'
+    sauvegarde:'Sauvegarde',locations:'Locations',carte:'Carte & tournées',offres:'Offres de prix'
   };
   $('page-title').textContent=titles[page]||page;
   if(page==='dash-admin')loadDashAdmin();
@@ -309,6 +312,8 @@ function navigate(page){
   if(page==='config-points')loadConfigPage();
   if(page==='stock')loadStock();
   if(page==='locations')loadLocations();
+  if(page==='carte')carteMonter('carte-root',{choixAgence:true,choixTech:true,hauteur:480});
+  if(page==='offres')offresListeBureau();
   if(page==='tarifs')loadTarifs();
   if(page==='sauvegarde')loadSauvegarde();
 }

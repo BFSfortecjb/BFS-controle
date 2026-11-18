@@ -1,11 +1,16 @@
+<!-- © 2026 BFS Contrôle — Jérémy Bizeul — Vigie-lance, pour BFS Prévention (Bretagne Formation Sécurité). Tous droits réservés. Toute reproduction, distribution ou réutilisation de ce code, en tout ou partie, sans autorisation écrite préalable est interdite. Auteur : Jérémy Bizeul — Vigie-lance — https://www.bfs-prevention.fr -->
 <!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<meta name="author" content="Jérémy Bizeul — Vigie-lance (pour BFS Prévention)">
+<meta name="copyright" content="© 2026 Jérémy Bizeul — Vigie-lance / BFS Prévention. Tous droits réservés.">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>BFS Commercial</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="BC_catalogue.js"></script>
+<script src="BC_carte.js"></script>
+<script src="BC_demarchage.js"></script>
 <style>
 :root{
   --rouge:#C0392B;--rouge-s:#96251d;--rouge-l:#fdf2f1;
@@ -203,6 +208,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="fg"><label>Mot de passe</label><input type="password" id="l-pwd" autocomplete="current-password"></div>
     <button class="btn btn-p" onclick="doLogin()">Se connecter</button>
     <a href="BC_terrain.html" style="display:block;text-align:center;margin-top:14px;font-size:13px;color:var(--txt-l)">🔧 Aller au module contrôle</a>
+    <p class="site-copyright" style="margin:14px 0 0;text-align:center;font-size:11px;color:#464645;opacity:.7;line-height:1.5;">Outil mis à disposition par BFS Prévention (Bretagne Formation Sécurité) — © 2026 — Tous droits réservés. Copie, reproduction ou réutilisation interdites sans autorisation.</p>
   </div>
 </div>
 
@@ -223,6 +229,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="btn-row" style="flex-direction:column;gap:10px;margin-bottom:18px">
       <button class="btn btn-p" style="width:100%;padding:14px" onclick="ouvrirNouveauClient()">➕ Nouveau client</button>
       <button class="btn btn-p" style="width:100%;padding:14px" onclick="ouvrirNouveauContrat()">📋 Nouveau contrat</button>
+      <button class="btn btn-s" style="width:100%;padding:14px;background:#e0f2fe;color:#075985" onclick="demarchageOuvrir('prospection')">🎯 Démarchage (prospects à proximité)</button>
+      <button class="btn btn-s" style="width:100%;padding:14px;background:#fef3c7;color:#92400e" onclick="demarchageOuvrir('suivi')">📞 Suivi &amp; rappels<span id="com-rappels-n"></span></button>
     </div>
     <div class="sec">Contrats</div>
     <div style="display:flex;gap:6px;margin-bottom:10px">
@@ -231,6 +239,15 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     </div>
     <div id="com-contrats"><div class="loading"><div class="spin spin-dark"></div></div></div>
   </div>
+</div>
+
+<!-- ===== DÉMARCHAGE ===== -->
+<div class="screen" id="s-demarchage">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-commercial')">←</button>
+    <h1>Démarchage</h1>
+  </div>
+  <div class="content" id="dem-root"></div>
 </div>
 
 <!-- ===== NOUVEAU CLIENT ===== -->
@@ -680,6 +697,7 @@ function setFiltreContrats(f){
 }
 async function ouvrirCommercial(){
   goTo('s-commercial');
+  if(typeof demRappelsBadge==='function')demRappelsBadge();
   const el=$('com-contrats');
   el.innerHTML='<div class="loading"><div class="spin spin-dark"></div></div>';
   let q=db.from('contrats').select('*,clients(raison_sociale,ville),agences(nom)').order('created_at',{ascending:false}).limit(30);
@@ -1141,6 +1159,10 @@ console.log('✓ commercial.html chargé');
 
 window.saveContratCom=antiDoublon(_saveContratComInterne);
 window.saveClientCom=antiDoublon(_saveClientComInterne);
+
+// BFS-VL-fc3c613b
+console.log('%c© 2026 Jérémy Bizeul — Vigie-lance, pour BFS Prévention.', 'color:#c9a227; font-weight:bold; font-size:12px;');
+console.log('BFS Contrôle — outil original. Toute reproduction ou réutilisation de ce code sans autorisation écrite est interdite. Contact : https://www.bfs-prevention.fr');
 </script>
 </body>
 </html>

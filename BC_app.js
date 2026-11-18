@@ -1,3 +1,4 @@
+// © 2026 Jérémy Bizeul — Vigie-lance, pour BFS Prévention. Tous droits réservés. [BFS-VL-b56dda56]
 // ============================================================
 // BFS Contrôle — MÉTIER (app.js)
 // ============================================================

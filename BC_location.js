@@ -6,7 +6,7 @@ let _locations=[],_locGrille=[],_locUnites=[],_grilleMode='mensuel',_locType='lo
 const _GT=()=>_grilleMode==='jour'?'grille_location_evenement':'grille_location';
 const _GF=()=>_grilleMode==='jour'?'prix_jour_ht':'loyer_mensuel_ht';
 const STATUT_LOC={brouillon:'📝 À signer',en_cours:'🟢 En cours',terminee:'⚪ Terminée',annulee:'⛔ Annulée'};
-const _eurL=n=>(+n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+const _eurL=n=>(+n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}).replace(/[\u202f\u00a0]/g,' ')
 const _escL=s=>String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 
 async function loadLocations(){
