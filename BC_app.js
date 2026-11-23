@@ -1991,6 +1991,8 @@ async function loadBons(){
       ${b.statut_facturation==='à_facturer'?`<button class="btn btn-s btn-xs" onclick="marquerFacture('${b.id}')">✓ Facturé</button>`:''}
     </div></td>
   </tr>`).join('')}</tbody></table>`;
+  // Bulletin + détaillé générés automatiquement pour les bons qui n'en ont pas encore
+  try{if(typeof bonsGenererManquants==='function')setTimeout(()=>bonsGenererManquants(bons,bulletins,rapports),400)}catch(e){console.warn(e)}
 }
 
 const LIMITE_PIECE_JOINTE_OCTETS=15*1024*1024; // marge sous les ~20 Mo côté Edge Function

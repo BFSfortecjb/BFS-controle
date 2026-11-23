@@ -798,7 +798,7 @@ async function regenererBon(bonId,sansConfirm){
   // supprimé ni remplacé. Les bulletins régénérés sont archivés à part
   // sous le nom bulletin_<bonId>_<timestamp>.pdf.
   const nomFichier=`BFS_bon_${numSession}_${(client?.raison_sociale||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`;
-  doc.save(nomFichier);
+  if(!window._pdfSansSave)doc.save(nomFichier);
   const pdfBlob=doc.output('blob');
   const {data:anciens}=await db.storage.from('bons-intervention').list('',{search:'bulletin_'+bonId});
   if(anciens&&anciens.length)await db.storage.from('bons-intervention').remove(anciens.map(f=>f.name));
@@ -806,7 +806,7 @@ async function regenererBon(bonId,sansConfirm){
   const {error:upErr}=await db.storage.from('bons-intervention').upload(fileName,pdfBlob,{contentType:'application/pdf'});
   if(!upErr){toast('Bulletin archivé ✓')}
   else{toast('Bulletin téléchargé localement (erreur Storage)','err')}
-  loadBons();
+  if(!window._pdfSansSave)loadBons();
 }
 
 // ============================================================
@@ -930,7 +930,7 @@ async function rapportComplet(bonId){
 
   // ---- Téléchargement + archivage Storage
   const nomFichier=`BFS_bulletin_detaille_${numSession}_${(client?.raison_sociale||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`;
-  doc.save(nomFichier);
+  if(!window._pdfSansSave)doc.save(nomFichier);
   const pdfBlob=doc.output('blob');
   // Supprimer les anciens rapports de ce bon, puis uploader le nouveau
   const {data:anciens}=await db.storage.from('bons-intervention').list('',{search:'rapport_'+bonId});
@@ -939,7 +939,7 @@ async function rapportComplet(bonId){
   const {error:upErr}=await db.storage.from('bons-intervention').upload(fileName,pdfBlob,{contentType:'application/pdf'});
   if(!upErr){toast('Rapport complet archivé ✓')}
   else{toast('Rapport téléchargé localement (erreur Storage)','err')}
-  loadBons();
+  if(!window._pdfSansSave)loadBons();
 }
 
 // ============================================================
@@ -1064,3 +1064,29 @@ function eqCapaciteBulletin(eq){
   return cap+' '+(eqDonnee(eq,'unite')||'');
 }
 function eqEmplacementBulletin(eq){return eq?.localisation||eq?.emplacement||'—'}
+
+// ---- Génération automatique des bulletins (simple + détaillé) manquants, côté bureau ----
+// Chaque bon (hors interventions ponctuelles) reçoit son Bulletin et son Détaillé sans clic.
+// Un bon n'est tenté qu'une fois par session de navigation (pas de boucle si la génération échoue).
+async function bonsGenererManquants(bons,bulletins,rapports,force){
+  if(window._bonsGenEnCours)return;
+  if(typeof ME!=='undefined'&&ME&&!['admin','secretariat'].includes(ME.role))return;
+  const tentes=window._bonsGenTentes||(window._bonsGenTentes=new Set());
+  const todo=(bons||[]).filter(b=>b.session_id&&(force||((!bulletins[b.id]||!rapports[b.id])&&!tentes.has(b.id))));
+  if(!todo.length)return;
+  window._bonsGenEnCours=true;window._pdfSansSave=true;let ok=0;
+  try{
+    for(let i=0;i<todo.length;i++){
+      const b=todo[i];tentes.add(b.id);
+      toast(`Bulletins ${i+1}/${todo.length}…`);
+      try{await regenererBon(b.id,true);await rapportComplet(b.id);ok++}catch(e){console.warn('Bulletins bon',b.id,e)}
+    }
+  }finally{window._pdfSansSave=false;window._bonsGenEnCours=false}
+  toast(ok+' bon(s) mis à jour : bulletin + détaillé ✓');
+  if(typeof loadBons==='function')loadBons();
+}
+async function bonsActualiserTout(){
+  if(!confirm("Régénérer le bulletin simple ET détaillé de TOUS les bons de la liste ?\nLes PDF signés d'origine ne sont pas touchés."))return;
+  const {data:bons}=await db.from('bons_intervention').select('id,session_id').not('session_id','is',null);
+  await bonsGenererManquants(bons||[],{},{},true);
+}

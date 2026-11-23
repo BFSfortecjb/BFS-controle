@@ -517,7 +517,7 @@ tr:hover td{background:#fafafa}
       <div class="page" id="page-bons">
         <div class="stats-grid" id="bons-stats"></div>
         <div class="search-bar">
-          <button class="btn btn-s" onclick="exportFacturationXLS()" style="margin-right:8px">💶 Export facturation</button><select id="f-statut-bons" onchange="loadBons()" style="max-width:200px">
+          <button class="btn btn-s" onclick="exportFacturationXLS()" style="margin-right:8px">💶 Export facturation</button><button class="btn btn-s" onclick="bonsActualiserTout()" style="margin-right:8px" title="Régénère le bulletin et le détaillé de tous les bons">🔄 Actualiser tout</button><select id="f-statut-bons" onchange="loadBons()" style="max-width:200px">
             <option value="à_facturer">À facturer</option>
             <option value="facturé">Facturés</option>
             <option value="">Tous</option>
