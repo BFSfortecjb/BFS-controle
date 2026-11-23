@@ -21,7 +21,9 @@
 <script src="BC_catalogue.js"></script>
 <script src="BC_preconisations.js"></script>
 <script src="BC_carte.js"></script>
+<script src="BC_pdf.js"></script>
 <script src="BC_offre.js"></script>
+<script src="BC_fiche.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -413,6 +415,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       </button>
       <button class="btn btn-s btn-sm" onclick="offreOuvrir()" style="background:#e0f2fe;color:#075985">
         💶 Offre de prix (proposition au client)
+      </button>
+      <button class="btn btn-s btn-sm" onclick="ficheCommercialeGenerer()" style="margin-top:8px;background:#f3f4f6;color:#374151">
+        📄 Fiche commerciale (tarifs de vente)
       </button>
     </div>
   </div>
@@ -4062,10 +4067,10 @@ function genererPdfSession(signatureDataUrl, signataireNom, signatureTechDataUrl
     [cT.cap,cT.loc,cT.tv,cT.v2,cT.v3,cT.v4,cT.v5,cT.end].forEach(x=>doc.line(x,y,x,y+rowH));
     if(eq){
       const v=sessionVerifs[eq.id];
-      const agentEq=eq.donnees_specifiques?.['ef-agent']||eq.donnees_specifiques?.['e-agent']||'';
-      const desig=`${idx+1} - ${eq.types_equipements?.libelle||'—'}${agentEq?' '+agentEq:''}`;
-      const cap=eq.capacite_valeur?(eq.capacite_valeur+' '+(eq.capacite_unite||'')):'—';
-      const locLines=doc.splitTextToSize(eq.localisation||'—',26);
+      const agentEq=eqAgentBulletin(eq);
+      const desig=`${idx+1} - ${eqLibelleBulletin(eq)}${agentEq?' '+agentEq:''}`;
+      const cap=eqCapaciteBulletin(eq);
+      const locLines=doc.splitTextToSize(eqEmplacementBulletin(eq),26);
       doc.text(desig.slice(0,30),cT.desig+1,y+4.5);
       doc.text(cap.slice(0,12),cT.cap+1,y+4.5);
       doc.text(locLines,cT.loc+1,y+(locLines.length>1?2.5:4.5));
@@ -4277,6 +4282,11 @@ async function notifierSecretariatBon(pdfBlob,{titre,numero,detail}){
     }else{body.texte+='\n\n(PDF trop volumineux pour la pièce jointe : à consulter dans les bons à facturer.)'}
     const {data,error}=await db.functions.invoke('envoyer-mail',{body});
     if(error||!data?.envoye){console.warn('Mail secrétariat non envoyé',error||data);toast('⚠️ Mail au secrétariat non envoyé (le bon est bien enregistré)','err');return false}
+    // Le client reçoit aussi son bon d'intervention (et son contrat s'il l'a signé aujourd'hui)
+    if(/^bon d'intervention/i.test(titre)&&typeof venteMailClientBon==='function'){
+      const okC=await venteMailClientBon(pdfBlob,{titre,numero,client:c});
+      if(okC===true)toast('📨 Bon envoyé au client');else if(okC===false)toast('⚠️ Mail au client non envoyé','err');
+    }
     return true;
   }catch(e){console.warn('Mail secrétariat',e);toast('⚠️ Mail au secrétariat non envoyé (le bon est bien enregistré)','err');return false}
 }
@@ -5387,6 +5397,7 @@ async function _saveEquipTerrainInterne(){
     statut: document.getElementById('ef-statut').value,
     notes: ((estCreation&&motifSel&&motifSel.value?'['+motifSel.value+'] ':'')+document.getElementById('ef-notes').value.trim())||null,
     donnees_specifiques: getEFSpecificData(),
+    ...(estExtCreation?{capacite_valeur:uniteCapacite,capacite_unite:uniteUnite}:{}),
     historique: _historiqueEquipTerrain,
     updated_at: new Date().toISOString()
   };

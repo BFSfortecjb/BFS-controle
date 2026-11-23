@@ -133,7 +133,7 @@ async function geocoderAdresse(q){
   q=String(q||'').trim();if(!q)return null;
   if(_geoCacheDepl[q]!==undefined)return _geoCacheDepl[q];
   try{
-    const r=await fetch('https://api-adresse.data.gouv.fr/search/?limit=1&q='+encodeURIComponent(q));
+    const r=await fetch('https://data.geopf.fr/geocodage/search/?limit=1&q='+encodeURIComponent(q));
     const j=await r.json();const f=j.features&&j.features[0];
     return _geoCacheDepl[q]=f?{lon:f.geometry.coordinates[0],lat:f.geometry.coordinates[1]}:null;
   }catch(e){return null}

@@ -8,6 +8,7 @@
 const DEM_SECTIONS={C:'Industrie / ateliers',F:'BTP',G:'Commerce / garages',H:'Transport / logistique',I:'Hôtels / restaurants',J:'Information / communication',K:'Finance / assurance',L:'Immobilier',M:'Services spécialisés',N:'Services administratifs',P:'Enseignement',Q:'Santé / social',R:'Arts / loisirs',S:'Autres services'};
 const DEM_SECTIONS_DEFAUT=['C','G','I','M','N','P','Q','R','S'];
 const DEM_EFFECTIF={NN:'Non renseigné','00':'0 salarié','01':'1-2','02':'3-5','03':'6-9','11':'10-19','12':'20-49','21':'50-99','22':'100-199','31':'200-249','32':'250-499','41':'500-999','42':'1 000-1 999','51':'2 000-4 999','52':'5 000-9 999','53':'10 000+'};
+const DEM_MOTIFS={APSAD_R4R5:'APSAD R4/R5 à jour (contraint par son assureur)'};
 const DEM_STATUTS={a_demarcher:{lib:'À démarcher',col:'#2563eb'},visite:{lib:'Visité',col:'#d97706'},rdv:{lib:'RDV pris',col:'#16a34a'},offre:{lib:'Offre envoyée',col:'#7c3aed'},pas_interesse:{lib:'Pas intéressé',col:'#9ca3af'},client:{lib:'Client',col:'#111827'}};
 let _dem={map:null,couche:null,centre:null,prospects:[],suivi:{},exclus:{},clientsSirets:new Set()};
 const _escD=s=>String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
@@ -132,10 +133,13 @@ function demDessiner(){
 function demRendreListe(){
   const cnt={};_dem.prospects.forEach(p=>{const s=_dem.suivi[p.siret]?.statut||'a_demarcher';cnt[s]=(cnt[s]||0)+1});
   $('dem-filtre').innerHTML=`<button class="btn ${_dem.filtre?'btn-s':'btn-p'} btn-xs" onclick="demFiltrer('')">Tous (${_dem.prospects.length})</button>`+
-    Object.entries(DEM_STATUTS).filter(([k])=>k!=='client').map(([k,v])=>`<button class="btn ${_dem.filtre===k?'btn-p':'btn-s'} btn-xs" onclick="demFiltrer('${k}')"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.col}"></span> ${v.lib} (${cnt[k]||0})</button>`).join('');
-  const l=_dem.prospects.filter(p=>!_dem.filtre||(_dem.suivi[p.siret]?.statut||'a_demarcher')===_dem.filtre);
-  $('dem-liste').innerHTML=l.length?l.slice(0,150).map(p=>{const s=_dem.suivi[p.siret],st=s?.statut||'a_demarcher';return `<div style="background:#fff;border-radius:10px;border-left:5px solid ${DEM_STATUTS[st].col};padding:10px 12px;margin-bottom:8px">
-    <div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:14px">${_escD(p.nom)}</b><span style="font-size:12px;color:var(--txt-l);white-space:nowrap">${p.dist.toFixed(1)} km</span></div>
+    Object.entries(DEM_STATUTS).filter(([k])=>k!=='client').map(([k,v])=>`<button class="btn ${_dem.filtre===k?'btn-p':'btn-s'} btn-xs" onclick="demFiltrer('${k}')"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.col}"></span> ${v.lib} (${cnt[k]||0})</button>`).join('')+
+    `<button class="btn ${_dem.filtre==='erp'?'btn-p':'btn-s'} btn-xs" onclick="demFiltrer('erp')">🏢 ERP (${_dem.prospects.filter(p=>_dem.suivi[p.siret]?.erp).length})</button>`;
+  const l=_dem.prospects.filter(p=>!_dem.filtre||(_dem.filtre==='erp'?!!_dem.suivi[p.siret]?.erp:(_dem.suivi[p.siret]?.statut||'a_demarcher')===_dem.filtre));
+  $('dem-liste').innerHTML=l.length?l.slice(0,150).map(p=>{const s=_dem.suivi[p.siret],st=s?.statut||'a_demarcher';return `<div onclick="if(!event.target.closest('button,a'))demFiche('${p.siret}')" style="cursor:pointer;background:#fff;border-radius:10px;border-left:5px solid ${DEM_STATUTS[st].col};padding:10px 12px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:14px">${_escD(p.nom)}${s?.erp?' <span style="font-size:11px;background:#fef3c7;color:#92400e;border-radius:6px;padding:1px 6px;font-weight:700">ERP</span>':''}</b><span style="font-size:12px;color:var(--txt-l);white-space:nowrap">${p.dist.toFixed(1)} km</span></div>
+    ${s?.contact_tel||s?.contact_email?`<div style="font-size:12.5px;margin-top:2px">👤 ${_escD(s.contact_nom||'')} ${s.contact_tel?`<a href="tel:${_escD(s.contact_tel)}" style="color:#2563eb;font-weight:600">${_escD(s.contact_tel)}</a>`:''} ${s.contact_email?_escD(s.contact_email):''}</div>`:''}
+    ${s?.motif_refus?`<div style="font-size:12px;color:#6b7280;margin-top:2px">🚫 ${_escD(DEM_MOTIFS[s.motif_refus]||s.motif_refus)}</div>`:''}
     <div style="font-size:12.5px;color:var(--txt-l)">${_escD(p.adresse||'')}</div>
     <div style="font-size:12px;margin-top:2px">${_escD(DEM_SECTIONS[p.section]||'')} · NAF ${_escD(p.naf||'—')} · effectif ${_escD(DEM_EFFECTIF[p.effectif]||p.effectif)}</div>
     ${s?.prochain_rappel?`<div style="font-size:12px;margin-top:4px;color:${s.prochain_rappel<=demAujourdhui()?'#dc2626':'#2563eb'};font-weight:600">⏰ Rappel le ${new Date(s.prochain_rappel+'T12:00:00').toLocaleDateString('fr-FR')}${s.rappel_motif?' — '+_escD(s.rappel_motif):''}</div>`:''}
@@ -146,7 +150,7 @@ function demRendreListe(){
       <button class="btn ${st==='rdv'?'btn-p':'btn-s'} btn-xs" onclick="demStatut('${p.siret}','rdv')">RDV pris</button>
       <button class="btn ${st==='pas_interesse'?'btn-p':'btn-s'} btn-xs" onclick="demStatut('${p.siret}','pas_interesse')">Pas intéressé</button>
       <button class="btn btn-s btn-xs" onclick="demNote('${p.siret}')">📝 Note</button>
-      <button class="btn btn-p btn-xs" onclick="demFiche('${p.siret}')">📋 Fiche / rappel</button></div></div>`}).join('')+(l.length>150?`<div style="text-align:center;color:var(--txt-l);font-size:12px">… ${l.length-150} autres (réduis le rayon)</div>`:''):'<div style="text-align:center;color:var(--txt-l);padding:20px;font-size:13px">Aucun prospect</div>';
+      <button class="btn btn-p btn-xs" onclick="demFiche('${p.siret}')">📋 Fiche / offre</button></div></div>`}).join('')+(l.length>150?`<div style="text-align:center;color:var(--txt-l);font-size:12px">… ${l.length-150} autres (réduis le rayon)</div>`:''):'<div style="text-align:center;color:var(--txt-l);padding:20px;font-size:13px">Aucun prospect</div>';
 }
 function demFiltrer(f){_dem.filtre=f;demDessiner();demRendreListe()}
 async function demEnregistrer(siret,champs){
@@ -201,8 +205,8 @@ async function demSuiviOuvrir(){
 function demSuiviCarte(p){
   const st=DEM_STATUTS[p.statut]||DEM_STATUTS.a_demarcher,auj=demAujourdhui();
   const retard=p.prochain_rappel&&p.prochain_rappel<auj;
-  return `<div style="background:#fff;border-radius:10px;border-left:5px solid ${st.col};padding:10px 12px;margin-bottom:8px">
-    <div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:14px">${_escD(p.nom)}</b><span style="font-size:12px;color:${st.col};font-weight:600;white-space:nowrap">${st.lib}</span></div>
+  return `<div onclick="if(!event.target.closest('button,a'))demFiche('${p.siret}')" style="cursor:pointer;background:#fff;border-radius:10px;border-left:5px solid ${st.col};padding:10px 12px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:14px">${_escD(p.nom)}${p.erp?' <span style="font-size:11px;background:#fef3c7;color:#92400e;border-radius:6px;padding:1px 6px;font-weight:700">ERP</span>':''}</b><span style="font-size:12px;color:${st.col};font-weight:600;white-space:nowrap">${st.lib}</span></div>
     <div style="font-size:12.5px;color:var(--txt-l)">${_escD([p.adresse,p.ville].filter(Boolean).join(' — '))}</div>
     ${p.contact_nom||p.contact_tel?`<div style="font-size:13px;margin-top:3px">👤 ${_escD(p.contact_nom||'')} ${p.contact_tel?`· <a href="tel:${_escD(p.contact_tel)}" style="color:#2563eb;font-weight:600">${_escD(p.contact_tel)}</a>`:''}</div>`:''}
     ${p.prochain_rappel?`<div style="font-size:12.5px;margin-top:3px;font-weight:600;color:${retard?'#dc2626':'#2563eb'}">⏰ ${retard?'En retard — ':''}${demDateFr(p.prochain_rappel)}${p.rappel_motif?' · '+_escD(p.rappel_motif):''}</div>`:''}
@@ -240,6 +244,9 @@ async function demFiche(siret){
     <div style="background:#fff;border-radius:10px;padding:12px;margin-top:10px">
       <label style="${lab};margin-top:0">Statut</label>
       <select id="df-statut" style="${inp}">${Object.entries(DEM_STATUTS).filter(([k])=>k!=='client').map(([k,v])=>`<option value="${k}"${row.statut===k?' selected':''}>${v.lib}</option>`).join('')}</select>
+      <label style="display:flex;align-items:center;gap:8px;margin:10px 0 0;font-size:14px;font-weight:600"><input type="checkbox" id="df-erp" style="width:18px;height:18px"${row.erp?' checked':''}> 🏢 ERP (établissement recevant du public)</label>
+      <label style="${lab}">🚫 Motif de refus</label>
+      <select id="df-refus" style="${inp}"><option value="">— Aucun —</option>${Object.entries(DEM_MOTIFS).map(([k,v])=>`<option value="${k}"${row.motif_refus===k?' selected':''}>${v}</option>`).join('')}</select>
       <label style="${lab}">Contact (nom, fonction)</label><input id="df-cnom" style="${inp}" value="${_escD(row.contact_nom||'')}">
       <label style="${lab}">Téléphone</label><input id="df-ctel" type="tel" style="${inp}" value="${_escD(row.contact_tel||'')}">
       <label style="${lab}">Email</label><input id="df-cmail" type="email" style="${inp}" value="${_escD(row.contact_email||'')}">
@@ -247,7 +254,8 @@ async function demFiche(siret){
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"><button class="btn btn-s btn-xs" onclick="demRappelRapide(1)">Demain</button><button class="btn btn-s btn-xs" onclick="demRappelRapide(7)">+ 1 semaine</button><button class="btn btn-s btn-xs" onclick="demRappelRapide(30)">+ 1 mois</button><button class="btn btn-s btn-xs" onclick="demRappelRapide(0)">Aucun</button></div>
       <input id="df-rappel" type="date" style="${inp}" value="${row.prochain_rappel||''}">
       <input id="df-motif" style="${inp};margin-top:6px" placeholder="Motif du rappel (ex : relancer après l'offre)" value="${_escD(row.rappel_motif||'')}">
-      <button class="btn btn-p" style="width:100%;margin-top:12px;padding:11px" onclick="demFicheSauver('${siret}')">💾 Enregistrer la fiche</button></div>
+      <button class="btn btn-p" style="width:100%;margin-top:12px;padding:11px" onclick="demFicheSauver('${siret}')">💾 Enregistrer la fiche</button>
+      ${typeof offreOuvrir==='function'&&typeof currentClient!=='undefined'?`<button class="btn btn-s" style="width:100%;margin-top:8px;padding:11px;background:#ede9fe;color:#5b21b6" onclick="demFicheOffre('${siret}')">💶 Faire une offre de prix</button>`:''}</div>
     <div style="background:#fff;border-radius:10px;padding:12px;margin-top:10px">
       <div style="font-weight:700;margin-bottom:6px">Noter une action</div>
       <select id="df-type" style="${inp}">${Object.entries(DEM_ACTIONS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
@@ -260,10 +268,48 @@ async function demFiche(siret){
 function demRappelRapide(n){$('df-rappel').value=n?demJoursApres(n):''}
 function demFicheFermer(){const ov=$('dem-fiche');if(ov)ov.remove();
   if(_dem.vue==='suivi')demSuiviOuvrir();else if($('dem-liste')){demDessiner();demRendreListe()}}
-async function demFicheSauver(siret){
-  const ok=await demEnregistrer(siret,{statut:$('df-statut').value,contact_nom:$('df-cnom').value.trim()||null,contact_tel:$('df-ctel').value.trim()||null,contact_email:$('df-cmail').value.trim()||null,
+async function demFicheEnregistrer(siret){
+  const refus=$('df-refus').value||null;
+  // un motif de refus place automatiquement le prospect en « Pas intéressé »
+  const statut=refus?'pas_interesse':$('df-statut').value;
+  const ok=await demEnregistrer(siret,{statut,erp:$('df-erp').checked,motif_refus:refus,contact_nom:$('df-cnom').value.trim()||null,contact_tel:$('df-ctel').value.trim()||null,contact_email:$('df-cmail').value.trim()||null,
     prochain_rappel:$('df-rappel').value||null,rappel_motif:$('df-motif').value.trim()||null});
-  if(ok){_dem.suivi[siret].statut=$('df-statut').value;toast('Fiche enregistrée ✓');await demFiche(siret)}
+  if(ok)_dem.suivi[siret].statut=statut;
+  return ok;
+}
+async function demFicheSauver(siret){
+  if(await demFicheEnregistrer(siret)){toast('Fiche enregistrée ✓');await demFiche(siret)}
+}
+// Après la création d'une offre : le prospect correspondant passe en « Offre envoyée » (ou « Client » si le contrat est signé)
+async function demApresOffre(client,contratSigne){
+  if(!client?.siret)return;
+  const {data:pr}=await db.from('prospects').select('siret,statut').eq('siret',client.siret).maybeSingle();
+  if(!pr)return;
+  const statut=contratSigne?'client':'offre';
+  const {error}=await db.from('prospects').update({statut,derniere_action:new Date().toISOString()}).eq('siret',client.siret);
+  if(error)return;
+  if(_dem.suivi?.[client.siret])_dem.suivi[client.siret].statut=statut;
+  await demAjouterAction(client.siret,'offre',contratSigne?'Offre signée + contrat de maintenance':'Offre de prix créée');
+}
+// Offre de prix depuis la fiche : le prospect devient (ou retrouve) une fiche client, puis l'écran d'offre s'ouvre
+async function demFicheOffre(siret){
+  if(!(await demFicheEnregistrer(siret)))return;
+  const r=_dem.suivi[siret]||{};
+  const p=_dem.prospects?.find(x=>x.siret===siret)||{};
+  let {data:c}=await db.from('clients').select('*,agences(nom,code)').eq('siret',siret).eq('actif',true).limit(1).maybeSingle();
+  if(!c){
+    const ins={agence_id:ME?.agence_id||null,raison_sociale:r.nom||p.nom,adresse:r.adresse||p.adresse||null,ville:r.ville||p.ville||null,siret,
+      contact_nom:r.contact_nom||null,contact_telephone:r.contact_tel||null,contact_email:r.contact_email||null,lat:r.lat??p.lat??null,lng:r.lng??p.lng??null,actif:true};
+    const {data,error}=await db.from('clients').insert(ins).select('*,agences(nom,code)').single();
+    if(error){toast('Création du client impossible : '+error.message,'err');return}
+    c=data;
+  }
+  if(r.contact_email&&!c.contact_email)c.contact_email=r.contact_email;
+  if(r.contact_nom&&!c.contact_nom)c.contact_nom=r.contact_nom;
+  if(r.contact_tel&&!c.contact_telephone)c.contact_telephone=r.contact_tel;
+  currentClient=c;
+  const ov=$('dem-fiche');if(ov)ov.remove();
+  offreOuvrir();
 }
 async function demFicheAction(siret){
   const t=$('df-type').value,r=$('df-resume').value.trim();

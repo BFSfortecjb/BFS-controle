@@ -636,7 +636,7 @@ async function regenererBon(bonId,sansConfirm){
 
   // Récupérer les vérifications de la session avec TOUS les champs équipement
   const {data:verifs}=await db.from('verifications')
-    .select('*,equipements(numero_identification,localisation,marque,modele,capacite_valeur,capacite_unite,type_equipement_code,donnees_specifiques,types_equipements(libelle,icone))')
+    .select('*,equipements(numero_identification,localisation,emplacement,marque,modele,capacite_valeur,capacite_unite,type_equipement_code,donnees_specifiques,types_equipements(libelle,icone))')
     .eq('session_id',bon.session_id)
     .order('created_at');
 
@@ -732,11 +732,11 @@ async function regenererBon(bonId,sansConfirm){
     [cB.cap,cB.loc,cB.tv,cB.v2,cB.v3,cB.v4,cB.v5,cB.end].forEach(x=>doc.line(x,y,x,y+rowH));
     if(v){
       const eq=v.equipements;
-      const agent=eq?.donnees_specifiques?.['ef-agent']||eq?.donnees_specifiques?.['e-agent']||'';
-      const desig=`${idx+1} - ${eq?.types_equipements?.libelle||'—'}${agent?' '+agent:''}`;
-      const cap=eq?.capacite_valeur?(eq.capacite_valeur+' '+(eq.capacite_unite||'')):'—';
+      const agent=eqAgentBulletin(eq);
+      const desig=`${idx+1} - ${eqLibelleBulletin(eq)}${agent?' '+agent:''}`;
+      const cap=eqCapaciteBulletin(eq);
       // Adresse emplacement sur 2 lignes si besoin
-      const locLines=doc.splitTextToSize(eq?.localisation||'—',42);
+      const locLines=doc.splitTextToSize(eqEmplacementBulletin(eq),42);
       doc.text(desig.slice(0,38),cB.desig+1,y+4.5);
       doc.text(cap.slice(0,12),cB.cap+1,y+4.5);
       doc.text(locLines,cB.loc+1,y+(locLines.length>1?2.5:4.5));
@@ -826,7 +826,7 @@ async function rapportComplet(bonId){
   const {data:sess}=await db.from('sessions_controle').select('numero').eq('id',bon.session_id).single();
   const numSession=sess?.numero||bon.numero_session||'—';
   const {data:verifs}=await db.from('verifications')
-    .select('*,equipements(numero_identification,localisation,etage_zone,marque,modele,capacite_valeur,capacite_unite,date_fabrication,date_mise_en_service,type_equipement_code,donnees_specifiques,types_equipements(libelle,icone))')
+    .select('*,equipements(numero_identification,localisation,emplacement,etage_zone,marque,modele,capacite_valeur,capacite_unite,date_fabrication,date_mise_en_service,type_equipement_code,donnees_specifiques,types_equipements(libelle,icone))')
     .eq('session_id',bon.session_id).order('created_at');
   if(!verifs||!verifs.length){toast('Aucune vérification trouvée pour cette session','err');return}
   const {data:allRes}=await db.from('resultats_controle')
@@ -880,8 +880,8 @@ async function rapportComplet(bonId){
     doc.setFont('helvetica','normal');doc.setFontSize(8.5);
     const infos=[
       `Marque/Modèle : ${[eq.marque,eq.modele].filter(Boolean).join(' ')||'—'}`,
-      eq.capacite_valeur?`Capacité : ${eq.capacite_valeur} ${eq.capacite_unite||''}`:null,
-      `Emplacement : ${eq.localisation||'—'}${eq.etage_zone?' / '+eq.etage_zone:''}`,
+      eqCapaciteBulletin(eq)!=='—'?`Capacité : ${eqCapaciteBulletin(eq)}`:null,
+      `Emplacement : ${eqEmplacementBulletin(eq)}${eq.etage_zone?' / '+eq.etage_zone:''}`,
       eq.date_fabrication?`Fabrication : ${fmt(eq.date_fabrication)}`:null,
       v.date_prochaine_echeance?`Prochaine échéance : ${fmt(v.date_prochaine_echeance)}`:null
     ].filter(Boolean).join('   ·   ');
@@ -1045,3 +1045,22 @@ function historiqueUnitePDF(){
 }
 
 console.log('✓ pdf.js chargé');
+
+// ---- Bulletins : lecture tolérante des données d'un équipement ----
+// Les équipements créés depuis le terrain stockent la capacité dans donnees_specifiques (clés « ef-… »),
+// l'emplacement dans « emplacement » et n'ont pas toujours le libellé du type chargé : on lit toutes les sources.
+function eqDonnee(eq,cle){const d=eq?.donnees_specifiques||{};return d['ef-'+cle]??d['e-'+cle]??''}
+function eqAgentBulletin(eq){return eqDonnee(eq,'agent')||''}
+function eqLibelleBulletin(eq){
+  if(eq?.types_equipements?.libelle)return eq.types_equipements.libelle;
+  const c=eq?.type_equipement_code;
+  const lst=[(typeof typesEquipTerrain!=='undefined'?typesEquipTerrain:null),(typeof typesEquip!=='undefined'?typesEquip:null)];
+  for(const l of lst){const t=Array.isArray(l)&&l.find(x=>x.code===c);if(t&&t.libelle)return t.libelle}
+  return c?String(c).charAt(0).toUpperCase()+String(c).slice(1).replace(/_/g,' '):'—';
+}
+function eqCapaciteBulletin(eq){
+  if(eq?.capacite_valeur)return eq.capacite_valeur+' '+(eq.capacite_unite||'');
+  const cap=eqDonnee(eq,'cap');if(cap==='')return '—';
+  return cap+' '+(eqDonnee(eq,'unite')||'');
+}
+function eqEmplacementBulletin(eq){return eq?.localisation||eq?.emplacement||'—'}

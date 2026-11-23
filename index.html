@@ -545,6 +545,8 @@ tr:hover td{background:#fafafa}
           <button class="btn btn-s" id="btn-import-tarifs" onclick="document.getElementById('tarifs-file').click()">⬆ Import Excel</button>
           <input type="file" id="tarifs-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importTarifsExcel(this)">
           <button class="btn btn-s" onclick="exportTarifsXLS()">⬇ Excel</button>
+          <button class="btn btn-s" onclick="ficheCommercialeGenerer()" title="PDF des tarifs de vente à remettre aux prospects">📄 Fiche commerciale</button>
+          <button class="btn btn-s" onclick="ficheCommercialeGenerer({galaxy:true})" title="Fiche interne avec les codes Galaxy ; les articles absents de Galaxy sont signalés « À CRÉER »">📄 Fiche + codes Galaxy</button>
           <button class="btn btn-s" id="btn-augm-tarifs" onclick="augmentationTarifs()">📈 Augmentation %</button>
           <button class="btn btn-s" onclick="ouvrirGrilleContrat()">📐 Grille contrats</button>
           <button class="btn btn-p" id="btn-add-tarif" onclick="openTarifModal()">+ Tarif</button>
@@ -1228,6 +1230,7 @@ tr:hover td{background:#fafafa}
 <script src="BC_location.js"></script>
 <script src="BC_carte.js"></script>
 <script src="BC_offre.js"></script>
+<script src="BC_fiche.js"></script>
 <script src="BC_backup.js">
 // BFS-VL-1f3ca19b
 console.log('%c© 2026 Jérémy Bizeul — Vigie-lance, pour BFS Prévention.', 'color:#c9a227; font-weight:bold; font-size:12px;');

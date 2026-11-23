@@ -178,7 +178,7 @@ async function offreEnregistrer(o,{notifier}={}){
 const OFFRE_ARTICLE_CONTRAT={extincteur:'VAP-POUDRE',baes:'BAES-VERIF',alarme_t4:'MAINT-ALARME-T4'};
 const OFFRE_EMAIL_FACTURATION='contact@bfs-prevention.fr';
 function _offreBlobB64(blob){return new Promise((ok,ko)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]||'');r.onerror=ko;r.readAsDataURL(blob)})}
-async function offreNotifierFacturation(o,client,techNom,blob){
+async function offreNotifierFacturation(o,client,techNom,blob,extra={}){
   try{
     if(o.mail_facturation_le)return true; // déjà envoyé : jamais deux fois
     const cl=client||{};
@@ -188,17 +188,20 @@ async function offreNotifierFacturation(o,client,techNom,blob){
     const g=l=>l.code_galaxy||gx[l.code]||null;
     const ligneT=l=>`- ${l.designation} — ${l.quantite} x ${_eurO(l.pu_ht)} HT = ${_eurO((+l.quantite||0)*(+l.pu_ht||0))} HT — Code Galaxy : ${l.code?(g(l)||'NON RENSEIGNÉ (à compléter dans les tarifs)'):'ligne libre (hors tarif) : article à choisir'}`;
     const lignes=o.lignes||[],t=offreTotaux(lignes);
-    let txt=`Bonjour,\n\nL'offre de prix ${o.numero} est ACCEPTÉE par le client : merci de la facturer via Galaxy.\n\nClient : ${cl.raison_sociale||'—'}${cl.ville?' ('+cl.ville+')':''}${cl.siret?'\nSIRET client : '+cl.siret:''}\nOffre du ${fmt(o.date_offre)}${o.signataire_nom?' — signée par '+o.signataire_nom:''}${o.signe_le?' le '+fmt(o.signe_le):''}\nProposée par : ${techNom||'—'}${o.objet?'\nObjet : '+o.objet:''}\n`;
+    let txt=`Bonjour Lesli,\n\nL'offre de prix ${o.numero} est ACCEPTÉE par le client${extra.contrat?' et son contrat de maintenance est SIGNÉ':''} : merci de la facturer via Galaxy.\n\nClient : ${cl.raison_sociale||'—'}${cl.ville?' ('+cl.ville+')':''}${cl.siret?'\nSIRET client : '+cl.siret:''}\nOffre du ${fmt(o.date_offre)}${o.signataire_nom?' — signée par '+o.signataire_nom:''}${o.signe_le?' le '+fmt(o.signe_le):''}\nProposée par : ${techNom||'—'}${o.objet?'\nObjet : '+o.objet:''}\n`;
     if(lignes.length)txt+=`\nPRESTATIONS ET FOURNITURES — à facturer :\n${lignes.map(ligneT).join('\n')}\nTotal : ${_eurO(t.ht)} HT / ${_eurO(t.ttc)} TTC\n`;
     const c=o.contrat_propose;
     if(c&&Array.isArray(c.lignes)&&c.lignes.length){
       const np=OFFRE_PASSAGES[c.periodicite]||1;
-      txt+=`\nCONTRAT DE MAINTENANCE${c.reprise?' (reprise d\'un parc / contrat existant)':''} — contrat distinct à établir et à faire signer. Il n'est pas facturé en tant que tel : on facture les articles de vérification / maintenance, par site, à chaque visite.\nDurée ${c.duree} an(s) — ${np} visite(s) par an. À facturer à chaque visite :\n${c.lignes.map(l=>{const ac=OFFRE_ARTICLE_CONTRAT[l.type],ar=ac?(tf||[]).find(t=>t.code===ac):null;const visite=_r2((+l.quantite||0)*(+l.pu_annuel||0)/np);return `- ${l.libelle||l.type} : ${l.quantite} appareil(s) x ${_eurO(l.pu_annuel)} HT/an = ${_eurO(visite)} HT par visite — Code Galaxy : ${ar&&ar.code_galaxy?ar.code_galaxy+' ('+ac+')':'à renseigner (article vérification de ce type d\'équipement)'}`}).join('\n')}\nTotal annuel : ${_eurO(offreContratTotal(c))} HT. Frais de déplacement : ${c.deplacement||'en sus à chaque passage, au tarif en vigueur'}.\n`;
+      txt+=`\nCONTRAT DE MAINTENANCE${c.reprise?' (reprise d\'un parc / contrat existant)':''} — ${extra.contrat?'contrat n° '+(extra.contrat.numero_contrat||'')+' signé sur place par le client (PDF joint)':'contrat distinct à établir et à faire signer'}. Il n'est pas facturé en tant que tel : on facture les articles de vérification / maintenance, par site, à chaque visite.\nDurée ${c.duree} an(s) — ${np} visite(s) par an. À facturer à chaque visite :\n${c.lignes.map(l=>{const ac=OFFRE_ARTICLE_CONTRAT[l.type],ar=ac?(tf||[]).find(t=>t.code===ac):null;const visite=_r2((+l.quantite||0)*(+l.pu_annuel||0)/np);return `- ${l.libelle||l.type} : ${l.quantite} appareil(s) x ${_eurO(l.pu_annuel)} HT/an = ${_eurO(visite)} HT par visite — Code Galaxy : ${ar&&ar.code_galaxy?ar.code_galaxy+' ('+ac+')':'à renseigner (article vérification de ce type d\'équipement)'}`}).join('\n')}\nTotal annuel : ${_eurO(offreContratTotal(c))} HT. Frais de déplacement : ${c.deplacement||'en sus à chaque passage, au tarif en vigueur'}.\n`;
     }
     if(o.notes)txt+=`\nRemarques : ${o.notes}\n`;
-    txt+=`\nL'offre signée est en pièce jointe.\n\nBFS Contrôle`;
+    txt+=`\n${extra.clientMailOk===true?'Le client a reçu ses documents par mail ('+extra.email+').':extra.clientMailOk===false?'⚠️ Le mail au client n\'a pas pu être envoyé : à lui transmettre.':'Aucune adresse mail client : les documents ne lui ont pas été envoyés par mail.'}\n\nL'offre signée${extra.contrat?' et le contrat signé sont':' est'} en pièce jointe.\n\nBFS Contrôle`;
     const body={a:[OFFRE_EMAIL_FACTURATION],sujet:`BFS — Offre acceptée à facturer ${o.numero} — ${cl.raison_sociale||''}`.trim(),texte:txt};
-    if(blob&&blob.size<=15*1024*1024)body.pieces_jointes=[{nom:`Offre_${o.numero}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await _offreBlobB64(blob)}];
+    const pjs=[];
+    if(blob&&blob.size<=15*1024*1024)pjs.push({nom:`Offre_${o.numero}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await _offreBlobB64(blob)});
+    if(extra.contratBlob&&extra.contratBlob.size<=15*1024*1024)pjs.push({nom:`Contrat_${extra.contrat?.numero_contrat||'maintenance'}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await _offreBlobB64(extra.contratBlob)});
+    if(pjs.length)body.pieces_jointes=pjs;
     const {data,error}=await db.functions.invoke('envoyer-mail',{body});
     if(error||!data?.envoye){console.warn('Mail facturation offre non envoyé',error||data);return false}
     await db.from('offres').update({mail_facturation_le:new Date().toISOString()}).eq('id',o.id);
@@ -206,6 +209,71 @@ async function offreNotifierFacturation(o,client,techNom,blob){
     return true;
   }catch(e){console.warn('Mail facturation offre',e);return false}
 }
+
+
+// ---------- Vente sur place : contrat signé + mails client / Lesli ----------
+const VENTE_EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+async function venteCreerContrat(offre,client,{debut,sig,nom}){
+  const c=offre.contrat_propose;if(!c||!Array.isArray(c.lignes)||!c.lignes.length)return null;
+  const duree=+c.duree||1,d0=debut||new Date().toISOString().slice(0,10);
+  const df=new Date(d0+'T12:00:00');df.setFullYear(df.getFullYear()+duree);
+  let numero=null;{const {data,error}=await db.rpc('prochain_numero_contrat');if(!error&&data)numero=data}
+  if(!numero){const pre='CT-'+new Date().getFullYear()+'-';const {data:d2}=await db.from('contrats').select('numero_contrat').like('numero_contrat',pre+'%');
+    let max=0;(d2||[]).forEach(x=>{const n=parseInt((x.numero_contrat||'').slice(pre.length),10);if(n>max)max=n});numero=pre+String(max+1).padStart(3,'0')}
+  const lignes=c.lignes.map(l=>{const g=(typeof _of!=='undefined'&&_of.grille||[]).find(x=>x.type_equipement_code===l.type&&x.periodicite===c.periodicite);
+    return {type:l.type,marque:'',modele:'',quantite:+l.quantite||1,pu:g?+g.prix_ref_5ans:_r2((+l.pu_annuel||0)*duree/5),pu_source:'grille',resume:''}});
+  const total=_r2(c.lignes.reduce((t,l)=>t+(+l.quantite||0)*(+l.pu_annuel||0),0));
+  const {data:ct,error}=await db.from('contrats').insert({
+    client_id:client.id,agence_id:client.agence_id||ME.agence_id||null,numero_contrat:numero,type_contrat:duree>1?'pluriannuel':'annuel',
+    types_couverts:[...new Set(lignes.map(l=>l.type))],lignes,date_debut:d0,date_fin:df.toISOString().slice(0,10),duree_engagement:duree,
+    tarif_annuel:total||null,periodicite_visite:c.periodicite,tarif_verifie_le:new Date().toISOString(),lignes_hors_grille:0,statut:'actif',
+    notes:`Contrat signé sur place — issu de l'offre ${offre.numero}${c.reprise?' (reprise de parc / contrat existant)':''}`,
+    frais_deplacement_mode:'facture',zone_deplacement:null,frais_deplacement_km:null,frais_deplacement_ht:null,
+    signature_data:sig,signataire_nom:nom,signe_le:new Date().toISOString()
+  }).select('*').single();
+  if(error)throw error;
+  await db.from('offres').update({contrat_id:ct.id}).eq('id',offre.id);
+  // PDF du contrat (exemplaire d'origine, figé à la signature)
+  let blob=null;
+  try{
+    if(typeof construireContratPDF==='function'){
+      const res=await construireContratPDF(ct.id);
+      if(res){const ab=res.doc.output('arraybuffer');blob=new Blob([ab],{type:'application/pdf'});
+        if(typeof figerPdfContratSigne==='function')try{await figerPdfContratSigne(ct.id,ab)}catch(e){console.warn('Archivage contrat',e)}}
+    }
+  }catch(e){console.warn('PDF contrat',e)}
+  return {contrat:ct,blob};
+}
+async function venteMailClient(offre,client,{email,contrat,offreBlob,contratBlob,agenceNom}){
+  if(!email||!VENTE_EMAIL_RE.test(email))return null;
+  try{
+    const pjs=[{nom:`Offre_${offre.numero}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await _offreBlobB64(offreBlob)}];
+    if(contratBlob)pjs.push({nom:`Contrat_${contrat.numero_contrat||'maintenance'}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await _offreBlobB64(contratBlob)});
+    const texte=`Bonjour,\n\nMerci pour votre confiance. Vous trouverez ci-joint :\n- votre offre de prix n° ${offre.numero}, signée${contrat?'\n- votre contrat de maintenance n° '+contrat.numero_contrat+', signé':''}.\n\nNous restons à votre disposition pour toute question.\n\nCordialement,\n${agenceNom||'BFS'}\ncontact@bfs-prevention.fr`;
+    const {data,error}=await db.functions.invoke('envoyer-mail',{body:{a:[email],sujet:`${agenceNom||'BFS'} — Votre offre n° ${offre.numero}${contrat?' et votre contrat n° '+contrat.numero_contrat:''}`,texte,pieces_jointes:pjs}});
+    if(error||!data?.envoye){console.warn('Mail client non envoyé',error||data);return false}
+    await db.from('offres').update({mail_client_le:new Date().toISOString(),email_client:email}).eq('id',offre.id);
+    return true;
+  }catch(e){console.warn('Mail client',e);return false}
+}
+// Mail du bon d'intervention au client (appelé par le terrain à la validation du bon, avec le contrat signé le jour même s'il existe)
+async function venteMailClientBon(pdfBlob,{titre,numero,client}){
+  try{
+    const email=(client&&client.contact_email||'').trim();if(!email||!VENTE_EMAIL_RE.test(email)||!pdfBlob)return null;
+    const pjs=[{nom:`${titre}_${numero||Date.now()}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await _offreBlobB64(pdfBlob)}];
+    let ctTxt='';
+    try{ // contrat signé aujourd'hui pour ce client : joint au même mail
+      const since=new Date(Date.now()-24*3600*1000).toISOString();
+      const {data:cts}=await db.from('contrats').select('id,numero_contrat,signe_le').eq('client_id',client.id).gte('signe_le',since).order('signe_le',{ascending:false}).limit(1);
+      if(cts&&cts[0]&&typeof pdfContratFige==='function'){const ab=await pdfContratFige(cts[0].id);
+        if(ab){pjs.push({nom:`Contrat_${cts[0].numero_contrat||'maintenance'}.pdf`.replace(/[^\w.-]+/g,'_'),base64:arrayBufferVersB64Vente(ab)});ctTxt=`\n- votre contrat de maintenance n° ${cts[0].numero_contrat}, signé`}}
+    }catch(e){console.warn('Contrat joint au bon',e)}
+    const texte=`Bonjour,\n\nVous trouverez ci-joint, suite à notre intervention du ${new Date().toLocaleDateString('fr-FR')} :\n- votre ${titre.toLowerCase()}${numero?' n° '+numero:''}${ctTxt}.\n\nNous restons à votre disposition pour toute question.\n\nCordialement,\nBFS\ncontact@bfs-prevention.fr`;
+    const {data,error}=await db.functions.invoke('envoyer-mail',{body:{a:[email],sujet:`BFS — Votre ${titre.toLowerCase()}${numero?' n° '+numero:''}`,texte,pieces_jointes:pjs}});
+    return !(error||!data?.envoye);
+  }catch(e){console.warn('Mail client bon',e);return false}
+}
+function arrayBufferVersB64Vente(buf){const b=new Uint8Array(buf);let s='';for(let i=0;i<b.length;i+=0x8000)s+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));return btoa(s)}
 
 async function offreMajStatut(id,statut){
   const {error}=await db.from('offres').update({statut,updated_at:new Date().toISOString()}).eq('id',id);
@@ -222,6 +290,7 @@ async function offreOuvrir(){
     db.from('tarifs').select('id,code,designation,prix_ht,unite,categorie,code_galaxy').eq('actif',true).order('categorie').order('designation'),
     db.from('grille_tarifs_contrat').select('*').eq('actif',true),
     db.from('types_equipements').select('code,libelle,icone').eq('actif',true)]);
+  if(typeof typesEquip==='undefined')window.typesEquip=ty.data||[];
   _of={lignes:[],tarifs:t.data||[],grille:g.data||[],types:ty.data||[],contrat:{actif:false,duree:5,periodicite:'annuelle',lignes:[]},sig:null};
   offreRendre();offreChargerListe();
 }
@@ -233,7 +302,7 @@ function offreRendre(){
   const root=$('of-root');if(!root)return;
   const inp='padding:9px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px;width:100%';
   const t=offreTotaux(_of.lignes),c=_of.contrat,ta=offreContratTotal(c);
-  const gardeVals={objet:$('of-objet')?.value||'',valid:$('of-valid')?.value||'30',notes:$('of-notes')?.value||'',nom:$('of-nom')?.value||'',q:$('of-q')?.value||''};
+  const gardeVals={objet:$('of-objet')?.value||'',valid:$('of-valid')?.value||'30',notes:$('of-notes')?.value||'',nom:$('of-nom')?.value||'',q:$('of-q')?.value||'',mail:$('of-mail')?.value??((typeof currentClient!=='undefined'&&currentClient&&currentClient.contact_email)||''),debut:$('of-debut')?.value||new Date().toISOString().slice(0,10)};
   const resultats=gardeVals.q.trim().length>=2?_of.tarifs.filter(x=>(x.designation+' '+x.code).toLowerCase().includes(gardeVals.q.trim().toLowerCase())).slice(0,8):[];
   root.innerHTML=`
   <div style="padding:14px">
@@ -282,10 +351,16 @@ function offreRendre(){
     <input id="of-nom" style="${inp};margin-bottom:6px" placeholder="Nom du signataire" value="${_escO(gardeVals.nom)}">
     <canvas id="of-sig" style="width:100%;height:130px;border:2px dashed #cbd5e1;border-radius:10px;background:#fff;touch-action:none"></canvas>
     <button class="btn btn-s btn-xs" onclick="offreEffacerSig()" style="margin-top:4px">Effacer la signature</button>
+    ${c.actif&&c.lignes.length?`<div style="font-weight:700;margin:16px 0 4px">Signature du contrat de maintenance <span style="font-weight:400;color:var(--txt-l)">(facultatif — pour que le client signe son contrat tout de suite)</span></div>
+      <label style="font-size:12px;font-weight:600">Début du contrat</label><input id="of-debut" type="date" style="${inp};margin-bottom:6px" value="${_escO(gardeVals.debut)}">
+      <canvas id="of-sig2" style="width:100%;height:130px;border:2px dashed #fdba74;border-radius:10px;background:#fff;touch-action:none"></canvas>
+      <button class="btn btn-s btn-xs" onclick="offreEffacerSig('2')" style="margin-top:4px">Effacer la signature du contrat</button>`:''}
+    <label style="font-size:12px;font-weight:600;display:block;margin-top:14px">✉️ Email du client <span style="font-weight:400;color:var(--txt-l)">(il reçoit l'offre${c.actif&&c.lignes.length?' et le contrat':''} signé${c.actif&&c.lignes.length?'s':''} dès la validation)</span></label>
+    <input id="of-mail" type="email" style="${inp}" placeholder="client@entreprise.fr" value="${_escO(gardeVals.mail)}">
     <button class="btn btn-p" style="width:100%;margin-top:16px;padding:14px" id="of-btn" onclick="offreValider()">📄 Créer l'offre de prix</button>
     <div id="of-liste" style="margin-top:22px"></div>
   </div>`;
-  offreInitSig();
+  offreInitSig();if($('of-sig2'))offreInitPad('of-sig2','2');
   const ct=$('of-ctype');if(ct)ct.onchange=()=>{if(ct.value)offreAjouterTypeContrat(ct.value)};
 }
 function offreObjetType(k){
@@ -319,19 +394,20 @@ function offreAjouterTypeContrat(code){
 function offreMajLigneContrat(i,v){const l=_of.contrat.lignes[i];if(l){l.quantite=Math.max(1,parseInt(v)||1);offreRendre()}}
 function offreSupprContrat(i){_of.contrat.lignes.splice(i,1);offreRendre()}
 // Signature client (pavé tactile simple)
-function offreInitSig(){
-  const cv=$('of-sig');if(!cv)return;
+function offreInitSig(){offreInitPad('of-sig','')}
+function offreInitPad(cvId,k){
+  const cv=$(cvId);if(!cv)return;
   const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;cv.width=Math.max(1,r.width*dpr);cv.height=Math.max(1,r.height*dpr);
   const ctx=cv.getContext('2d');ctx.scale(dpr,dpr);ctx.lineWidth=2.5;ctx.lineCap='round';ctx.strokeStyle='#1a1a2e';
-  const st=_of.sig={cv,ctx,has:!!(_of.sigData),drawing:false};
-  if(_of.sigData){const im=new Image();im.onload=()=>ctx.drawImage(im,0,0,r.width,r.height);im.src=_of.sigData}
+  const st=_of['sig'+k]={cv,ctx,has:!!(_of['sigData'+k]),drawing:false};
+  if(_of['sigData'+k]){const im=new Image();im.onload=()=>ctx.drawImage(im,0,0,r.width,r.height);im.src=_of['sigData'+k]}
   const pos=e=>{const b=cv.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return{x:t.clientX-b.left,y:t.clientY-b.top}};
   const start=e=>{e.preventDefault();st.drawing=true;st.has=true;const p=pos(e);ctx.beginPath();ctx.moveTo(p.x,p.y)};
   const move=e=>{if(!st.drawing)return;e.preventDefault();const p=pos(e);ctx.lineTo(p.x,p.y);ctx.stroke()};
-  const end=()=>{st.drawing=false;if(st.has)_of.sigData=cv.toDataURL('image/png')};
+  const end=()=>{st.drawing=false;if(st.has)_of['sigData'+k]=cv.toDataURL('image/png')};
   cv.ontouchstart=start;cv.ontouchmove=move;cv.ontouchend=end;cv.onmousedown=start;cv.onmousemove=move;cv.onmouseup=end;cv.onmouseleave=end;
 }
-function offreEffacerSig(){_of.sigData=null;offreInitSig();if(_of.sig){_of.sig.has=false;_of.sig.ctx.clearRect(0,0,9999,9999)}}
+function offreEffacerSig(k=''){_of['sigData'+k]=null;offreInitPad(k==='2'?'of-sig2':'of-sig',k);if(_of['sig'+k]){_of['sig'+k].has=false;_of['sig'+k].ctx.clearRect(0,0,9999,9999)}}
 async function offreValider(){
   const lignes=_of.lignes.filter(l=>l.quantite>0);
   const c=_of.contrat;
@@ -339,7 +415,11 @@ async function offreValider(){
   if(!lignes.length&&!contratOk){toast('Ajoute au moins une ligne ou un contrat','err');return}
   if(c.actif&&c.lignes.some(l=>l.pu_annuel==null)&&!confirm('Certains types du contrat n\'ont pas de prix dans la grille (affichés « hors grille »). Continuer sans leur prix ?'))return;
   const signe=!!(_of.sig&&_of.sig.has);const nom=$('of-nom').value.trim();
-  if(signe&&!nom){toast('Nom du signataire obligatoire pour une offre signée','err');return}
+  const signeContrat=!!(contratOk&&_of.sig2&&_of.sig2.has);
+  if((signe||signeContrat)&&!nom){toast('Nom du signataire obligatoire pour une offre signée','err');return}
+  if(signeContrat&&!signe){toast("Le client doit aussi signer l'offre (première signature)",'err');return}
+  const emailClient=($('of-mail')?.value||'').trim();
+  if(emailClient&&!VENTE_EMAIL_RE.test(emailClient)){toast("L'adresse mail du client semble incorrecte",'err');return}
   const btn=$('of-btn');btn.disabled=true;btn.textContent='⏳ Création…';
   try{
     await offreAssurerLogo();
@@ -348,13 +428,29 @@ async function offreValider(){
       contrat_propose:contratOk?{duree:c.duree,periodicite:c.periodicite,reprise:!!c.reprise,lignes:c.lignes.filter(l=>l.pu_annuel!=null),total_annuel_ht:offreContratTotal(c)}:null,
       signature_data:signe?_of.sigData||_of.sig.cv.toDataURL('image/png'):null,signataire_nom:signe?nom:null};
     const saved=await offreEnregistrer(o);
-    const doc=construireOffrePDF(saved,currentClient,currentClient.agences?.code||ME.agences?.code,((ME.prenom||'')+' '+(ME.nom||'')).trim());
+    const tech=((ME.prenom||'')+' '+(ME.nom||'')).trim();
+    const doc=construireOffrePDF(saved,currentClient,currentClient.agences?.code||ME.agences?.code,tech);
     const blob=doc.output('blob');
     try{await db.storage.from('bons-intervention').upload(`offre_${saved.numero}.pdf`,blob,{contentType:'application/pdf',upsert:true})}catch(e){console.warn('Upload offre',e)}
-    if(saved.statut==='acceptee'){const okM=await offreNotifierFacturation(saved,currentClient,((ME.prenom||'')+' '+(ME.nom||'')).trim(),blob);toast(okM?'📨 Mail de facturation envoyé au secrétariat':'⚠️ Mail de facturation non envoyé — à relancer depuis la liste des offres',okM?'ok':'err')}
+    let ctRes=null;
+    if(signeContrat){
+      try{ctRes=await venteCreerContrat(saved,currentClient,{debut:$('of-debut')?.value||null,sig:_of.sigData2||_of.sig2.cv.toDataURL('image/png'),nom})}
+      catch(e){console.warn('Contrat',e);toast('⚠️ Offre créée mais contrat non créé : '+(e.message||e),'err')}
+    }
+    if(saved.statut==='acceptee'){
+      const agNom=(OFFRE_AGENCES[currentClient.agences?.code||ME.agences?.code]||OFFRE_AGENCES.briec).nom;
+      let okC=null;
+      if(emailClient){
+        if(!currentClient.contact_email)try{await db.from('clients').update({contact_email:emailClient}).eq('id',currentClient.id);currentClient.contact_email=emailClient}catch(e){}
+        okC=await venteMailClient(saved,currentClient,{email:emailClient,contrat:ctRes?.contrat,offreBlob:blob,contratBlob:ctRes?.blob,agenceNom:agNom});
+      }
+      const okM=await offreNotifierFacturation(saved,currentClient,tech,blob,{contrat:ctRes?.contrat,contratBlob:ctRes?.blob,clientMailOk:okC,email:emailClient});
+      toast((okC?'📨 Documents envoyés au client. ':emailClient?'⚠️ Mail client non envoyé. ':'')+(okM?'📨 Secrétariat prévenu pour facturation.':'⚠️ Mail secrétariat non envoyé — relance depuis la liste des offres.'),okM&&okC!==false?'ok':'err');
+    }
     try{offreTelecharger(blob,`BFS_offre_${saved.numero}.pdf`)}catch(e){console.warn('Téléchargement offre',e)}
-    toast('Offre '+saved.numero+' créée ✓');
-    _of.lignes=[];_of.contrat={actif:false,duree:5,periodicite:'annuelle',lignes:[],reprise:false};_of.sigData=null;offreRendre();offreChargerListe();
+    toast('Offre '+saved.numero+' créée ✓'+(ctRes?' — contrat '+ctRes.contrat.numero_contrat+' signé ✓':''));
+    try{if(typeof demApresOffre==='function')demApresOffre(currentClient,!!ctRes)}catch(e){console.warn('CRM',e)}
+    _of.lignes=[];_of.contrat={actif:false,duree:5,periodicite:'annuelle',lignes:[],reprise:false};_of.sigData=null;_of.sigData2=null;offreRendre();offreChargerListe();
   }catch(e){toast('Erreur : '+(e.message||e),'err');btn.disabled=false;btn.textContent='📄 Créer l\'offre de prix'}
 }
 function offreTelecharger(blob,nom){
@@ -379,7 +475,10 @@ async function offreFacturerId(id){
   await offreAssurerLogo();
   const tech=o.profils?((o.profils.prenom||'')+' '+(o.profils.nom||'')).trim():'';
   const doc=construireOffrePDF(o,o.clients,o.clients?.agences?.code,tech);
-  const okM=await offreNotifierFacturation(o,o.clients,tech,doc.output('blob'));
+  let extra={};
+  if(o.contrat_id){try{const {data:ct}=await db.from('contrats').select('id,numero_contrat').eq('id',o.contrat_id).single();
+    if(ct){extra.contrat=ct;if(typeof pdfContratFige==='function'){const ab=await pdfContratFige(ct.id);if(ab)extra.contratBlob=new Blob([ab],{type:'application/pdf'})}}}catch(e){}}
+  const okM=await offreNotifierFacturation(o,o.clients,tech,doc.output('blob'),extra);
   toast(okM?'📨 Mail de facturation envoyé au secrétariat':'⚠️ Mail de facturation non envoyé',okM?'ok':'err');
   if($('of-liste'))offreChargerListe();if($('tbl-offres'))offresListeBureau();
 }

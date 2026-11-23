@@ -11,6 +11,11 @@
 <script src="BC_catalogue.js"></script>
 <script src="BC_carte.js"></script>
 <script src="BC_demarchage.js"></script>
+<script src="BC_fiche.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="BC_pdf.js"></script>
+<script src="BC_offre.js"></script>
 <style>
 :root{
   --rouge:#C0392B;--rouge-s:#96251d;--rouge-l:#fdf2f1;
@@ -230,6 +235,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <button class="btn btn-p" style="width:100%;padding:14px" onclick="ouvrirNouveauClient()">➕ Nouveau client</button>
       <button class="btn btn-p" style="width:100%;padding:14px" onclick="ouvrirNouveauContrat()">📋 Nouveau contrat</button>
       <button class="btn btn-s" style="width:100%;padding:14px;background:#e0f2fe;color:#075985" onclick="demarchageOuvrir('prospection')">🎯 Démarchage (prospects à proximité)</button>
+      <div style="background:#e0f2fe;border-radius:12px;padding:12px">
+        <div style="font-weight:700;color:#075985;margin-bottom:6px">💶 Offre de prix &amp; contrat sur place</div>
+        <select id="com-offre-client" style="width:100%;padding:10px;border:1.5px solid #bae6fd;border-radius:8px;font-size:14px;background:#fff;margin-bottom:8px"><option value="">Choisir le client…</option></select>
+        <button class="btn btn-p" style="width:100%;padding:12px" onclick="comOffreOuvrir()">Faire une offre / vendre / signer</button></div>
+      <button class="btn btn-s" style="width:100%;padding:14px;background:#f3f4f6;color:#374151" onclick="ficheCommercialeGenerer()">📄 Fiche commerciale (tarifs de vente)</button>
+      <button class="btn btn-s" style="width:100%;padding:14px;background:#f3f4f6;color:#374151" onclick="ficheCommercialeGenerer({galaxy:true})">📄 Fiche interne + codes Galaxy</button>
       <button class="btn btn-s" style="width:100%;padding:14px;background:#fef3c7;color:#92400e" onclick="demarchageOuvrir('suivi')">📞 Suivi &amp; rappels<span id="com-rappels-n"></span></button>
     </div>
     <div class="sec">Contrats</div>
@@ -239,6 +250,15 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     </div>
     <div id="com-contrats"><div class="loading"><div class="spin spin-dark"></div></div></div>
   </div>
+</div>
+
+<!-- ===== OFFRE DE PRIX ===== -->
+<div class="screen" id="s-offre">
+  <div class="hdr">
+    <button class="hdr-back" onclick="goTo('s-commercial')">←</button>
+    <h1>Offre de prix</h1>
+  </div>
+  <div class="content" id="of-root"></div>
 </div>
 
 <!-- ===== DÉMARCHAGE ===== -->
@@ -695,8 +715,22 @@ function setFiltreContrats(f){
   $('fct-agence').style.cssText='flex:1;font-size:12px;padding:7px';
   ouvrirCommercial();
 }
+let currentClient=null;
+async function comOffreChargerClients(){
+  const sel=$('com-offre-client');if(!sel||sel.dataset.ok)return;
+  const {data}=await db.from('clients').select('id,raison_sociale,ville').eq('actif',true).order('raison_sociale');
+  sel.innerHTML='<option value="">Choisir le client…</option>'+(data||[]).map(c=>`<option value="${c.id}">${(c.raison_sociale||'').replace(/</g,'&lt;')}${c.ville?' — '+c.ville.replace(/</g,'&lt;'):''}</option>`).join('');
+  sel.dataset.ok='1';
+}
+async function comOffreOuvrir(){
+  const id=$('com-offre-client').value;if(!id){toast('Choisis d\'abord le client','err');return}
+  const {data:c}=await db.from('clients').select('*,agences(nom,code)').eq('id',id).single();
+  if(!c){toast('Client introuvable','err');return}
+  currentClient=c;offreOuvrir();
+}
 async function ouvrirCommercial(){
   goTo('s-commercial');
+  comOffreChargerClients();
   if(typeof demRappelsBadge==='function')demRappelsBadge();
   const el=$('com-contrats');
   el.innerHTML='<div class="loading"><div class="spin spin-dark"></div></div>';
