@@ -255,6 +255,7 @@ function buildNav(){
   html+=navA('offres','💶','Offres de prix');
   html+=navA('stock','📦','Stock & commandes'); // accessible à tous les rôles (écriture limitée à leur agence par la RLS)
   if(role==='admin'||role==='secretariat'){
+    html+=navA('prospection','🎯','Bilan prospection');
     html+=navA('bons','📝','Bons d\'intervention');
     html+=navA('tarifs','💶','Tarifs');
     html+=navA('utilisateurs','👥','Utilisateurs');
@@ -293,7 +294,7 @@ function navigate(page){
     profil:'Mon profil',clients:'Clients',equipements:'Équipements',verifications:'Vérifications',
     contrats:'Contrats',planning:'Planning',utilisateurs:'Utilisateurs','config-points':'Points de contrôle',
     commandes:'Commandes à prévoir',bons:'Bons d\'intervention',audit:'Journal d\'audit',stock:'Stock pièces',tarifs:'Base tarifaire',
-    sauvegarde:'Sauvegarde',locations:'Locations',carte:'Carte & tournées',offres:'Offres de prix'
+    sauvegarde:'Sauvegarde',locations:'Locations',carte:'Carte & tournées',offres:'Offres de prix',prospection:'Bilan de prospection'
   };
   $('page-title').textContent=titles[page]||page;
   if(page==='dash-admin')loadDashAdmin();
@@ -314,6 +315,7 @@ function navigate(page){
   if(page==='locations')loadLocations();
   if(page==='carte')carteMonter('carte-root',{choixAgence:true,choixTech:true,hauteur:480});
   if(page==='offres')offresListeBureau();
+  if(page==='prospection')prospectionBilanMonter();
   if(page==='tarifs')loadTarifs();
   if(page==='sauvegarde')loadSauvegarde();
 }

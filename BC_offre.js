@@ -517,3 +517,59 @@ function offresRendreBureau(){
     <td><div class="ia"><button class="btn btn-s btn-xs" onclick="offreTelechargerId('${o.id}')" title="PDF">📄</button>
     ${o.statut==='envoyee'?`<button class="btn btn-s btn-xs" onclick="offreChangerStatut('${o.id}','acceptee')" title="Marquer acceptée">✅</button><button class="btn btn-s btn-xs" onclick="offreChangerStatut('${o.id}','refusee')" title="Marquer refusée">❌</button>`:''}${o.statut==='acceptee'?(o.mail_facturation_le?`<span title="Mail de facturation envoyé le ${fmt(o.mail_facturation_le)}" style="font-size:12px">📨 ✓</span>`:`<button class="btn btn-p btn-xs" onclick="offreFacturerId('${o.id}')" title="Envoyer au secrétariat pour facturation">📨</button>`):''}</div></td></tr>`}).join('')}</tbody></table>`;
 }
+
+// =====================================================================
+// SUIVI DE MES OFFRES (technicien : ses offres ; admin / secrétariat : toutes)
+// Envoyée → à relancer après 7 jours, acceptée / refusée, expirée. Utilisable depuis l'outil commercial et le terrain.
+// =====================================================================
+let _osv={liste:[],filtre:'actives'};
+async function offresSuiviOuvrir(){
+  let ov=document.getElementById('of-suivi');if(ov)ov.remove();
+  ov=document.createElement('div');ov.id='of-suivi';
+  ov.style.cssText='position:fixed;inset:0;background:#f3f4f6;z-index:9000;overflow:auto;-webkit-overflow-scrolling:touch';
+  ov.innerHTML=`<div style="background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;padding:12px 14px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:2"><button onclick="document.getElementById('of-suivi').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 12px;border-radius:8px;font-size:16px;cursor:pointer">←</button><b style="font-size:16px">💶 Suivi de mes offres</b></div><div id="osv-corps" style="padding:12px"><div class="loading"><div class="spin spin-dark"></div></div></div>`;
+  document.body.appendChild(ov);
+  let q=db.from('offres').select('*,clients(raison_sociale,ville,contact_telephone,contact_email),profils(prenom,nom)').order('created_at',{ascending:false}).limit(300);
+  if(ME&&ME.role==='technicien')q=q.eq('technicien_id',ME.id);
+  const {data,error}=await q;
+  if(error){document.getElementById('osv-corps').innerHTML='<div style="padding:16px;color:#6b7280">Erreur : '+_escO(error.message)+'</div>';return}
+  _osv.liste=data||[];_osv.filtre='actives';offresSuiviRendre();
+}
+function _osvStatut(o){return offreEstExpiree(o)?'expiree':o.statut}
+function _osvAge(o){return Math.floor((Date.now()-new Date((o.date_offre||o.created_at).toString().slice(0,10)+'T12:00:00'))/86400000)}
+function offresSuiviFiltre(f){_osv.filtre=f;offresSuiviRendre()}
+function offresSuiviRendre(){
+  const L=_osv.liste;const st=o=>_osvStatut(o);
+  const aRelancer=o=>st(o)==='envoyee'&&_osvAge(o)>=7;
+  const compte={actives:L.filter(o=>['envoyee','brouillon'].includes(st(o))).length,relancer:L.filter(aRelancer).length,acceptee:L.filter(o=>st(o)==='acceptee').length,refusee:L.filter(o=>st(o)==='refusee').length,expiree:L.filter(o=>st(o)==='expiree').length,toutes:L.length};
+  const somme=l=>l.reduce((s,o)=>s+(+o.total_ht||0)+(o.contrat_propose?offreContratTotal(o.contrat_propose):0),0);
+  const f=_osv.filtre;
+  const vue=L.filter(o=>f==='toutes'?true:f==='actives'?['envoyee','brouillon'].includes(st(o)):f==='relancer'?aRelancer(o):st(o)===f);
+  const chip=(k,l)=>`<button class="btn ${f===k?'btn-p':'btn-s'} btn-xs" onclick="offresSuiviFiltre('${k}')">${l} (${compte[k]})</button>`;
+  const colSt={envoyee:'#7c3aed',acceptee:'#16a34a',refusee:'#9ca3af',expiree:'#d97706',brouillon:'#2563eb'};
+  document.getElementById('osv-corps').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div style="background:#fff;border-radius:10px;padding:10px"><div style="font-size:11px;color:#6b7280">En attente de réponse</div><div style="font-size:20px;font-weight:800;color:#7c3aed">${_eurO(somme(L.filter(o=>st(o)==='envoyee')))}</div></div>
+      <div style="background:#fff;border-radius:10px;padding:10px"><div style="font-size:11px;color:#6b7280">Acceptées</div><div style="font-size:20px;font-weight:800;color:#16a34a">${_eurO(somme(L.filter(o=>st(o)==='acceptee')))}</div></div></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${chip('actives','En cours')}${chip('relancer','⏰ À relancer')}${chip('acceptee','Acceptées')}${chip('refusee','Refusées')}${chip('expiree','Expirées')}${chip('toutes','Toutes')}</div>
+    ${vue.length?vue.map(o=>{const s=st(o),age=_osvAge(o),c=o.clients||{};
+      const fin=offreValiditeFin(o);const reste=Math.ceil((fin-new Date(new Date().toDateString()))/86400000);
+      return `<div style="background:#fff;border-radius:10px;border-left:5px solid ${colSt[s]||'#9ca3af'};padding:10px 12px;margin-bottom:8px;font-size:13px">
+        <div style="display:flex;justify-content:space-between;gap:8px"><b>${_escO(c.raison_sociale||'—')}</b><span style="white-space:nowrap">${OFFRE_STATUTS[s]||s}</span></div>
+        <div style="color:#6b7280">${_escO(o.numero)} · ${fmt(o.date_offre)} · il y a ${age} j${c.ville?' · '+_escO(c.ville):''}${ME&&ME.role!=='technicien'&&o.profils?' · '+_escO((o.profils.prenom||'')+' '+(o.profils.nom||'')):''}</div>
+        <div style="margin-top:2px"><b>${_eurO(o.total_ht)}</b> HT${o.contrat_propose?' · contrat '+_eurO(offreContratTotal(o.contrat_propose))+'/an':''}${s==='envoyee'?` · <span style="color:${reste<=7?'#dc2626':'#6b7280'}">${reste>=0?'valable encore '+reste+' j':'expirée'}</span>`:''}</div>
+        ${s==='envoyee'&&age>=7?'<div style="color:#b45309;font-weight:600;margin-top:2px">⏰ À relancer (envoyée il y a '+age+' jours)</div>':''}
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-s btn-xs" onclick="offreTelechargerId('${o.id}')">📄 PDF</button>
+        ${c.contact_telephone?`<a class="btn btn-s btn-xs" style="text-decoration:none" href="tel:${_escO(c.contact_telephone)}">📞 Appeler</a>`:''}
+        ${c.contact_email?`<a class="btn btn-s btn-xs" style="text-decoration:none" href="mailto:${_escO(c.contact_email)}?subject=${encodeURIComponent('Offre de prix '+o.numero)}">✉️ Relancer</a>`:''}
+        ${o.statut==='envoyee'?`<button class="btn btn-s btn-xs" onclick="offresSuiviStatut('${o.id}','acceptee')">✅ Acceptée</button><button class="btn btn-s btn-xs" onclick="offresSuiviStatut('${o.id}','refusee')">❌ Refusée</button>`:''}</div></div>`}).join(''):'<div style="text-align:center;color:#6b7280;padding:24px">Aucune offre dans cette catégorie</div>'}`;
+}
+async function offresSuiviStatut(id,s){
+  if(s==='acceptee'&&!confirm("Marquer l'offre comme acceptée ? Le secrétariat sera prévenu pour la facturation."))return;
+  if(await offreMajStatut(id,s)){
+    const o=_osv.liste.find(x=>x.id===id);if(o)o.statut=s;
+    toast('Statut mis à jour');
+    if(s==='acceptee')await offreFacturerId(id);
+    offresSuiviRendre();
+  }
+}
