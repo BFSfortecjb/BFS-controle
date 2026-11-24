@@ -15,7 +15,7 @@ const _escD=s=>String(s??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'
 
 // ---------- Recherche ----------
 async function demRechercher(centre,{rayonKm=3,sections=DEM_SECTIONS_DEFAUT,employeurSeul=false,inclureEI=false,maxPages=6}={}){
-  const exclus={opposition:0,ei:0,clients:0};const out=new Map();
+  const exclus={opposition:0,ei:0,clients:0,sansPosition:0};const out=new Map();const aGeocoder=[];
   for(let page=1;page<=maxPages;page++){
     const p=new URLSearchParams({lat:centre.lat,long:centre.lon,radius:rayonKm,per_page:25,page,etat_administratif:'A'});
     if(sections.length&&sections.length<Object.keys(DEM_SECTIONS).length)p.set('section_activite_principale',sections.join(','));
@@ -24,10 +24,19 @@ async function demRechercher(centre,{rayonKm=3,sections=DEM_SECTIONS_DEFAUT,empl
     const j=await r.json();
     for(const e of j.results||[]){
       if(e.opposition_diffusion_commerciale===true){exclus.opposition++;continue}
-      if(e.complements?.est_entrepreneur_individuel&&!inclureEI){exclus.ei++;continue}
+      // Entrepreneur individuel : écarté seulement s'il ressemble à un domicile (pas d'enseigne, pas d'employeur).
+      // Une pharmacie, une crêperie… (enseigne ou salariés) reste proposée.
+      const estEI=!!e.complements?.est_entrepreneur_individuel;
       for(const t of e.matching_etablissements||[]){
         if(t.etat_administratif!=='A')continue;
-        const lat=parseFloat(t.latitude),lng=parseFloat(t.longitude);if(isNaN(lat)||isNaN(lng))continue;
+        if(estEI&&!inclureEI&&!((t.liste_enseignes&&t.liste_enseignes.length)||t.nom_commercial||t.caractere_employeur==='O')){exclus.ei++;continue}
+        let lat=parseFloat(t.latitude),lng=parseFloat(t.longitude);
+        if(isNaN(lat)||isNaN(lng)){
+          // Pas de coordonnées dans la base officielle : on tentera de géocoder l'adresse plus bas
+          if(t.adresse&&!_dem.clientsSirets.has(t.siret)&&aGeocoder.length<40)aGeocoder.push({e,t});
+          else exclus.sansPosition++;
+          continue;
+        }
         if(employeurSeul&&t.caractere_employeur!=='O')continue;
         if(_dem.clientsSirets.has(t.siret)){exclus.clients++;continue}
         const d=carteKm(centre,{lat,lon:lng});if(d>rayonKm*1.05)continue;
@@ -38,6 +47,24 @@ async function demRechercher(centre,{rayonKm=3,sections=DEM_SECTIONS_DEFAUT,empl
     if(page>=(j.total_pages||1))break;
     await new Promise(r=>setTimeout(r,180));
   }
+  // Établissements sans coordonnées : géocodage de leur adresse (puis filtre sur le rayon)
+  for(let i=0;i<aGeocoder.length;i+=5){
+    await Promise.all(aGeocoder.slice(i,i+5).map(async({e,t})=>{
+      const g=await geocoderAdresse(t.adresse);
+      if(!g){exclus.sansPosition++;return}
+      const d=carteKm(centre,{lat:g.lat,lon:g.lon});if(d>rayonKm*1.05)return;
+      if(employeurSeul&&t.caractere_employeur!=='O')return;
+      out.set(t.siret,{siret:t.siret,nom:(t.liste_enseignes&&t.liste_enseignes[0])||e.nom_complet,raison:e.nom_complet,adresse:t.adresse,ville:t.libelle_commune,
+        lat:g.lat,lng:g.lon,naf:t.activite_principale||e.activite_principale,section:e.section_activite_principale,effectif:t.tranche_effectif_salarie||e.tranche_effectif_salarie||'NN',dist:d});
+    }));
+  }
+  // Prospects ajoutés à la main (absents de la base officielle ou introuvables)
+  try{
+    const dLat=rayonKm/111,dLng=rayonKm/(111*Math.cos(centre.lat*Math.PI/180));
+    const {data:man}=await db.from('prospects').select('siret,nom,adresse,ville,lat,lng,naf,effectif').like('siret','MAN-%')
+      .gte('lat',centre.lat-dLat).lte('lat',centre.lat+dLat).gte('lng',centre.lon-dLng).lte('lng',centre.lon+dLng);
+    (man||[]).forEach(m=>{const dist=carteKm(centre,{lat:m.lat,lon:m.lng});if(dist<=rayonKm*1.05)out.set(m.siret,{siret:m.siret,nom:m.nom,adresse:m.adresse,ville:m.ville,lat:m.lat,lng:m.lng,naf:m.naf,section:null,effectif:m.effectif||'NN',dist,manuel:true})});
+  }catch(e){console.warn('Prospects manuels',e)}
   return {liste:[...out.values()].sort((a,b)=>a.dist-b.dist),exclus};
 }
 async function demChargerSuivi(liste){
@@ -82,6 +109,7 @@ async function demVueProspection(){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px;font-size:12.5px">${Object.entries(DEM_SECTIONS).map(([k,v])=>`<label><input type="checkbox" class="dem-sec" value="${k}"${DEM_SECTIONS_DEFAUT.includes(k)?' checked':''}> ${_escD(v)}</label>`).join('')}</div>
       <label style="display:block;margin-top:8px;font-size:12.5px"><input type="checkbox" id="dem-ei"> inclure les entrepreneurs individuels <span style="color:var(--txt-l)">(souvent un domicile)</span></label></details>
     <button class="btn btn-p" style="width:100%;padding:12px" id="dem-btn" onclick="demLancer()">🎯 Chercher des prospects</button>
+    <button class="btn btn-s" style="width:100%;margin-top:8px" onclick="demAjoutManuel()">➕ Ajouter un prospect à la main</button>
     <div id="dem-info" style="font-size:12.5px;color:var(--txt-l);margin:10px 0"></div>
     <div id="dem-map" style="height:340px;border-radius:10px;border:1px solid #e5e7eb;background:#f3f4f6"></div>
     <div id="dem-filtre" style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0"></div>
@@ -110,7 +138,8 @@ async function demLancer(){
     _dem.prospects=res.liste;_dem.exclus=res.exclus;_dem.rayon=rayon;_dem.filtre='';
     await demChargerSuivi(res.liste);
     info.innerHTML=`<b>${res.liste.length}</b> prospect${res.liste.length>1?'s':''} à moins de ${rayon} km de ${_escD(centre.nom)}`+
-      ((res.exclus.opposition+res.exclus.ei+res.exclus.clients)?` — écartés : ${res.exclus.clients} client(s) existant(s), ${res.exclus.opposition} opposé(s) à la prospection commerciale, ${res.exclus.ei} entrepreneur(s) individuel(s)`:'');
+      ((res.exclus.opposition+res.exclus.ei+res.exclus.clients+res.exclus.sansPosition)?` — écartés : ${res.exclus.clients} client(s) existant(s), ${res.exclus.opposition} opposé(s) à la prospection commerciale, ${res.exclus.ei} entrepreneur(s) individuel(s) sans enseigne, ${res.exclus.sansPosition} sans adresse localisable`:'')+
+      `<br><button class="btn btn-s btn-xs" style="margin-top:6px" onclick="demAjoutManuel()">➕ Un commerce manque ? L'ajouter à la main</button>`;
     demDessiner();demRendreListe();
   }catch(e){info.textContent='Erreur : '+(e.message||e)}
   btn.disabled=false;btn.textContent='🎯 Chercher des prospects';
@@ -151,6 +180,53 @@ function demRendreListe(){
       <button class="btn ${st==='pas_interesse'?'btn-p':'btn-s'} btn-xs" onclick="demStatut('${p.siret}','pas_interesse')">Pas intéressé</button>
       <button class="btn btn-s btn-xs" onclick="demNote('${p.siret}')">📝 Note</button>
       <button class="btn btn-p btn-xs" onclick="demFiche('${p.siret}')">📋 Fiche / offre</button></div></div>`}).join('')+(l.length>150?`<div style="text-align:center;color:var(--txt-l);font-size:12px">… ${l.length-150} autres (réduis le rayon)</div>`:''):'<div style="text-align:center;color:var(--txt-l);padding:20px;font-size:13px">Aucun prospect</div>';
+}
+// ---------- Ajout manuel d'un prospect (commerce absent de la recherche) ----------
+function demAjoutManuel(){
+  const inp='padding:10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:15px;width:100%;box-sizing:border-box;margin-bottom:8px';
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:14px';
+  ov.innerHTML=`<div style="background:#fff;border-radius:14px;padding:16px;max-width:420px;width:100%;max-height:92vh;overflow:auto">
+    <div style="font-weight:800;font-size:16px;margin-bottom:10px">➕ Ajouter un prospect</div>
+    <input id="am-nom" placeholder="Nom du commerce (ex : Crêperie …)" style="${inp}">
+    <input id="am-act" placeholder="Activité (ex : crêperie, pharmacie)" style="${inp}">
+    <select id="am-pos" style="${inp}" onchange="document.getElementById('am-adr').style.display=this.value==='adresse'?'block':'none'">
+      <option value="gps">📍 Je suis devant (ma position)</option><option value="adresse">🔎 Saisir une adresse</option><option value="centre">🎯 Centre de la recherche</option></select>
+    <input id="am-adr" placeholder="Adresse, ville" style="${inp};display:none">
+    <select id="am-st" style="${inp}">${Object.entries(DEM_STATUTS).filter(([k])=>k!=='client').map(([k,v])=>`<option value="${k}">${v.lib}</option>`).join('')}</select>
+    <textarea id="am-notes" placeholder="Note (facultatif)" rows="2" style="${inp}"></textarea>
+    <div style="display:flex;gap:8px"><button class="btn btn-s" style="flex:1" onclick="this.closest('div[style*=fixed]').remove()">Annuler</button>
+    <button class="btn btn-p" style="flex:1" id="am-ok" onclick="demAjoutManuelValider()">Ajouter</button></div></div>`;
+  document.body.appendChild(ov);
+}
+async function demAjoutManuelValider(){
+  const nom=$('am-nom').value.trim();if(!nom){toast('Nom obligatoire','err');return}
+  const btn=$('am-ok');btn.disabled=true;btn.textContent='⏳…';
+  try{
+    let lat,lng,adresse=null,ville=null;const pos=$('am-pos').value;
+    if(pos==='gps'){
+      const p=await new Promise((ok,ko)=>navigator.geolocation?navigator.geolocation.getCurrentPosition(x=>ok(x.coords),()=>ko(new Error('Position indisponible : autorise la localisation ou saisis une adresse')),{timeout:10000,enableHighAccuracy:true}):ko(new Error('Géolocalisation non disponible')));
+      lat=p.latitude;lng=p.longitude;
+    }else if(pos==='adresse'){
+      const a=$('am-adr').value.trim();if(!a)throw new Error('Saisis une adresse');
+      const g=await geocoderAdresse(a);if(!g)throw new Error('Adresse introuvable');lat=g.lat;lng=g.lon;adresse=a;
+    }else{
+      if(!_dem.centre)throw new Error("Lance d'abord une recherche");lat=_dem.centre.lat;lng=_dem.centre.lon;
+    }
+    const siret='MAN-'+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,5).toUpperCase();
+    const row={siret,nom,adresse,ville,lat,lng,naf:$('am-act').value.trim()||null,effectif:'NN',type_cible:'professionnel',statut:$('am-st').value,notes:$('am-notes').value.trim()||null,
+      agence_id:ME?.agence_id||null,technicien_id:ME?.id||null,derniere_action:new Date().toISOString()};
+    const {error}=await db.from('prospects').insert(row);
+    if(error)throw new Error(error.message);
+    toast('Prospect ajouté ✓');
+    document.querySelector('div[style*="position:fixed"] #am-ok')?.closest('div[style*="position:fixed"]')?.remove();
+    if(_dem.centre){
+      const dist=carteKm(_dem.centre,{lat,lon:lng});
+      _dem.prospects.push({siret,nom,adresse,ville,lat,lng,naf:row.naf,section:null,effectif:'NN',dist,manuel:true});
+      _dem.prospects.sort((a,b)=>a.dist-b.dist);_dem.suivi[siret]={...row};
+      demDessiner();demRendreListe();
+    }
+  }catch(e){toast(e.message||String(e),'err');btn.disabled=false;btn.textContent='Ajouter'}
 }
 function demFiltrer(f){_dem.filtre=f;demDessiner();demRendreListe()}
 async function demEnregistrer(siret,champs){
@@ -296,9 +372,10 @@ async function demFicheOffre(siret){
   if(!(await demFicheEnregistrer(siret)))return;
   const r=_dem.suivi[siret]||{};
   const p=_dem.prospects?.find(x=>x.siret===siret)||{};
-  let {data:c}=await db.from('clients').select('*,agences(nom,code)').eq('siret',siret).eq('actif',true).limit(1).maybeSingle();
+  const estMan=String(siret).startsWith('MAN-');
+  let {data:c}=estMan?{data:null}:await db.from('clients').select('*,agences(nom,code)').eq('siret',siret).eq('actif',true).limit(1).maybeSingle();
   if(!c){
-    const ins={agence_id:ME?.agence_id||null,raison_sociale:r.nom||p.nom,adresse:r.adresse||p.adresse||null,ville:r.ville||p.ville||null,siret,
+    const ins={agence_id:ME?.agence_id||null,raison_sociale:r.nom||p.nom,adresse:r.adresse||p.adresse||null,ville:r.ville||p.ville||null,siret:estMan?null:siret,
       contact_nom:r.contact_nom||null,contact_telephone:r.contact_tel||null,contact_email:r.contact_email||null,lat:r.lat??p.lat??null,lng:r.lng??p.lng??null,actif:true};
     const {data,error}=await db.from('clients').insert(ins).select('*,agences(nom,code)').single();
     if(error){toast('Création du client impossible : '+error.message,'err');return}
