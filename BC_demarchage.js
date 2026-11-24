@@ -303,6 +303,7 @@ async function demFicheOffre(siret){
     const {data,error}=await db.from('clients').insert(ins).select('*,agences(nom,code)').single();
     if(error){toast('Création du client impossible : '+error.message,'err');return}
     c=data;
+    await affecterNouveauClient(c.id);
   }
   if(r.contact_email&&!c.contact_email)c.contact_email=r.contact_email;
   if(r.contact_nom&&!c.contact_nom)c.contact_nom=r.contact_nom;

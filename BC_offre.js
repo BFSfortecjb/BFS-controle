@@ -257,16 +257,20 @@ async function venteMailClient(offre,client,{email,contrat,offreBlob,contratBlob
   }catch(e){console.warn('Mail client',e);return false}
 }
 // Mail du bon d'intervention au client (appelé par le terrain à la validation du bon, avec le contrat signé le jour même s'il existe)
-async function venteMailClientBon(pdfBlob,{titre,numero,client}){
+async function venteMailClientBon(pdfBlob,{titre,numero,client,docs,sansContrat}){
   try{
     const email=(client&&client.contact_email||'').trim();if(!email||!VENTE_EMAIL_RE.test(email)||!pdfBlob)return null;
     const pjs=[{nom:`${titre}_${numero||Date.now()}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await _offreBlobB64(pdfBlob)}];
-    let ctTxt='';
-    try{ // contrat signé aujourd'hui pour ce client : joint au même mail
+    let tot=pdfBlob.size,docTxt='';
+    for(const [nom,b,lib] of [['Bulletin',docs?.bulletin,'bulletin d\'intervention'],['Bulletin_detaille',docs?.detail,'bulletin détaillé de vérification']]){
+      if(b&&tot+b.size<=15*1024*1024){tot+=b.size;pjs.push({nom:`${nom}_${numero||Date.now()}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await _offreBlobB64(b)});docTxt+=`\n- votre ${lib}`}
+    }
+    let ctTxt=docTxt;
+    if(!sansContrat)try{ // contrat signé aujourd'hui pour ce client : joint au même mail
       const since=new Date(Date.now()-24*3600*1000).toISOString();
       const {data:cts}=await db.from('contrats').select('id,numero_contrat,signe_le').eq('client_id',client.id).gte('signe_le',since).order('signe_le',{ascending:false}).limit(1);
       if(cts&&cts[0]&&typeof pdfContratFige==='function'){const ab=await pdfContratFige(cts[0].id);
-        if(ab){pjs.push({nom:`Contrat_${cts[0].numero_contrat||'maintenance'}.pdf`.replace(/[^\w.-]+/g,'_'),base64:arrayBufferVersB64Vente(ab)});ctTxt=`\n- votre contrat de maintenance n° ${cts[0].numero_contrat}, signé`}}
+        if(ab){pjs.push({nom:`Contrat_${cts[0].numero_contrat||'maintenance'}.pdf`.replace(/[^\w.-]+/g,'_'),base64:arrayBufferVersB64Vente(ab)});ctTxt+=`\n- votre contrat de maintenance n° ${cts[0].numero_contrat}, signé`}}
     }catch(e){console.warn('Contrat joint au bon',e)}
     const texte=`Bonjour,\n\nVous trouverez ci-joint, suite à notre intervention du ${new Date().toLocaleDateString('fr-FR')} :\n- votre ${titre.toLowerCase()}${numero?' n° '+numero:''}${ctTxt}.\n\nNous restons à votre disposition pour toute question.\n\nCordialement,\nBFS\ncontact@bfs-prevention.fr`;
     const {data,error}=await db.functions.invoke('envoyer-mail',{body:{a:[email],sujet:`BFS — Votre ${titre.toLowerCase()}${numero?' n° '+numero:''}`,texte,pieces_jointes:pjs}});

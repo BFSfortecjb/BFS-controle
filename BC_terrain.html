@@ -1002,8 +1002,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="fg"><label>N° entreprise client</label>
       <input type="text" id="ef-num-ent" placeholder="Ex: EXT-05">
     </div>
-    <div class="fg"><label>Emplacement précis *</label>
-      <input type="text" id="ef-emplacement" placeholder="Ex: Couloir RDC face toilettes, Atelier pilier B3">
+    <div class="fg"><label>Emplacement * <span style="font-weight:400;color:var(--txt-l)">(apparaît sur le bulletin)</span></label>
+      <input type="text" id="ef-emplacement" placeholder="Ex: Atelier poêle, Couloir RDC face toilettes">
     </div>
     <div id="ef-marque-modele"></div>
     <div class="fg"><label>Année de fabrication</label><input type="number" id="ef-fab" min="1980" max="2100" step="1" placeholder="2021" inputmode="numeric"></div>
@@ -1012,7 +1012,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <!-- Champs conditionnels -->
     <div id="ef-champs-specifiques"></div>
 
-    <div class="fg"><label>Localisation</label><input type="text" id="ef-loc" placeholder="Entrée, couloir RDC…"></div>
+    <input type="hidden" id="ef-loc"><!-- doublon d'« Emplacement » : repris automatiquement de l'emplacement -->
+    <div id="ef-apercu" style="background:#ecfdf5;border:1.5px solid #6ee7b7;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13px"></div>
     <div class="fg"><label>Étage / Zone</label><input type="text" id="ef-zone" placeholder="RDC, 1er étage…"></div>
     <div class="fg"><label>Statut</label>
       <select id="ef-statut">
@@ -2772,7 +2773,8 @@ async function ouvrirVerif(equipId){
 
   // Infos enrichies : type + agent + capacité + N° interne
   const agent = equip.donnees_specifiques?.['ef-agent']||equip.donnees_specifiques?.['e-agent']||'';
-  const modePress = equip.donnees_specifiques?.['ef-mode-press']||equip.donnees_specifiques?.['mode_press']||'';
+  const modePress = equip.donnees_specifiques?.['ef-mode-press']||equip.donnees_specifiques?.['e-mode-press']||equip.donnees_specifiques?.['mode_press']||'';
+  const _ds=equip.donnees_specifiques||{};const spMin=_ds['ef-sp-min']??_ds['e-sp-min']??'',spMax=_ds['ef-sp-max']??_ds['e-sp-max']??'',spDate=_ds['ef-sp-date']??_ds['e-sp-date']??'';
   const capLib = equip.capacite_valeur?(equip.capacite_valeur+(equip.capacite_unite||'')):'';
   const numInterne = equip.numero_entreprise ? ' — N°'+equip.numero_entreprise : '';
   $('verif-equip-nom').textContent=`${equip.types_equipements?.icone||''} ${equip.types_equipements?.libelle||''} — ${equip.numero_identification||'?'}${numInterne}`;
@@ -2833,7 +2835,12 @@ async function ouvrirVerif(equipId){
   });
 
   // Nettoyer les libellés (retirer les balises de condition [xxx])
-  const pointsAffichesTous = points.map(p=>({...p, libelle: p.libelle.replace(/\s*\[(pp_eau_poudre|pa|co2|quinquennal)\]/gi,'').trim()}));
+  const pointsAffichesTous = points.map(p=>{
+    let lib=p.libelle.replace(/\s*\[(pp_eau_poudre|pa|co2|quinquennal)\]/gi,'').trim();
+    // Extincteur PA : rappel de la fourchette de référence de la sparklette (poids mini / maxi) et de sa date
+    if(estPA&&/sparklet/i.test(lib)&&/\(g\)/i.test(lib)&&(spMin!==''||spMax!==''))lib+=` — réf. ${spMin!==''?spMin:'?'} à ${spMax!==''?spMax:'?'} g`+(spDate?` (sparklette du ${new Date(spDate+'T12:00:00').toLocaleDateString('fr-FR')})`:'');
+    return {...p, libelle: lib};
+  });
   // Pour un VGP, l'affichage est géré par le template (sections / énergies) : vgpInit() plus bas.
   const pointsAffiches = catVgp ? [] : pointsAffichesTous;
 
@@ -4271,21 +4278,63 @@ const EMAIL_SECRETARIAT='contact@bfs-prevention.fr';
 function blobVersBase64(blob){
   return new Promise((ok,ko)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]||'');r.onerror=ko;r.readAsDataURL(blob)});
 }
-async function notifierSecretariatBon(pdfBlob,{titre,numero,detail}){
+// Boîte de dialogue d'envoi : secrétariat d'office, client en option (e-mail ajouté à la fiche client s'il manquait)
+function choisirDestinatairesBon(titre){
+  return new Promise(resolve=>{
+    const c=currentClient||{};const mail0=(c.contact_email||'').trim();
+    const ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
+    const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+    ov.innerHTML=`<div style="background:#fff;border-radius:14px;padding:18px;max-width:420px;width:100%">
+      <div style="font-weight:700;font-size:16px;margin-bottom:4px">Envoyer le ${esc(titre.toLowerCase())}</div>
+      <div style="font-size:12.5px;color:#6b7280;margin-bottom:12px">Bon signé + bulletin + bulletin détaillé</div>
+      <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px;margin-bottom:10px;font-size:13.5px"><b>📒 Rappel : registre de sécurité</b><br>Faire signer le registre de sécurité par le client avant de partir.
+        <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="dd-registre" style="width:18px;height:18px"> Registre de sécurité signé</label></div>
+      <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:10px;margin-bottom:10px;font-size:13.5px"><b>🚗 Frais de déplacement à facturer</b>
+        <select id="dd-depl" style="width:100%;margin-top:6px;padding:9px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px"><option value="">Selon le contrat / la fiche client (automatique)</option><option value="AUCUN">Aucun (inclus ou offert)</option><option value="FORFAIT">Forfait déplacement</option><option value="Z1">Zone 1 — jusqu'à 15 km</option><option value="Z2">Zone 2 — 15 à 30 km</option><option value="Z3">Zone 3 — 30 à 50 km</option><option value="Z4">Zone 4 — 50 à 80 km</option><option value="Z5">Zone 5 — plus de 80 km</option></select>
+        <div style="font-size:11.5px;color:#6b7280;margin-top:4px">Le secrétariat verra ce choix sur le bon de facturation.</div></div>
+      <label style="display:flex;gap:8px;align-items:center;padding:10px;background:#f3f4f6;border-radius:8px;font-size:14px"><input type="checkbox" checked disabled style="width:18px;height:18px"> <b>Secrétariat</b> (toujours)</label>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:14px"><input type="checkbox" id="dd-client" style="width:18px;height:18px"${mail0?' checked':''}> Envoyer aussi au client</label>
+      <input id="dd-mail" type="email" placeholder="E-mail du client" value="${esc(mail0)}" style="width:100%;box-sizing:border-box;margin-top:8px;padding:10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px">
+      <div id="dd-note" style="font-size:12px;color:#6b7280;margin-top:5px">${mail0?'E-mail de la fiche client.':"Pas d'e-mail sur la fiche client : celui saisi sera ajouté à la fiche."}</div>
+      <button id="dd-ok" class="btn btn-p" style="width:100%;margin-top:14px;padding:12px">📨 Envoyer</button></div>`;
+    document.body.appendChild(ov);
+    const cb=ov.querySelector('#dd-client'),inp=ov.querySelector('#dd-mail');
+    inp.addEventListener('input',()=>{if(inp.value.trim())cb.checked=true});
+    ov.querySelector('#dd-ok').onclick=async()=>{
+      let email=null;
+      if(cb.checked){
+        email=inp.value.trim();
+        if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){toast("Adresse e-mail du client invalide",'err');return}
+        if(!mail0&&c.id){ // on complète la fiche client
+          try{const {error}=await db.rpc('maj_email_client',{p_id:c.id,p_email:email});if(!error){currentClient.contact_email=email;toast('E-mail ajouté à la fiche client ✓')}else console.warn('maj email',error)}catch(e){console.warn(e)}
+        }
+      }
+      const registre=ov.querySelector('#dd-registre').checked;const deplacement=ov.querySelector('#dd-depl').value||null;ov.remove();resolve({client:!!email,email,registre,deplacement});
+    };
+  });
+}
+async function notifierSecretariatBon(pdfBlob,{titre,numero,detail,docs,destClient}){
   try{
     const c=currentClient||{};
     const sujet=`BFS — ${titre} ${numero||''} — ${c.raison_sociale||''}`.replace(/\s+/g,' ').trim();
-    const texte=`Bonjour,\n\nUn ${titre.toLowerCase()} signé vient d'être enregistré.\n\nClient : ${c.raison_sociale||'—'}${c.ville?' ('+c.ville+')':''}\nTechnicien : ${ME.prenom||''} ${ME.nom||''}\nDate : ${new Date().toLocaleDateString('fr-FR')}${numero?'\nN° : '+numero:''}${detail?'\n'+detail:''}\n\nLe bon signé est en pièce jointe (il figure aussi dans les bons à facturer).\n\nBFS Contrôle`;
+    const texte=`Bonjour,\n\nUn ${titre.toLowerCase()} signé vient d'être enregistré.\n\nClient : ${c.raison_sociale||'—'}${c.ville?' ('+c.ville+')':''}\nTechnicien : ${ME.prenom||''} ${ME.nom||''}\nDate : ${new Date().toLocaleDateString('fr-FR')}${numero?'\nN° : '+numero:''}${detail?'\n'+detail:''}\n\nPièces jointes : bon signé, bulletin simple, bulletin détaillé et BON DE FACTURATION (codes Galaxy, régime contrat du client) — ce dernier est interne, ne pas le transmettre au client.\n\nBFS Contrôle`;
     const body={a:[EMAIL_SECRETARIAT],sujet,texte};
+    if(destClient&&typeof destClient.deplacement!=='undefined'){const DL={AUCUN:'aucun (inclus / offert)',FORFAIT:'forfait déplacement',Z1:'zone 1 (jusqu\'à 15 km)',Z2:'zone 2 (15 à 30 km)',Z3:'zone 3 (30 à 50 km)',Z4:'zone 4 (50 à 80 km)',Z5:'zone 5 (plus de 80 km)'};body.texte+=`\n\nFrais de déplacement à facturer : ${destClient.deplacement?DL[destClient.deplacement]:'selon contrat / fiche client'}`}
+    if(destClient&&typeof destClient.registre==='boolean')body.texte+=`\n\nRegistre de sécurité : ${destClient.registre?'signé par le client':'À FAIRE SIGNER (non signé au départ du technicien)'}`;
     if(pdfBlob&&pdfBlob.size<=15*1024*1024){
       body.pieces_jointes=[{nom:`${titre}_${numero||Date.now()}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await blobVersBase64(pdfBlob)}];
+      let tot=pdfBlob.size;
+      for(const [nom,b] of [['Bulletin',docs?.bulletin],['Bulletin_detaille',docs?.detail],['Bon_facturation_Galaxy',docs?.facturation]]){
+        if(b&&tot+b.size<=15*1024*1024){tot+=b.size;body.pieces_jointes.push({nom:`${nom}_${numero||Date.now()}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await blobVersBase64(b)})}
+      }
     }else{body.texte+='\n\n(PDF trop volumineux pour la pièce jointe : à consulter dans les bons à facturer.)'}
     const {data,error}=await db.functions.invoke('envoyer-mail',{body});
     if(error||!data?.envoye){console.warn('Mail secrétariat non envoyé',error||data);toast('⚠️ Mail au secrétariat non envoyé (le bon est bien enregistré)','err');return false}
-    // Le client reçoit aussi son bon d'intervention (et son contrat s'il l'a signé aujourd'hui)
-    if(/^bon d'intervention/i.test(titre)&&typeof venteMailClientBon==='function'){
-      const okC=await venteMailClientBon(pdfBlob,{titre,numero,client:c});
-      if(okC===true)toast('📨 Bon envoyé au client');else if(okC===false)toast('⚠️ Mail au client non envoyé','err');
+    // Client : uniquement si le technicien l'a coché dans la boîte de dialogue
+    if(destClient?.client&&destClient.email&&typeof venteMailClientBon==='function'){
+      const okC=await venteMailClientBon(pdfBlob,{titre,numero,client:{...c,contact_email:destClient.email},docs,sansContrat:true});
+      if(okC===true)toast('📨 Envoyé au client');else toast('⚠️ Mail au client non envoyé','err');
     }
     return true;
   }catch(e){console.warn('Mail secrétariat',e);toast('⚠️ Mail au secrétariat non envoyé (le bon est bien enregistré)','err');return false}
@@ -4342,9 +4391,9 @@ async function _validerSignatureEtCloturerInterne(){
   // PGRST204 "column not found") sans que ce soit visible : le try/catch
   // n'attrape pas les erreurs Supabase (elles reviennent dans {error},
   // elles ne sont pas levées comme exception).
-  let bonEnregistre=false;
+  let bonEnregistre=false,bonId=null,docsBon={};
   try{
-    const {error:bonErr}=await db.from('bons_intervention').insert({
+    const {data:bonIns,error:bonErr}=await db.from('bons_intervention').insert({
       session_id:currentSession?.id,
       client_id:currentClient.id,
       agence_id:currentClient.agence_id,
@@ -4355,17 +4404,25 @@ async function _validerSignatureEtCloturerInterne(){
       pdf_url:pdfUrl,
       pdf_path:pdfUrl?fileName:null,
       statut_facturation:'à_facturer'
-    });
+    }).select('id').single();
     if(bonErr){
       console.error('Erreur enregistrement bon:',bonErr);
       toast('⚠️ Bon d\'intervention NON enregistré : '+bonErr.message,'err');
     } else {
-      bonEnregistre=true;
+      bonEnregistre=true;bonId=bonIns?.id||null;
     }
   }catch(e){console.warn('Erreur enregistrement bon:',e);toast('⚠️ Bon d\'intervention NON enregistré','err');}
 
   // Mail automatique au secrétariat (bon enregistré uniquement)
-  if(bonEnregistre)await notifierSecretariatBon(pdfBlob,{titre:"Bon d'intervention",numero:currentSession?.numero,detail:(currentSession?.nature==='installation'?'Installation / mise en service — ':'')+`Équipements vérifiés : ${nbVerifies}`});
+  // Bulletin simple + détaillé générés à l'envoi, joints aux mails (client / secrétariat)
+  let destBon=null;
+  if(bonEnregistre)destBon=await choisirDestinatairesBon("Bon d'intervention");
+  if(bonEnregistre&&bonId&&destBon){try{await db.rpc('maj_deplacement_bon',{p_bon:bonId,p_code:destBon.deplacement||null})}catch(e){console.warn('déplacement bon',e)}}
+  if(bonEnregistre&&bonId&&currentSession?.id&&typeof bonsDocsTerrain==='function'){
+    toast('Génération du bulletin et du détaillé…');
+    try{docsBon=await bonsDocsTerrain(bonId)}catch(e){console.warn('Bulletins',e)}
+  }
+  if(bonEnregistre)await notifierSecretariatBon(pdfBlob,{titre:"Bon d'intervention",docs:docsBon,destClient:destBon,numero:currentSession?.numero,detail:(currentSession?.nature==='installation'?'Installation / mise en service — ':'')+`Équipements vérifiés : ${nbVerifies}`});
 
   // Clôturer la session — toujours exécuté
   if(currentSession){
@@ -4907,6 +4964,10 @@ const CHAMPS_TYPE_TERRAIN = {
     {id:'ef-cap',label:'Capacité',type:'number',placeholder:'6',step:'0.5'},
     {id:'ef-unite',label:'Unité',type:'select',opts:['kg','L']},
     {id:'ef-pression',label:'Pression nominale (bar)',type:'number',placeholder:'15',step:'0.5'},
+    {id:'ef-sp-poids',label:'Sparklette — poids relevé (g)',type:'number',placeholder:'61',step:'0.1'},
+    {id:'ef-sp-min',label:'Sparklette — poids mini de référence (g)',type:'number',placeholder:'58',step:'0.1'},
+    {id:'ef-sp-max',label:'Sparklette — poids maxi de référence (g)',type:'number',placeholder:'64',step:'0.1'},
+    {id:'ef-sp-date',label:'Sparklette — date (fabrication / pose)',type:'date'},
   ],
   ria: [
     {id:'ef-diametre',label:'Diamètre tuyau (mm)',type:'select',opts:['19','25','33']},
@@ -5020,6 +5081,30 @@ function efTitreHistorique(code){
   ht.textContent=vgp?'📜 Dernières VGP / remises en service':ht.dataset.orig;
   hdesc.textContent=vgp?'Dernières VGP et mises ou remises en service connues. N\'impacte pas le calcul automatique des échéances.':hdesc.dataset.orig;
 }
+
+// Aperçu en direct : ce qui apparaîtra sur le bulletin d'intervention
+function efApercuBulletin(){
+  const box=document.getElementById('ef-apercu');if(!box)return;
+  const g=id=>(document.getElementById(id)||{}).value||'';
+  const sel=document.getElementById('ef-type');const code=sel?sel.value:'';
+  const lib=sel&&sel.selectedIndex>=0?sel.options[sel.selectedIndex].text.replace(/^[^A-Za-zÀ-ÿ0-9]+/,'').trim():'';
+  let mm={marque:'',modele:''};try{mm=lireMarqueModele('ef-')||mm}catch(e){}
+  const eq={type_equipement_code:code,types_equipements:{libelle:lib||undefined},marque:mm.marque,modele:mm.modele,emplacement:g('ef-emplacement').trim(),
+    donnees_specifiques:{'ef-agent':g('ef-agent'),'ef-cap':g('ef-cap'),'ef-unite':g('ef-unite')}};
+  const agent=eqAgentBulletin(eq);
+  const desig='1 - '+eqLibelleBulletin(eq)+(agent?' '+agent:'');
+  const cap=eqCapaciteBulletin(eq),loc=eqEmplacementBulletin(eq);
+  const manque=[];
+  if(code==='extincteur'){if(!g('ef-agent'))manque.push('agent');if(!g('ef-cap'))manque.push('capacité')}
+  else if(!mm.marque&&!mm.modele)manque.push('marque / modèle');
+  if(!g('ef-emplacement').trim())manque.push('emplacement');
+  box.innerHTML=`<div style="font-weight:700;margin-bottom:4px">📄 Aperçu sur le bulletin</div>
+    <div style="font-family:monospace;font-size:12.5px;line-height:1.5">Désignation : <b>${desig.replace(/</g,'&lt;')}</b><br>Type / cap. : <b>${String(cap).replace(/</g,'&lt;')}</b><br>Emplacement : <b>${String(loc).replace(/</g,'&lt;')}</b></div>
+    ${manque.length?`<div style="color:#b45309;margin-top:5px">⚠️ À compléter : ${manque.join(', ')}</div>`:'<div style="color:#047857;margin-top:5px">✓ Complet</div>'}
+    <div style="color:var(--txt-l);font-size:11.5px;margin-top:3px">Exemple : « 1 - Extincteur Eau + additif · 6 L · Atelier poêle »</div>`;
+}
+document.addEventListener('input',e=>{if(e.target&&e.target.id&&e.target.id.startsWith('ef-'))efApercuBulletin()});
+document.addEventListener('change',e=>{if(e.target&&e.target.id&&e.target.id.startsWith('ef-'))efApercuBulletin()});
 function onEFTypeChange(){
   const mmType=document.getElementById('ef-type')?.value;
   const mmDiv=document.getElementById('ef-marque-modele');
@@ -5078,7 +5163,7 @@ function onEFTypeChange(){
   container.appendChild(zonePerso);
   // Restaurer
   if(_efRestoreData){
-    const ids=['ef-mode-press','ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-poids-vide','ef-cap-levage','ef-h-levage','ef-charge-hmax','ef-bat-min','ef-bat-max','ef-bat-reel','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
+    const ids=['ef-mode-press','ef-sp-poids','ef-sp-min','ef-sp-max','ef-sp-date','ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-poids-vide','ef-cap-levage','ef-h-levage','ef-charge-hmax','ef-bat-min','ef-bat-max','ef-bat-reel','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
     ids.forEach(id=>{const el=document.getElementById(id);if(el&&_efRestoreData[id])el.value=_efRestoreData[id];});
     if(_efRestoreData['ef-mode-press'])selectRadioEF('ef-mode-press',_efRestoreData['ef-mode-press']);
   }
@@ -5086,6 +5171,7 @@ function onEFTypeChange(){
     try{(_efRestoreData['_perso']||[]).forEach(p=>ajouterChampPersoEF(p.label,p.value));}catch(e){}
   }
   efPlacerEnergie();
+  try{efApercuBulletin()}catch(e){}
 }
 
 function selectRadioEF(id,value){
@@ -5124,7 +5210,7 @@ function getEFChampsPerso(){
 
 function getEFSpecificData(){
   const data={};
-  const ids=['ef-mode-press','ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-poids-vide','ef-cap-levage','ef-h-levage','ef-charge-hmax','ef-bat-min','ef-bat-max','ef-bat-reel','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
+  const ids=['ef-mode-press','ef-sp-poids','ef-sp-min','ef-sp-max','ef-sp-date','ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-poids-vide','ef-cap-levage','ef-h-levage','ef-charge-hmax','ef-bat-min','ef-bat-max','ef-bat-reel','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el&&el.value)data[id]=el.value;});
   const perso=getEFChampsPerso();
   if(perso.length)data['_perso']=perso;
@@ -5154,7 +5240,7 @@ async function ouvrirFicheEquip(id, prevScreenOverride){
   // Données spécifiques
   const spec = equip.donnees_specifiques || {};
   const specRows = Object.entries(spec).filter(([k])=>!k.startsWith('_')&&spec[k]).map(([k,v])=>{
-    const labels={'ef-agent':'Agent','ef-cap':'Capacité','ef-unite':'Unité','ef-diametre':'Diamètre','ef-longueur':'Longueur','ef-dmf':'Type DMF','ef-pression':'Pression','ef-mis':'Mise en service','ef-fab':'Fabrication','ef-type-baes':'Type BAES','ef-autonomie':'Autonomie','ef-type-batt':'Batterie','ef-alim':'Alimentation','ef-classement':'Classement CF','ef-hauteur':'Hauteur max','ef-ptac':'PTAC (t)','ef-poids-vide':'Poids à vide (kg)','ef-cap-levage':'Capacité de levage (kg)','ef-h-levage':'Hauteur de levage (m)','ef-charge-hmax':'Charge à hauteur max (kg)','ef-bat-min':'Batterie mini (kg)','ef-bat-max':'Batterie maxi (kg)','ef-bat-reel':'Batterie réelle (kg)','ef-energie':'Énergie','ef-norme':'Norme','ef-date-limite':'Date limite'};
+    const labels={'ef-mode-press':'Pressurisation','ef-sp-poids':'Sparklette — poids (g)','ef-sp-min':'Sparklette — mini (g)','ef-sp-max':'Sparklette — maxi (g)','ef-sp-date':'Sparklette — date','ef-agent':'Agent','ef-cap':'Capacité','ef-unite':'Unité','ef-diametre':'Diamètre','ef-longueur':'Longueur','ef-dmf':'Type DMF','ef-pression':'Pression','ef-mis':'Mise en service','ef-fab':'Fabrication','ef-type-baes':'Type BAES','ef-autonomie':'Autonomie','ef-type-batt':'Batterie','ef-alim':'Alimentation','ef-classement':'Classement CF','ef-hauteur':'Hauteur max','ef-ptac':'PTAC (t)','ef-poids-vide':'Poids à vide (kg)','ef-cap-levage':'Capacité de levage (kg)','ef-h-levage':'Hauteur de levage (m)','ef-charge-hmax':'Charge à hauteur max (kg)','ef-bat-min':'Batterie mini (kg)','ef-bat-max':'Batterie maxi (kg)','ef-bat-reel':'Batterie réelle (kg)','ef-energie':'Énergie','ef-norme':'Norme','ef-date-limite':'Date limite'};
     const cleanK=k.replace('ef-','e-');
     return `<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">${labels[k]||labels[cleanK]||k}</span><span style="font-weight:600">${v}</span></div>`;
   }).join('');
@@ -5377,6 +5463,7 @@ async function _saveEquipTerrainInterne(){
     num=idGenV;
   }
   if(!num){toast('N° identification obligatoire','err');return}
+  if(!document.getElementById('ef-emplacement').value.trim()){toast("Emplacement obligatoire (ex : Atelier poêle) — il apparaît sur le bulletin",'err');return}
 
   const {marque,modele}=lireMarqueModele('ef-');
   const payload = {
@@ -5391,7 +5478,7 @@ async function _saveEquipTerrainInterne(){
     emplacement: document.getElementById('ef-emplacement').value.trim()||null,
     marque: (marque||'').trim()||null,
     modele: (modele||'').trim()||null,
-    localisation: document.getElementById('ef-loc').value.trim()||null,
+    localisation: document.getElementById('ef-loc').value.trim()||document.getElementById('ef-emplacement').value.trim()||null,
     etage_zone: document.getElementById('ef-zone').value.trim()||null,
     date_fabrication: document.getElementById('ef-fab').value ? document.getElementById('ef-fab').value+'-01-01' : null,
     statut: document.getElementById('ef-statut').value,
@@ -5857,7 +5944,8 @@ async function _validerInterventionPonctuelleInterne(){
   if(bonIpErr) toast('⚠️ Bon non enregistré dans la facturation : '+bonIpErr.message,'err');
   else{
     toast('Bon d\'intervention signé et enregistré ✓');
-    await notifierSecretariatBon(pdfBlob,{titre:"Bon d'intervention ponctuelle",numero:ipNumero,detail:'Type : '+$('ip-type').options[$('ip-type').selectedIndex].text});
+    const destIp=await choisirDestinatairesBon("Bon d'intervention ponctuelle");
+    await notifierSecretariatBon(pdfBlob,{titre:"Bon d'intervention ponctuelle",destClient:destIp,numero:ipNumero,detail:'Type : '+$('ip-type').options[$('ip-type').selectedIndex].text});
   }
   btn.disabled = false; btn.textContent = '✅ Signer et enregistrer le bon';
   goTo('s-client');

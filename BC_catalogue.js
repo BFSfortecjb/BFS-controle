@@ -158,15 +158,20 @@ async function estimerDeplacement(client,agence){
 let _prixZonesDepl=null;
 async function chargerPrixZonesDeplacement(){
   if(_prixZonesDepl)return _prixZonesDepl;
-  const {data}=await db.from('tarifs').select('code,prix_ht').like('code','DEPL\\_Z%').eq('actif',true);
-  _prixZonesDepl={};(data||[]).forEach(t=>{_prixZonesDepl[t.code.replace('DEPL_','')]=+t.prix_ht});
+  const {data}=await db.from('tarifs').select('code,prix_ht').or('code.like.DEPL\\_Z%,code.eq.DEPLACEMENT').eq('actif',true);
+  _prixZonesDepl={};(data||[]).forEach(t=>{_prixZonesDepl[t.code==='DEPLACEMENT'?'FORFAIT':t.code.replace('DEPL_','')]=+t.prix_ht});
   return _prixZonesDepl;
 }
-function zoneLibelle(code){const z=ZONES_DEPLACEMENT.find(x=>x.code===code);return z?'Zone '+code.slice(1)+' — '+z.lib:(code||'')}
+function zoneLibelle(code){if(code==='FORFAIT')return 'Forfait déplacement';const z=ZONES_DEPLACEMENT.find(x=>x.code===code);return z?'Zone '+code.slice(1)+' — '+z.lib:(code||'')}
 // Texte pour le PDF du contrat
 // Interrupteur : false = on mentionne seulement le statut des frais (facturés / inclus / offerts), sans zone ni tarif.
 // Passer à true pour réactiver le zonage par distance et les prix DEPL_Z1..Z5.
-const DEPLACEMENT_TARIF_ACTIF=false;
+const DEPLACEMENT_TARIF_ACTIF=true;
+// Options <select> : forfait + zones 1 à 5 avec leur prix
+function optionsZonesDeplacement(prix){
+  prix=prix||{};
+  return ['FORFAIT',...ZONES_DEPLACEMENT.map(z=>z.code)].map(c=>`<option value="${c}">${zoneLibelle(c)}${prix[c]!=null?' — '+(+prix[c]).toFixed(2)+' € HT':''}</option>`).join('');
+}
 function libelleFraisDeplacement(c){
   if(!c||!c.frais_deplacement_mode)return null;
   if(!DEPLACEMENT_TARIF_ACTIF&&c.frais_deplacement_mode==='facture'&&!c.frais_deplacement_ht)return 'Facturés en sus à chaque passage, au tarif en vigueur (communiqué sur demande)';
@@ -177,3 +182,50 @@ function libelleFraisDeplacement(c){
 }
 
 console.log('✓ catalogue.js chargé');
+
+// ---- Affectation d'un client qui vient d'être créé ----
+// Technicien (démarchage) : le client lui est affecté d'office. Secrétariat / admin : on choisit le technicien.
+async function affecterNouveauClient(clientId){
+  try{
+    if(!clientId||typeof ME==='undefined'||!ME)return;
+    if(ME.role==='technicien'){
+      const {data,error}=await db.rpc('affecter_client',{p_client:clientId});
+      if(!error&&data)toast('Client affecté à ton portefeuille ✓');
+      else if(error)console.warn('affecter_client',error);
+      return;
+    }
+    const {data:techs}=await db.from('profils').select('id,prenom,nom,agence_id').eq('role','technicien').eq('actif',true).order('nom');
+    if(!techs||!techs.length)return;
+    await new Promise(res=>{
+      const ov=document.createElement('div');
+      ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
+      ov.innerHTML=`<div style="background:#fff;border-radius:14px;padding:18px;max-width:380px;width:100%">
+        <div style="font-weight:800;font-size:16px;margin-bottom:6px">Affecter le client à un technicien</div>
+        <div style="font-size:12.5px;color:#64748b;margin-bottom:12px">Le client apparaîtra dans le portefeuille du technicien choisi.</div>
+        <select id="an-tech" style="width:100%;padding:11px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:15px;margin-bottom:14px">
+          <option value="">— Choisir un technicien —</option>${techs.map(t=>`<option value="${t.id}">${t.prenom||''} ${t.nom||''}</option>`).join('')}</select>
+        <div style="display:flex;gap:8px"><button id="an-plus" style="flex:1;padding:11px;border:none;border-radius:10px;background:#f1f5f9;font-weight:600;cursor:pointer">Plus tard</button>
+        <button id="an-ok" style="flex:1;padding:11px;border:none;border-radius:10px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">Affecter</button></div></div>`;
+      document.body.appendChild(ov);
+      ov.querySelector('#an-plus').onclick=()=>{ov.remove();res()};
+      ov.querySelector('#an-ok').onclick=async()=>{
+        const t=ov.querySelector('#an-tech').value;if(!t){toast('Choisis un technicien','err');return}
+        const {data,error}=await db.rpc('affecter_client',{p_client:clientId,p_tech:t});
+        if(error||!data)toast('Affectation impossible','err');else toast('Client affecté ✓');
+        ov.remove();res();
+      };
+    });
+  }catch(e){console.warn('Affectation client',e)}
+}
+
+// ---- Champs « sparklette » : visibles seulement si l'extincteur est en pression auxiliaire (PA) ----
+function majChampsPA(){
+  document.querySelectorAll('input[id*="sp-"]').forEach(el=>{
+    const m=el.id.match(/^(.*?)sp-(poids|min|max|date)$/);if(!m)return;
+    const mode=document.getElementById(m[1]+'mode-press');
+    const fg=el.closest('.fg')||el.parentElement;
+    if(fg)fg.style.display=(mode&&String(mode.value).toUpperCase()==='PA')?'':'none';
+  });
+}
+['change','click','input'].forEach(ev=>document.addEventListener(ev,()=>setTimeout(majChampsPA,0)));
+try{new MutationObserver(()=>majChampsPA()).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}

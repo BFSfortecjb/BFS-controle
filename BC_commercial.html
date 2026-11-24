@@ -271,20 +271,53 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 </div>
 
 <!-- ===== NOUVEAU CLIENT ===== -->
+<div class="screen" id="s-client-cree">
+  <div class="hdr"><button class="hdr-back" onclick="ouvrirCommercial()">←</button><h1>Client créé</h1></div>
+  <div class="content">
+    <div style="background:#ecfdf5;border:1.5px solid #6ee7b7;border-radius:12px;padding:14px;margin-bottom:14px"><b id="cc-nom"></b><br><span style="font-size:12.5px;color:var(--txt-l)">Fiche enregistrée. Choisis la suite — rien n'est imposé.</span></div>
+    <button class="btn btn-p" style="width:100%;margin-bottom:10px" onclick="ouvrirAjoutEquip(_clientCree.id)">🧯 Ajouter un équipement à ce client</button>
+    <button class="btn btn-s" style="width:100%;margin-bottom:10px" onclick="ouvrirNouveauContrat(_clientCree.id)">📄 Créer un contrat (reprendre ses équipements)</button>
+    <button class="btn btn-s" style="width:100%" onclick="ouvrirCommercial()">Terminer</button>
+  </div>
+</div>
+
+<div class="screen" id="s-ajout-equip">
+  <div class="hdr"><button class="hdr-back" onclick="goTo('s-client-cree')">←</button><h1>Ajouter un équipement</h1></div>
+  <div class="content">
+    <div id="ae-client" style="font-weight:700;margin-bottom:10px"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Type d'équipement *</label><select id="ae-type" onchange="aeType()"></select></div>
+    <div id="ae-marque-modele"></div>
+    <div id="ae-champs"></div>
+    <div class="fg" style="margin-bottom:12px"><label>Emplacement * <small style="font-weight:400">(apparaît sur le bulletin)</small></label><input type="text" id="ae-empl" placeholder="Ex : Atelier poêle, Couloir RDC"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="fg"><label>Année de fabrication</label><input type="number" id="ae-annee" min="1980" max="2100" placeholder="2021"></div>
+      <div class="fg"><label>Dernière vérification</label><input type="date" id="ae-dverif"></div>
+    </div>
+    <div id="ae-apercu" style="background:#ecfdf5;border:1.5px solid #6ee7b7;border-radius:10px;padding:10px 12px;margin:12px 0;font-size:13px"></div>
+  </div>
+  <div class="footer"><button class="btn btn-vert" onclick="enregistrerAjoutEquip()">✅ Enregistrer l'équipement</button></div>
+</div>
+
 <div class="screen" id="s-new-client">
   <div class="hdr">
     <button class="hdr-back" onclick="goTo('s-commercial')">←</button>
     <h1>Nouveau client</h1>
   </div>
   <div class="content">
-    <div class="fg" style="margin-bottom:12px"><label>Raison sociale *</label><input type="text" id="nc-rs"></div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button type="button" id="nc-t-pro" class="btn btn-p" style="flex:1" onclick="ncType('pro')">🏢 Professionnel</button>
+      <button type="button" id="nc-t-part" class="btn btn-s" style="flex:1" onclick="ncType('particulier')">👤 Particulier</button>
+    </div>
+    <input type="hidden" id="nc-type" value="pro">
+    <div class="fg" style="margin-bottom:12px"><label id="nc-rs-l">Raison sociale *</label><input type="text" id="nc-rs"></div>
+    <div class="fg" id="nc-prenom-w" style="margin-bottom:12px;display:none"><label>Prénom *</label><input type="text" id="nc-prenom"></div>
     <div class="fg" style="margin-bottom:12px"><label>Adresse</label><input type="text" id="nc-adr"></div>
     <div style="display:grid;grid-template-columns:110px 1fr;gap:10px;margin-bottom:12px">
       <div class="fg"><label>CP</label><input type="text" id="nc-cp" inputmode="numeric"></div>
       <div class="fg"><label>Ville</label><input type="text" id="nc-ville"></div>
     </div>
-    <div class="fg" style="margin-bottom:12px"><label>SIRET</label><input type="text" id="nc-siret" inputmode="numeric"></div>
-    <div class="fg" style="margin-bottom:12px"><label>Contact (nom)</label><input type="text" id="nc-contact"></div>
+    <div class="fg" id="nc-siret-w" style="margin-bottom:12px"><label>SIRET</label><input type="text" id="nc-siret" inputmode="numeric"></div>
+    <div class="fg" id="nc-contact-w" style="margin-bottom:12px"><label>Contact (nom)</label><input type="text" id="nc-contact"></div>
     <div class="fg" style="margin-bottom:12px"><label>Téléphone</label><input type="tel" id="nc-tel"></div>
     <div class="fg" style="margin-bottom:12px"><label>Email</label><input type="email" id="nc-email"></div>
   </div>
@@ -322,7 +355,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="fg" style="margin-bottom:12px"><label>Client *</label><input type="search" id="nk-client-q" placeholder="🔎 Rechercher un client (nom, ville)…" oninput="filtrerClientsContrat()" style="margin-bottom:6px"><select id="nk-client" onchange="majDeplacementContrat()"></select></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div class="fg"><label>N° contrat</label><input type="text" id="nk-num" placeholder="auto si vide"></div>
-      <div class="fg"><label>Type</label><select id="nk-type"><option value="annuel">Annuel</option><option value="pluriannuel">Pluriannuel</option><option value="ponctuel">Ponctuel</option></select></div>
+      <div class="fg"><label>Type</label><select id="nk-type"><option value="annuel">Annuel</option><option value="pluriannuel">Pluriannuel</option><option value="ponctuel">Ponctuel</option><option value="location">Location</option></select></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div class="fg"><label>Début</label><input type="date" id="nk-debut" onchange="renderLignes()"></div>
@@ -335,7 +368,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     </div>
     <div class="fg" style="margin-bottom:12px"><label>Périodicité</label><select id="nk-period" onchange="recalcGrilleLignes()"><option value="annuelle">Annuelle</option><option value="semestrielle">Semestrielle</option><option value="trimestrielle">Trimestrielle</option><option value="mensuelle">Mensuelle</option></select></div>
     <div class="sec">Frais de déplacement</div>
-    <div class="fg" style="margin-bottom:8px"><select id="nk-fd-mode" onchange="majAffichageDeplacement()"><option value="facture">Facturés à chaque passage</option><option value="inclus">Inclus dans le contrat</option><option value="offert">Offerts</option></select></div>
+    <div class="fg" style="margin-bottom:8px"><select id="nk-fd-mode" onchange="majAffichageDeplacement()"><option value="facture">Facturés à chaque passage (forfait ou zone)</option><option value="inclus">Inclus dans le contrat</option><option value="offert">Offerts</option></select></div>
     <div id="nk-fd-zone-bloc" style="background:#f8fafc;border:1.5px solid #e5e7eb;border-radius:10px;padding:10px 12px;margin-bottom:12px">
       <div id="nk-fd-info" style="font-size:12px;color:var(--txt-l);margin-bottom:6px">Calcul de la distance…</div>
       <select id="nk-fd-zone" onchange="majAffichageDeplacement(true)" style="width:100%;padding:9px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px"></select>
@@ -516,10 +549,15 @@ db.auth.getSession().then(({data:{session}})=>{if(session)onLogin(session.user)}
 // ---- Caractéristiques par type (même définition que l'appli bureau) ----
 const CHAMPS_TYPE = {
   extincteur: [
+    {id:'e-mode-press',label:'Mode de pressurisation *',type:'select',opts:[['PP','PP — Pression permanente'],['PA','PA — Pression auxiliaire (cartouche / sparklette)']]},
     {id:'e-agent',label:'Agent extincteur',type:'select',opts:['CO2','BC','ABC','D','A','AB','ABF','A lith','Autre']},
     {id:'e-cap',label:'Capacité',type:'number',placeholder:'6',step:'0.5'},
     {id:'e-unite',label:'Unité',type:'select',opts:['kg','L']},
     {id:'e-pression',label:'Pression nominale (bar)',type:'number',placeholder:'15',step:'0.5'},
+    {id:'e-sp-poids',label:'Sparklette — poids relevé (g)',type:'number',placeholder:'61',step:'0.1'},
+    {id:'e-sp-min',label:'Sparklette — poids mini de référence (g)',type:'number',placeholder:'58',step:'0.1'},
+    {id:'e-sp-max',label:'Sparklette — poids maxi de référence (g)',type:'number',placeholder:'64',step:'0.1'},
+    {id:'e-sp-date',label:'Sparklette — date (fabrication / pose)',type:'date'},
   ],
   ria: [
     {id:'e-diametre',label:'Diamètre tuyau (mm)',type:'select',opts:['19','25','33']},
@@ -570,8 +608,8 @@ const CHAMPS_TYPE = {
 function champsLigneHTML(type,prefix){
   return (CHAMPS_TYPE[type]||[]).map(ch=>{
     const id=prefix+ch.id;
-    if(ch.type==='select')return `<div class="fg" style="margin-bottom:12px"><label>${ch.label}</label><select id="${id}"><option value=""></option>${ch.opts.map(o=>`<option>${o}</option>`).join('')}</select></div>`;
-    return `<div class="fg" style="margin-bottom:12px"><label>${ch.label}</label><input type="${ch.type==='number'?'number':'text'}" id="${id}" ${ch.step?'step="'+ch.step+'"':''} placeholder="${ch.placeholder||''}"></div>`;
+    if(ch.type==='select')return `<div class="fg" style="margin-bottom:12px"><label>${ch.label}</label><select id="${id}"><option value=""></option>${ch.opts.map(o=>Array.isArray(o)?`<option value="${o[0]}">${o[1]}</option>`:`<option>${o}</option>`).join('')}</select></div>`;
+    return `<div class="fg" style="margin-bottom:12px"><label>${ch.label}</label><input type="${ch.type==='number'?'number':ch.type==='date'?'date':'text'}" id="${id}" ${ch.step?'step="'+ch.step+'"':''} placeholder="${ch.placeholder||''}"></div>`;
   }).join('');
 }
 function collecteChamps(type,prefix){
@@ -664,7 +702,7 @@ async function creerEquipementsDepuisContrat(contrat,lignesToutes,clientId){
       rows.push({client_id:clientId,type_equipement_code:l.type,numero_identification:num,
         marque:l.marque||null,modele:l.modele||null,
         capacite_valeur:caract['e-cap']?parseFloat(caract['e-cap']):null,capacite_unite:caract['e-unite']||null,
-        donnees_specifiques:ds,statut:'opérationnel',localisation:'',
+        donnees_specifiques:ds,statut:'opérationnel',localisation:l.emplacement||'',emplacement:l.emplacement||null,
         date_fabrication:l.annee_fab?l.annee_fab+'-01-01':null,
         historique:hist,
         notes:'Créé depuis le contrat '+(contrat.numero_contrat||'du '+fmt(contrat.created_at))});
@@ -769,9 +807,78 @@ async function supprimerContratCom(id){
   ouvrirCommercial();
 }
 
+// ---- AJOUT D'UN ÉQUIPEMENT À UN CLIENT (sans contrat) ----
+let _aeClient=null;
+async function ouvrirAjoutEquip(clientId){
+  const {data:cl}=await db.from('clients').select('id,raison_sociale').eq('id',clientId).single();
+  if(!cl){toast('Client introuvable','err');return}
+  _aeClient=cl;
+  $('ae-client').textContent='Client : '+cl.raison_sociale;
+  $('ae-type').innerHTML=typesEquip.map(t=>`<option value="${t.code}">${t.icone||''} ${t.libelle}</option>`).join('');
+  ['ae-empl','ae-annee','ae-dverif'].forEach(id=>$(id).value='');
+  aeType();goTo('s-ajout-equip');
+}
+function aeType(){
+  const ty=$('ae-type').value;
+  $('ae-marque-modele').innerHTML=marqueModeleHTML(ty,'ae-');
+  $('ae-champs').innerHTML=champsLigneHTML(ty,'ae-');
+  aeApercu();
+}
+document.addEventListener('input',e=>{if(e.target&&e.target.id&&e.target.id.startsWith('ae-'))aeApercu()});
+document.addEventListener('change',e=>{if(e.target&&e.target.id&&e.target.id.startsWith('ae-'))aeApercu()});
+const AE_AGENT_LIB={'AB':'Eau + additif','A':'Eau pulvérisée','ABF':'Eau + additif renforcé','ABC':'Poudre ABC','BC':'Poudre BC','D':'Poudre D','CO2':'CO2','A lith':'Lithium'};
+function aeApercu(){
+  const box=$('ae-apercu');if(!box||!$('ae-type'))return;
+  const ty=$('ae-type').value;const car=collecteChamps(ty,'ae-');const {marque,modele}=lireMarqueModele('ae-');
+  const t=typesEquip.find(x=>x.code===ty);
+  const agent=ty==='extincteur'?(AE_AGENT_LIB[car['e-agent']]||car['e-agent']||''):[marque,modele].filter(Boolean).join(' ');
+  const cap=car['e-cap']?car['e-cap']+' '+(car['e-unite']||''):'—';
+  const manque=[];
+  if(ty==='extincteur'){if(!car['e-mode-press'])manque.push('mode PP/PA');if(!car['e-agent'])manque.push('agent');if(!car['e-cap'])manque.push('capacité')}
+  else if(!marque&&!modele)manque.push('marque / modèle');
+  if(!$('ae-empl').value.trim())manque.push('emplacement');
+  box.innerHTML=`<div style="font-weight:700;margin-bottom:4px">📄 Aperçu sur le bulletin</div><div style="font-family:monospace;font-size:12.5px;line-height:1.5">1 - <b>${(t?.libelle||ty)} ${agent}</b><br>Cap. : <b>${cap}</b><br>Emplacement : <b>${$('ae-empl').value.trim()||'—'}</b></div>`
+    +(manque.length?`<div style="color:#b45309;margin-top:5px">⚠️ À compléter : ${manque.join(', ')}</div>`:'<div style="color:#047857;margin-top:5px">✓ Complet</div>');
+}
+async function enregistrerAjoutEquip(){
+  if(!_aeClient)return;
+  const ty=$('ae-type').value;const car=collecteChamps(ty,'ae-');const {marque,modele}=lireMarqueModele('ae-');
+  const empl=$('ae-empl').value.trim();
+  if(ty==='extincteur'){
+    if(!car['e-mode-press']){toast('Mode de pressurisation (PP / PA) obligatoire','err');return}
+    if(!car['e-agent']||!car['e-cap']){toast('Agent et capacité obligatoires','err');return}
+    if(car['e-mode-press']==='PA'&&!(car['e-sp-min']&&car['e-sp-max'])){toast('Extincteur PA : indique le poids mini et maxi de la sparklette','err');return}
+  }else if(!marque&&!modele){toast('Marque / modèle obligatoires','err');return}
+  if(!empl){toast('Emplacement obligatoire (il apparaît sur le bulletin)','err');return}
+  const annee=parseInt($('ae-annee').value,10)||null,dverif=$('ae-dverif').value||null;
+  const dateTag=new Date().toISOString().slice(2,10).replace(/-/g,'');
+  const num=`${ty.slice(0,3).toUpperCase()}-${dateTag}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
+  const ds={...car};delete ds['e-cap'];delete ds['e-unite'];
+  const hist=dverif?[{date:dverif,type:'Vérification annuelle',commentaire:'Constaté à la création de la fiche'}]:[];
+  const {data:eq,error}=await db.from('equipements').insert({client_id:_aeClient.id,agence_id:ME.agence_id||null,type_equipement_code:ty,numero_identification:num,marque:marque||null,modele:modele||null,
+    capacite_valeur:car['e-cap']?parseFloat(car['e-cap']):null,capacite_unite:car['e-unite']||null,donnees_specifiques:ds,statut:'opérationnel',
+    localisation:empl,emplacement:empl,date_fabrication:annee?annee+'-01-01':null,historique:hist,notes:'Créé depuis la fiche client'}).select('id').single();
+  if(error){toast('Erreur : '+error.message,'err');return}
+  if(dverif&&eq){
+    const proch=new Date(dverif);proch.setFullYear(proch.getFullYear()+1);
+    await db.from('verifications').insert({equipement_id:eq.id,client_id:_aeClient.id,type_equipement_code:ty,date_verification:dverif,date_prochaine_echeance:proch.toISOString().slice(0,10),
+      technicien:'Antérieur (prise en charge)',technicien_id:ME.id,resultat:'conforme',realisee_par_bfs:false,observations:'Vérification antérieure constatée à la création de la fiche'});
+  }
+  toast('Équipement ajouté ✓');
+  if(confirm('Équipement enregistré.\nEn ajouter un autre pour '+_aeClient.raison_sociale+' ?'))ouvrirAjoutEquip(_aeClient.id);
+  else{_clientCree=_aeClient;goTo('s-client-cree')}
+}
+
 // ---- NOUVEAU CLIENT ----
+function ncType(t){
+  $('nc-type').value=t;const part=t==='particulier';
+  $('nc-t-pro').className='btn '+(part?'btn-s':'btn-p');$('nc-t-part').className='btn '+(part?'btn-p':'btn-s');
+  $('nc-rs-l').textContent=part?'Nom *':'Raison sociale *';
+  $('nc-prenom-w').style.display=part?'':'none';$('nc-siret-w').style.display=part?'none':'';$('nc-contact-w').style.display=part?'none':'';
+}
 function ouvrirNouveauClient(){
-  ['nc-rs','nc-adr','nc-cp','nc-ville','nc-siret','nc-contact','nc-tel','nc-email'].forEach(id=>$(id).value='');
+  ['nc-rs','nc-prenom','nc-adr','nc-cp','nc-ville','nc-siret','nc-contact','nc-tel','nc-email'].forEach(id=>$(id).value='');
+  ncType('pro');
   goTo('s-new-client');
 }
 // Anti double-clic : une seule exécution à la fois ; le bouton est grisé jusqu'à la fin
@@ -789,20 +896,29 @@ function antiDoublon(fn){
   };
 }
 async function _saveClientComInterne(){
-  const rs=$('nc-rs').value.trim();
-  if(!rs){toast('Raison sociale obligatoire','err');return}
+  const part=$('nc-type').value==='particulier';
+  const nom=$('nc-rs').value.trim(),prenom=$('nc-prenom').value.trim();
+  if(!nom){toast((part?'Nom':'Raison sociale')+' obligatoire','err');return}
+  if(part&&!prenom){toast('Prénom obligatoire','err');return}
+  const rs=part?(nom.toUpperCase()+' '+prenom):nom;
   const {data:nc,error}=await db.from('clients').insert({
-    raison_sociale:rs,agence_id:ME.agence_id||null,
+    raison_sociale:rs,type_client:part?'particulier':'pro',agence_id:ME.agence_id||null,
     adresse:$('nc-adr').value.trim(),code_postal:$('nc-cp').value.trim(),ville:$('nc-ville').value.trim(),
-    siret:$('nc-siret').value.trim(),contact_nom:$('nc-contact').value.trim(),
+    siret:part?'':$('nc-siret').value.trim(),contact_nom:part?'':$('nc-contact').value.trim(),
     contact_telephone:$('nc-tel').value.trim(),contact_email:$('nc-email').value.trim()
   }).select().single();
   if(error){toast('Erreur : '+error.message,'err');return}
   toast('Client créé ✓');
-  if(confirm('Client créé.\nCréer un contrat pour '+rs+' ?'))ouvrirNouveauContrat(nc.id);
-  else ouvrirCommercial();
+  await affecterNouveauClient(nc.id);
+  ouvrirClientCree(nc);
 }
-
+// Écran « client créé » : on choisit la suite (aucune création de contrat imposée)
+let _clientCree=null;
+function ouvrirClientCree(nc){
+  _clientCree=nc;
+  $('cc-nom').textContent=nc.raison_sociale;
+  goTo('s-client-cree');
+}
 // ---- NOUVEAU CONTRAT ----
 async function ouvrirNouveauContrat(clientId){
   const {data:cls}=await db.from('clients').select('id,raison_sociale,ville,adresse,code_postal,agence_id,distance_km,zone_deplacement').order('raison_sociale');
@@ -833,7 +949,7 @@ async function majDeplacementContrat(){
   const sel=$('nk-fd-zone');if(!sel)return;if(!DEPLACEMENT_TARIF_ACTIF){majAffichageDeplacement();return}
   const zs=ZONES_DEPLACEMENT;
   const prix=await chargerPrixZonesDeplacement();
-  sel.innerHTML=zs.map(z=>`<option value="${z.code}">${zoneLibelle(z.code)}${prix[z.code]!=null?' — '+prix[z.code].toFixed(2)+' € HT':''}</option>`).join('');
+  sel.innerHTML=optionsZonesDeplacement(prix);
   const client=(clientsList||[]).find(x=>x.id===$('nk-client').value);
   $('nk-fd-info').textContent='Calcul de la distance…';
   if(!_agencesDepl){const {data}=await db.from('agences').select('id,code,nom,adresse');_agencesDepl=data||[]}

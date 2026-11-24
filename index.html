@@ -772,6 +772,8 @@ tr:hover td{background:#fafafa}
       <div class="fg"><label>Contact</label><input type="text" id="c-contact"></div>
       <div class="fg"><label>Téléphone</label><input type="tel" id="c-tel"></div>
       <div class="fg"><label>Email</label><input type="email" id="c-email"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Type de client</label><select id="c-type-client" onchange="majTypeClientBureau()"><option value="pro">🏢 Professionnel</option><option value="particulier">👤 Particulier (nom et prénom)</option></select></div>
+      <div class="fg" style="grid-column:1/-1"><label>Régime de facturation</label><select id="c-regime"><option value="auto">Automatique (selon le contrat actif)</option><option value="sans_contrat">Sans contrat — tarif grille</option><option value="longue_duree">Contrat longue durée — tarif du contrat</option><option value="location">Contrat de location — maintenance incluse</option></select><small style="color:var(--txt-l)">Détermine les lignes du bon de facturation envoyé au secrétariat.</small></div>
       <div class="fg" style="grid-column:1/-1"><label>Notes</label><textarea id="c-notes"></textarea></div>
       <div class="fg" id="c-actif-bloc" style="grid-column:1/-1;display:flex;align-items:center;gap:10px">
         <label style="margin:0">Client actif</label>
@@ -891,13 +893,13 @@ tr:hover td{background:#fafafa}
     <div class="form-grid">
       <div class="fg" style="grid-column:1/-1"><label>Client *</label><select id="ct-client" onchange="majDeplacementBureau()"></select></div>
       <div class="fg"><label>N° contrat</label><input type="text" id="ct-num" placeholder="auto si vide (CT-2026-001)"></div>
-      <div class="fg"><label>Type</label><select id="ct-type"><option value="annuel">Annuel</option><option value="pluriannuel">Pluriannuel</option><option value="ponctuel">Ponctuel</option></select></div>
+      <div class="fg"><label>Type</label><select id="ct-type"><option value="annuel">Annuel</option><option value="pluriannuel">Pluriannuel</option><option value="ponctuel">Ponctuel</option><option value="location">Location</option></select></div>
       <div class="fg"><label>Début</label><input type="date" id="ct-debut"></div>
       <div class="fg"><label>Fin</label><input type="date" id="ct-fin"></div>
       <div class="fg"><label>Tarif HT (€)</label><input type="number" id="ct-tarif" step="0.01"></div>
       <div class="fg"><label>Périodicité</label><select id="ct-period"><option value="annuelle">Annuelle</option><option value="semestrielle">Semestrielle</option><option value="trimestrielle">Trimestrielle</option><option value="mensuelle">Mensuelle</option></select></div>
-      <div class="fg"><label>Frais de déplacement</label><select id="ct-fd-mode" onchange="majAffichageDeplacementBureau()"><option value="facture">Facturés à chaque passage</option><option value="inclus">Inclus dans le contrat</option><option value="offert">Offerts</option></select></div>
-      <div class="fg" id="ct-fd-zone-bloc"><label>Zone de déplacement <span id="ct-fd-info" style="font-weight:400;color:var(--txt-l);text-transform:none;letter-spacing:normal"></span></label><select id="ct-fd-zone" onchange="majAffichageDeplacementBureau(true)"></select><div id="ct-fd-prix" style="font-size:12px;font-weight:700;margin-top:4px"></div></div>
+      <div class="fg"><label>Frais de déplacement</label><select id="ct-fd-mode" onchange="majAffichageDeplacementBureau()"><option value="facture">Facturés à chaque passage (forfait ou zone)</option><option value="inclus">Inclus dans le contrat</option><option value="offert">Offerts</option></select></div>
+      <div class="fg" id="ct-fd-zone-bloc"><label>Forfait / zone de déplacement <span id="ct-fd-info" style="font-weight:400;color:var(--txt-l);text-transform:none;letter-spacing:normal"></span></label><select id="ct-fd-zone" onchange="majAffichageDeplacementBureau(true)"></select><div id="ct-fd-prix" style="font-size:12px;font-weight:700;margin-top:4px"></div></div>
       <div class="fg"><label>Statut</label><select id="ct-statut"><option value="actif">Actif</option><option value="suspendu">Suspendu</option><option value="terminé">Terminé</option></select></div>
       <div class="fg" style="grid-column:1/-1"><label>Équipements couverts</label><div id="ct-types-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-top:6px"></div></div>
       <div class="fg" style="grid-column:1/-1"><label>Chiffrage — équipements du contrat</label>

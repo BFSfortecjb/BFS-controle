@@ -620,7 +620,7 @@ async function envoyerContratMail(id){
 // ============================================================
 async function regenererBon(bonId,sansConfirm){
   if(!sansConfirm&&!confirm("Êtes-vous sûr de vouloir régénérer ce bon d'intervention ?\nL'ancien PDF sera supprimé et remplacé.")) return;
-  toast('Chargement des données…');
+  if(!window._pdfSansSave)toast('Chargement des données…');
 
   // Récupérer le bon + infos session
   const {data:bon}=await db.from('bons_intervention').select('*').eq('id',bonId).single();
@@ -804,9 +804,10 @@ async function regenererBon(bonId,sansConfirm){
   if(anciens&&anciens.length)await db.storage.from('bons-intervention').remove(anciens.map(f=>f.name));
   const fileName=`bulletin_${bonId}_${Date.now()}.pdf`;
   const {error:upErr}=await db.storage.from('bons-intervention').upload(fileName,pdfBlob,{contentType:'application/pdf'});
-  if(!upErr){toast('Bulletin archivé ✓')}
+  if(!upErr){if(!window._pdfSansSave)toast('Bulletin archivé ✓')}
   else{toast('Bulletin téléchargé localement (erreur Storage)','err')}
   if(!window._pdfSansSave)loadBons();
+  return pdfBlob;
 }
 
 // ============================================================
@@ -892,7 +893,7 @@ async function rapportComplet(bonId){
     if(res.length){
       doc.autoTable({startY:y,margin:{left:14,right:14},
         head:[['Point de contrôle','Résultat']],
-        body:res.map(r=>[r.libelle_snapshot,valRes(r)]),
+        body:res.map(r=>[pdfSafe(r.libelle_snapshot),valRes(r)]),
         styles:{fontSize:8.5,cellPadding:1.5},headStyles:{fillColor:[230,100,40],fontSize:8.5},
         columnStyles:{1:{cellWidth:30,halign:'center'}},
         didParseCell:(d)=>{if(d.column.index===1){
@@ -937,9 +938,10 @@ async function rapportComplet(bonId){
   if(anciens&&anciens.length)await db.storage.from('bons-intervention').remove(anciens.map(f=>f.name));
   const fileName=`rapport_${bonId}_${Date.now()}.pdf`;
   const {error:upErr}=await db.storage.from('bons-intervention').upload(fileName,pdfBlob,{contentType:'application/pdf'});
-  if(!upErr){toast('Rapport complet archivé ✓')}
+  if(!upErr){if(!window._pdfSansSave)toast('Rapport complet archivé ✓')}
   else{toast('Rapport téléchargé localement (erreur Storage)','err')}
   if(!window._pdfSansSave)loadBons();
+  return pdfBlob;
 }
 
 // ============================================================
@@ -949,6 +951,7 @@ async function actualiserBon(bonId){
   if(!confirm("Régénérer le bulletin simple ET le bulletin détaillé ?\nLes anciens PDF seront remplacés."))return;
   await regenererBon(bonId,true);
   await rapportComplet(bonId);
+  await bonFacturation(bonId);
 }
 
 // ============================================================
@@ -1050,7 +1053,8 @@ console.log('✓ pdf.js chargé');
 // Les équipements créés depuis le terrain stockent la capacité dans donnees_specifiques (clés « ef-… »),
 // l'emplacement dans « emplacement » et n'ont pas toujours le libellé du type chargé : on lit toutes les sources.
 function eqDonnee(eq,cle){const d=eq?.donnees_specifiques||{};return d['ef-'+cle]??d['e-'+cle]??''}
-function eqAgentBulletin(eq){return eqDonnee(eq,'agent')||''}
+const AGENT_LIB={'AB':'Eau + additif','A':'Eau pulvérisée','ABF':'Eau + additif renforcé','ABC':'Poudre ABC','BC':'Poudre BC','D':'Poudre D','CO2':'CO2','A lith':'Lithium'};
+function eqAgentBulletin(eq){const a=eqDonnee(eq,'agent');return (a&&(AGENT_LIB[a]||a))||[eq?.marque,eq?.modele].filter(Boolean).join(' ')}
 function eqLibelleBulletin(eq){
   if(eq?.types_equipements?.libelle)return eq.types_equipements.libelle;
   const c=eq?.type_equipement_code;
@@ -1068,25 +1072,196 @@ function eqEmplacementBulletin(eq){return eq?.localisation||eq?.emplacement||'�
 // ---- Génération automatique des bulletins (simple + détaillé) manquants, côté bureau ----
 // Chaque bon (hors interventions ponctuelles) reçoit son Bulletin et son Détaillé sans clic.
 // Un bon n'est tenté qu'une fois par session de navigation (pas de boucle si la génération échoue).
-async function bonsGenererManquants(bons,bulletins,rapports,force){
+async function bonsGenererManquants(bons,bulletins,rapports,force,factures){
   if(window._bonsGenEnCours)return;
   if(typeof ME!=='undefined'&&ME&&!['admin','secretariat'].includes(ME.role))return;
   const tentes=window._bonsGenTentes||(window._bonsGenTentes=new Set());
-  const todo=(bons||[]).filter(b=>b.session_id&&(force||((!bulletins[b.id]||!rapports[b.id])&&!tentes.has(b.id))));
+  const todo=(bons||[]).filter(b=>b.session_id&&(force||((!bulletins[b.id]||!rapports[b.id]||(factures&&!factures[b.id]))&&!tentes.has(b.id))));
   if(!todo.length)return;
   window._bonsGenEnCours=true;window._pdfSansSave=true;let ok=0;
   try{
     for(let i=0;i<todo.length;i++){
       const b=todo[i];tentes.add(b.id);
       toast(`Bulletins ${i+1}/${todo.length}…`);
-      try{await regenererBon(b.id,true);await rapportComplet(b.id);ok++}catch(e){console.warn('Bulletins bon',b.id,e)}
+      try{await regenererBon(b.id,true);await rapportComplet(b.id);await bonFacturation(b.id);ok++}catch(e){console.warn('Bulletins bon',b.id,e)}
     }
   }finally{window._pdfSansSave=false;window._bonsGenEnCours=false}
   toast(ok+' bon(s) mis à jour : bulletin + détaillé ✓');
   if(typeof loadBons==='function')loadBons();
 }
 async function bonsActualiserTout(){
-  if(!confirm("Régénérer le bulletin simple ET détaillé de TOUS les bons de la liste ?\nLes PDF signés d'origine ne sont pas touchés."))return;
+  if(!confirm("Régénérer le bulletin simple, détaillé ET bon de facturation de TOUS les bons de la liste ?\nLes PDF signés d'origine ne sont pas touchés."))return;
   const {data:bons}=await db.from('bons_intervention').select('id,session_id').not('session_id','is',null);
   await bonsGenererManquants(bons||[],{},{},true);
+}
+
+// Caractères absents de la police standard des PDF (≥ ≤ guillemets typographiques…) : remplacés pour éviter les lettres espacées / tronquées
+function pdfSafe(t){return String(t==null?'':t).replace(/≥/g,'>=').replace(/≤/g,'<=').replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/–|—/g,'-').replace(/\u202f|\u00a0/g,' ')}
+
+// Au moment où le technicien envoie le bon (client / secrétariat) : génère le bulletin simple + le détaillé,
+// les archive (visibles ensuite dans la liste des bons) et renvoie les deux PDF pour les joindre aux mails.
+async function bonsDocsTerrain(bonId){
+  const docs={bulletin:null,detail:null,facturation:null};
+  const ancien=window._pdfSansSave;window._pdfSansSave=true;
+  try{docs.bulletin=await regenererBon(bonId,true)||null}catch(e){console.warn('Bulletin simple',e)}
+  try{docs.detail=await rapportComplet(bonId)||null}catch(e){console.warn('Bulletin détaillé',e)}
+  try{docs.facturation=await bonFacturation(bonId)||null}catch(e){console.warn('Bon facturation',e)}
+  finally{window._pdfSansSave=ancien||false}
+  return docs;
+}
+
+// =====================================================================
+// BON DE FACTURATION (secrétariat) — lignes à facturer avec codes Galaxy
+// Régimes : sans_contrat (tarif grille) · longue_duree (tarif du contrat) · location (maintenance incluse, seul le hors-location est facturé)
+// =====================================================================
+const BF_REGIMES={sans_contrat:'Sans contrat',longue_duree:'Contrat longue durée',location:'Contrat de location'};
+const BF_MAINT_LOCATION=/^(VAP-|MAINT-PP-|MAA-|BAES-VERIF|MAINT-ALARME)/;
+
+function bfClasseAgent(s){
+  s=String(s||'').toLowerCase();
+  if(/co2|carbonique/.test(s))return 'CO2';
+  if(/poudre|\babc\b|\bbc\b/.test(s))return 'POUDRE';
+  if(/eau|\bab\b|abf|additif/.test(s))return 'EAU';
+  return null;
+}
+function bfRegime(client,contrats){
+  const r=client?.regime_facturation||'auto';
+  if(r!=='auto')return r;
+  const actifs=(contrats||[]).filter(c=>c.statut==='actif');
+  if(actifs.some(c=>c.type_contrat==='location'))return 'location';
+  if(actifs.some(c=>c.type_contrat!=='ponctuel'))return 'longue_duree';
+  return 'sans_contrat';
+}
+function bfZoneCode(client){
+  const z=String(client?.zone_deplacement||'').match(/[1-5]/);
+  if(z)return 'DEPL_Z'+z[0];
+  const d=parseFloat(client?.distance_km);
+  if(!isNaN(d))return d<=15?'DEPL_Z1':d<=30?'DEPL_Z2':d<=50?'DEPL_Z3':d<=80?'DEPL_Z4':'DEPL_Z5';
+  return 'DEPLACEMENT';
+}
+function bfNorm(t){return String(t||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}
+
+// Calcule les lignes à facturer d'un bon (session). Renvoie {regime,lignes,inclus,total,...}
+async function bonFacturationLignes(bonId){
+  const {data:bon}=await db.from('bons_intervention').select('*').eq('id',bonId).single();
+  if(!bon||!bon.session_id)return null;
+  const {data:client}=await db.from('clients').select('*,agences(nom,code)').eq('id',bon.client_id).single();
+  const {data:contrats}=await db.from('contrats').select('id,type_contrat,statut,numero_contrat,frais_deplacement_mode,frais_deplacement_ht,zone_deplacement,tarif_annuel').eq('client_id',bon.client_id);
+  const regime=bfRegime(client,contrats);
+  const contrat=(contrats||[]).find(c=>c.statut==='actif'&&c.type_contrat!=='ponctuel')||null;
+  const {data:tarifsAll}=await db.from('tarifs').select('code,designation,prix_ht,code_galaxy,unite').eq('actif',true);
+  const T={};(tarifsAll||[]).forEach(t=>T[t.code]=t);
+  let prixContrat={};
+  if(regime==='longue_duree'){
+    try{const {data:pc}=await db.rpc('prix_contrat_client',{p_client:bon.client_id});(pc||[]).forEach(r=>prixContrat[r.code]=+r.prix)}catch(e){console.warn('prix contrat',e)}
+  }
+  const {data:verifs}=await db.from('verifications')
+    .select('id,resultat,palier_code,type_equipement_code,unite_extincteur_id,equipements(type_equipement_code,marque,modele,donnees_specifiques,types_equipements(libelle))')
+    .eq('session_id',bon.session_id);
+  const {data:pieces}=await db.from('pieces_verif').select('libelle,reference,quantite,unite,type_action').eq('session_id',bon.session_id);
+  const {data:sess}=await db.from('sessions_controle').select('numero').eq('id',bon.session_id).single();
+
+  const lignes=new Map(); // clé -> ligne
+  const add=(code,libelle,qte,opts={})=>{
+    const t=code?T[code]:null;
+    const key=(code||'')+'|'+(t?'':libelle);
+    let l=lignes.get(key);
+    if(!l){
+      l={code:code||null,galaxy:t?.code_galaxy||null,libelle:t?.designation||libelle,qte:0,pu:(t&&t.prix_ht!=null)?+t.prix_ht:null,note:opts.note||'',inclus:false,achiffrer:!t||t.prix_ht==null};
+      if(t&&regime==='longue_duree'&&prixContrat[code]!=null){l.pu=prixContrat[code];l.note=(l.note?l.note+' ; ':'')+'tarif contrat'}
+      lignes.set(key,l);
+    }
+    l.qte+=qte;return l;
+  };
+  for(const v of (verifs||[])){
+    const eq=v.equipements||{};const type=eq.type_equipement_code||v.type_equipement_code;
+    if(type==='extincteur'){
+      const ds=eq.donnees_specifiques||{};
+      const cls=bfClasseAgent(ds['ef-agent']||ds['e-agent']||[eq.marque,eq.modele].filter(Boolean).join(' '));
+      const c=cls||'EAU';const noteAgent=cls?'':'agent à vérifier';
+      if(v.palier_code==='approfondie'){add('MAA-'+c,'Maintenance approfondie extincteur '+(cls||''),1,{note:noteAgent});}
+      else if(v.palier_code==='revision'){add(null,'Révision en atelier extincteur (10 ans) — à chiffrer',1);}
+      else if(v.palier_code==='decennale'||v.palier_code==='quinquennale'){add(null,'Maintenance '+v.palier_code+' extincteur — à chiffrer',1);}
+      else add('VAP-'+c,'',1,{note:noteAgent});
+    }else if(type==='baes')add('BAES-VERIF','',1);
+    else if(type==='alarme_t4')add('MAINT-ALARME-T4','',1);
+    else add(null,'Vérification '+(eq.types_equipements?.libelle||type||'équipement')+' — à chiffrer',1);
+  }
+  // Pièces / recharges saisies pendant l'intervention
+  const tl=(tarifsAll||[]).map(t=>({t,n:bfNorm(t.designation)}));
+  (pieces||[]).forEach(p=>{
+    const n=bfNorm(p.libelle);const m=tl.find(x=>x.n===n)||tl.find(x=>n&&(x.n.includes(n)||n.includes(x.n)));
+    add(m?m.t.code:null,m?'':(p.libelle+(p.reference?' ('+p.reference+')':'')+' — à coder'),+p.quantite||1);
+  });
+  // Déplacement : choix du technicien > réglage du contrat > zone du client
+  let depl=true,deplNote='';
+  const choix=bon.deplacement_code||null;
+  if(choix==='AUCUN'){depl=false;deplNote='Déplacement : aucun frais (choix du technicien)'}
+  else if(choix){add(choix==='FORFAIT'?'DEPLACEMENT':'DEPL_'+choix,'',1,{note:'choix du technicien'})}
+  else{
+    if(contrat&&['inclus','offert'].includes(contrat.frais_deplacement_mode)&&regime!=='sans_contrat'){depl=false;deplNote='Déplacement '+contrat.frais_deplacement_mode+' au contrat'}
+    if(depl){
+      const zc=(contrat&&contrat.frais_deplacement_mode==='facture'&&contrat.zone_deplacement)?(contrat.zone_deplacement==='FORFAIT'?'DEPLACEMENT':'DEPL_'+contrat.zone_deplacement):bfZoneCode(client);
+      const l=add(zc,'',1);
+      if(regime==='longue_duree'&&contrat&&contrat.frais_deplacement_ht!=null&&prixContrat[l.code]==null&&contrat.zone_deplacement){l.pu=+contrat.frais_deplacement_ht;l.note='tarif contrat'}
+    }
+  }
+  // Régime location : la maintenance est incluse
+  const out=[...lignes.values()];
+  if(regime==='location')out.forEach(l=>{if(l.code&&BF_MAINT_LOCATION.test(l.code)){l.inclus=true}});
+  const facturables=out.filter(l=>!l.inclus);
+  const total=facturables.reduce((s,l)=>s+(l.pu!=null?l.pu*l.qte:0),0);
+  return {bon,client,contrat,regime,lignes:facturables,inclus:out.filter(l=>l.inclus),total,deplNote,numSession:sess?.numero||bon.numero_session||'—',nbVerifs:(verifs||[]).length};
+}
+
+// Génère le PDF « Bon de facturation » (interne secrétariat), l'archive et renvoie le blob
+async function bonFacturation(bonId){
+  const d=await bonFacturationLignes(bonId);
+  if(!d){toast('Pas de bon de facturation pour cette intervention','err');return null}
+  const {client,regime,lignes,inclus,total}=d;
+  const raisonSocBFS=client?.agences?.code==='sevremont'?'Bocage Formation Sécurité':'Bretagne Formation Sécurité';
+  const {jsPDF}=window.jspdf;const doc=new jsPDF();
+  try{doc.addImage(LOGO_BFS,'PNG',12,5,16,16)}catch(e){}
+  doc.setFontSize(20);doc.setFont('helvetica','bold');doc.setTextColor(50,50,50);doc.text('BFS',29,15);
+  doc.setFontSize(7);doc.setTextColor(80);doc.setFont('helvetica','normal');doc.text(raisonSocBFS,29,19.5);
+  doc.setFillColor(30,64,120);doc.rect(65,8,130,10,'F');
+  doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(12);
+  doc.text('BON DE FACTURATION (SECRÉTARIAT)',130,15,{align:'center'});
+  doc.setTextColor(0);doc.setFontSize(9);
+  let y=31;
+  const L=(a,b,bold)=>{doc.setFont('helvetica','normal');doc.text(a,14,y);doc.setFont('helvetica',bold?'bold':'normal');doc.text(String(b),65,y);y+=6};
+  L('Client :',client?.raison_sociale||'—',true);
+  L('Adresse :',[client?.adresse,client?.code_postal,client?.ville].filter(Boolean).join(', ')||'—');
+  L('N° bon :',d.numSession,true);
+  L("Date d'intervention :",new Date(d.bon.date_intervention).toLocaleDateString('fr-FR'));
+  L('Régime :',BF_REGIMES[regime]+(d.contrat?.numero_contrat?' — '+d.contrat.numero_contrat:''),true);
+  y+=2;
+  const fe=n=>n==null?'—':n.toFixed(2).replace('.',',')+' €';
+  doc.autoTable({startY:y,margin:{left:14,right:14},
+    head:[['Code Galaxy','Désignation','Qté','PU HT','Total HT']],
+    body:lignes.length?lignes.map(l=>[l.galaxy||(l.code?'À CRÉER':'—'),pdfSafe(l.libelle)+(l.note?'  ('+pdfSafe(l.note)+')':''),String(l.qte),fe(l.pu),fe(l.pu!=null?l.pu*l.qte:null)]):[['','Rien à facturer pour cette intervention','','','']],
+    styles:{fontSize:8.5,cellPadding:1.6},headStyles:{fillColor:[30,64,120],fontSize:8.5},
+    columnStyles:{0:{cellWidth:24,fontStyle:'bold'},2:{cellWidth:12,halign:'center'},3:{cellWidth:24,halign:'right'},4:{cellWidth:26,halign:'right'}},
+    didParseCell:(h)=>{if(h.section==='body'){const l=lignes[h.row.index];if(l&&(l.pu==null||!l.galaxy)){h.cell.styles.fillColor=[255,243,205]}}}
+  });
+  y=doc.lastAutoTable.finalY+4;
+  doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('Total HT à facturer :',130,y,{align:'right'});doc.text(fe(total),196,y,{align:'right'});y+=8;
+  doc.setFont('helvetica','normal');doc.setFontSize(8.5);
+  if(lignes.some(l=>l.pu==null||!l.galaxy)){doc.setTextColor(150,90,0);doc.text('Lignes surlignées : prix ou code Galaxy manquant — à compléter/créer avant facturation.',14,y);doc.setTextColor(0);y+=6}
+  if(inclus.length){
+    doc.setFont('helvetica','bold');doc.text('Inclus dans la location (non facturé) :',14,y);y+=5;doc.setFont('helvetica','normal');
+    inclus.forEach(l=>{doc.text('• '+pdfSafe(l.libelle)+' × '+l.qte+(l.galaxy?'  [Galaxy '+l.galaxy+']':''),16,y);y+=4.5});y+=2;
+  }
+  if(d.deplNote){doc.text(pdfSafe(d.deplNote),14,y);y+=6}
+  const nb=doc.getNumberOfPages();
+  for(let p=1;p<=nb;p++){doc.setPage(p);doc.setFontSize(7);doc.setTextColor(150);
+    doc.text(`${raisonSocBFS} — Bon de facturation ${d.numSession} — document interne, ne pas transmettre au client — Page ${p}/${nb}`,105,292,{align:'center'});doc.setTextColor(30)}
+  const blob=doc.output('blob');
+  if(!window._pdfSansSave)doc.save(`BFS_bon_facturation_${d.numSession}.pdf`);
+  try{
+    const {data:anc}=await db.storage.from('bons-intervention').list('',{search:'facturation_'+bonId});
+    if(anc&&anc.length)await db.storage.from('bons-intervention').remove(anc.map(f=>f.name));
+    await db.storage.from('bons-intervention').upload(`facturation_${bonId}_${Date.now()}.pdf`,blob,{contentType:'application/pdf'});
+  }catch(e){console.warn('Archivage bon facturation',e)}
+  return blob;
 }

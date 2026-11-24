@@ -604,7 +604,7 @@ function renderClients(){
 async function openClientModal(prefill=null,readOnly=false){
   const {data:ag}=await db.from('agences').select('*');
   $('c-agence').innerHTML='<option value="">—</option>'+(ag||[]).map(a=>`<option value="${a.id}">${a.nom}</option>`).join('');
-  ['c-id','c-rs','c-adr','c-cp','c-ville','c-siret','c-contact','c-tel','c-email','c-notes'].forEach(id=>$(id).value='');
+  ['c-id','c-rs','c-adr','c-cp','c-ville','c-siret','c-contact','c-tel','c-email','c-notes'].forEach(id=>$(id).value='');$('c-regime').value='auto';$('c-type-client').value='pro';majTypeClientBureau();
   $('c-actif').checked=true;$('c-actif-label').textContent='Actif';
   $('mo-cl-t').textContent='Nouveau client';
   $('c-affectations-section').style.display='none';
@@ -615,7 +615,7 @@ async function openClientModal(prefill=null,readOnly=false){
     $('c-id').value=prefill.id;$('c-agence').value=prefill.agence_id||'';$('c-rs').value=prefill.raison_sociale||'';
     $('c-adr').value=prefill.adresse||'';$('c-cp').value=prefill.code_postal||'';$('c-ville').value=prefill.ville||'';
     $('c-siret').value=prefill.siret||'';$('c-contact').value=prefill.contact_nom||'';
-    $('c-tel').value=prefill.contact_telephone||'';$('c-email').value=prefill.contact_email||'';$('c-notes').value=prefill.notes||'';
+    $('c-tel').value=prefill.contact_telephone||'';$('c-email').value=prefill.contact_email||'';$('c-notes').value=prefill.notes||'';$('c-regime').value=prefill.regime_facturation||'auto';$('c-type-client').value=prefill.type_client||'pro';majTypeClientBureau();
     $('c-actif').checked=prefill.actif!==false;$('c-actif-label').textContent=prefill.actif!==false?'Actif':'Inactif';
     $('mo-cl-t').textContent=readOnly?'Fiche client — '+prefill.raison_sociale:'Modifier le client';
     $('c-affectations-section').style.display='block';
@@ -626,7 +626,7 @@ async function openClientModal(prefill=null,readOnly=false){
     renderAffectations();
   }
   // Verrouille tous les champs en consultation — évite une double implémentation du formulaire.
-  ['c-agence','c-rs','c-adr','c-cp','c-ville','c-siret','c-contact','c-tel','c-email','c-notes','c-actif'].forEach(id=>$(id).disabled=readOnly);
+  ['c-agence','c-rs','c-adr','c-cp','c-ville','c-siret','c-contact','c-tel','c-email','c-notes','c-actif','c-regime','c-type-client'].forEach(id=>$(id).disabled=readOnly);
   $('c-btn-enregistrer').style.display=readOnly?'none':'';
   $('c-btn-fermer').textContent=readOnly?'Fermer':'Annuler';
   OM('mo-client');
@@ -704,13 +704,19 @@ async function supprimerAffectation(affId){
 }
 
 
+function majTypeClientBureau(){
+  const part=$('c-type-client').value==='particulier';
+  const l=$('c-rs').closest('.fg')?.querySelector('label');if(l)l.textContent=part?'Nom et prénom *':'Raison sociale *';
+  ['c-siret','c-contact'].forEach(i=>{const f=$(i)?.closest('.fg');if(f)f.style.display=part?'none':''});
+}
 async function _saveClientInterne(){
   const id=$('c-id').value;const rs=$('c-rs').value.trim();
-  if(!rs){toast('Raison sociale obligatoire','err');return}
-  const p={raison_sociale:rs,agence_id:$('c-agence').value||null,adresse:$('c-adr').value.trim(),code_postal:$('c-cp').value.trim(),ville:$('c-ville').value.trim(),siret:$('c-siret').value.trim(),contact_nom:$('c-contact').value.trim(),contact_telephone:$('c-tel').value.trim(),contact_email:$('c-email').value.trim(),notes:$('c-notes').value.trim(),actif:$('c-actif').checked,updated_at:new Date().toISOString()};
-  const {error}=id?await db.from('clients').update(p).eq('id',id):await db.from('clients').insert(p);
+  if(!rs){toast(($('c-type-client').value==='particulier'?'Nom et prénom':'Raison sociale')+' obligatoire','err');return}
+  const p={type_client:$('c-type-client').value||'pro',regime_facturation:$('c-regime').value||'auto',raison_sociale:rs,agence_id:$('c-agence').value||null,adresse:$('c-adr').value.trim(),code_postal:$('c-cp').value.trim(),ville:$('c-ville').value.trim(),siret:$('c-siret').value.trim(),contact_nom:$('c-contact').value.trim(),contact_telephone:$('c-tel').value.trim(),contact_email:$('c-email').value.trim(),notes:$('c-notes').value.trim(),actif:$('c-actif').checked,updated_at:new Date().toISOString()};
+  const {data:cNew,error}=id?await db.from('clients').update(p).eq('id',id):await db.from('clients').insert(p).select('id').single();
   if(error){toast('Erreur: '+error.message,'err');return}
   toast(id?'Client modifié':'Client créé');CM('mo-client');loadClients();
+  if(!id&&cNew)affecterNouveauClient(cNew.id);
 }
 async function deleteClient(id){if(!confirm('Supprimer ce client ?'))return;await db.from('clients').delete().eq('id',id);toast('Supprimé');loadClients()}
 
@@ -1558,7 +1564,7 @@ async function prochainNumeroContrat(){
 async function majDeplacementBureau(prefill){
   const sel=$('ct-fd-zone');if(!sel)return;if(!DEPLACEMENT_TARIF_ACTIF){majAffichageDeplacementBureau();return}
   const prix=await chargerPrixZonesDeplacement();
-  sel.innerHTML=ZONES_DEPLACEMENT.map(z=>`<option value="${z.code}">${zoneLibelle(z.code)}${prix[z.code]!=null?' — '+prix[z.code].toFixed(2)+' € HT':''}</option>`).join('');
+  sel.innerHTML=optionsZonesDeplacement(prix);
   const c=clients.find(x=>x.id===$('ct-client').value);
   $('ct-fd-info').textContent=' — calcul de la distance…';
   if(prefill&&prefill.zone_deplacement){sel.value=prefill.zone_deplacement;sel.dataset.km=prefill.frais_deplacement_km??'';$('ct-fd-info').textContent=prefill.frais_deplacement_km!=null?' — ≈ '+prefill.frais_deplacement_km+' km (enregistré)':'';majAffichageDeplacementBureau();return}
@@ -1624,8 +1630,8 @@ document.addEventListener('change',e=>{
 function champsLigneHTML(type,prefix){
   return (CHAMPS_TYPE[type]||[]).map(ch=>{
     const id=prefix+ch.id;
-    if(ch.type==='select')return `<div class="fg" style="margin-bottom:12px"><label>${ch.label}</label><select id="${id}"><option value=""></option>${ch.opts.map(o=>`<option>${o}</option>`).join('')}</select></div>`;
-    return `<div class="fg" style="margin-bottom:12px"><label>${ch.label}</label><input type="${ch.type==='number'?'number':'text'}" id="${id}" ${ch.step?'step="'+ch.step+'"':''} placeholder="${ch.placeholder||''}"></div>`;
+    if(ch.type==='select')return `<div class="fg" style="margin-bottom:12px"><label>${ch.label}</label><select id="${id}"><option value=""></option>${ch.opts.map(o=>Array.isArray(o)?`<option value="${o[0]}">${o[1]}</option>`:`<option>${o}</option>`).join('')}</select></div>`;
+    return `<div class="fg" style="margin-bottom:12px"><label>${ch.label}</label><input type="${ch.type==='number'?'number':ch.type==='date'?'date':'text'}" id="${id}" ${ch.step?'step="'+ch.step+'"':''} placeholder="${ch.placeholder||''}"></div>`;
   }).join('');
 }
 function collecteChampsLigne(type,prefix){
@@ -1953,12 +1959,13 @@ async function loadBons(){
   //  - rapport_<bonId>_<ts>.pdf  : bulletin détaillé
   //  (le PDF signé d'origine reste pointé par pdf_url et n'est jamais touché)
   const {data:archFiles}=await db.storage.from('bons-intervention').list('',{limit:1000});
-  const rapports={},bulletins={};
+  const rapports={},bulletins={},archFact={};
   (archFiles||[]).forEach(f=>{
     if(f.name.startsWith('rapport_'))rapports[f.name.slice(8,44)]=f.name;
     if(f.name.startsWith('bulletin_'))bulletins[f.name.slice(9,45)]=f.name;
+    if(f.name.startsWith('facturation_'))archFact[f.name.slice(12,48)]=f.name;
   });
-  const urlsArch=await urlsSigneesBatch('bons-intervention',[...Object.values(bulletins),...Object.values(rapports)]);
+  const urlsArch=await urlsSigneesBatch('bons-intervention',[...Object.values(bulletins),...Object.values(rapports),...Object.values(archFact)]);
   const urlArch=n=>urlsArch[n]||'#';
 
   const el = $('bons-list');
@@ -1986,13 +1993,14 @@ async function loadBons(){
       ${b.pdf_url&&!(b.pdf_url.includes('bon_regen_')||b.pdf_url.includes('bulletin_'))?`<a class="btn btn-s btn-xs" href="${b.pdf_url}" target="_blank" title="PDF d'origine signé sur le terrain — jamais modifié">✍ Signé</a>`:''}
       ${bulletins[b.id]?`<a class="btn btn-s btn-xs" href="${urlArch(bulletins[b.id])}" target="_blank">📄 Bulletin</a>`:(b.pdf_url&&b.pdf_url.includes('bon_regen_')?`<a class="btn btn-s btn-xs" href="${b.pdf_url}" target="_blank">📄 Bulletin</a>`:'')}
       ${rapports[b.id]?`<a class="btn btn-s btn-xs" href="${urlArch(rapports[b.id])}" target="_blank">📋 Détaillé</a>`:''}
+      ${archFact[b.id]?`<a class="btn btn-s btn-xs" style="background:#1e4078;color:#fff" href="${urlArch(archFact[b.id])}" target="_blank" title="Bon de facturation interne : codes Galaxy, régime contrat">💶 À facturer (Galaxy)</a>`:''}
       <button class="btn btn-s btn-xs" onclick="actualiserBon('${b.id}')" title="(Re)générer le bulletin simple ET le bulletin détaillé — ne touche pas au PDF signé">🔄</button>
       ${window._bonsEnvoiInfo[b.id].url?`<button class="btn btn-s btn-xs" onclick="envoyerBonMail('${b.id}')" title="Envoyer par mail au client">✉️</button>`:''}
       ${b.statut_facturation==='à_facturer'?`<button class="btn btn-s btn-xs" onclick="marquerFacture('${b.id}')">✓ Facturé</button>`:''}
     </div></td>
   </tr>`).join('')}</tbody></table>`;
   // Bulletin + détaillé générés automatiquement pour les bons qui n'en ont pas encore
-  try{if(typeof bonsGenererManquants==='function')setTimeout(()=>bonsGenererManquants(bons,bulletins,rapports),400)}catch(e){console.warn(e)}
+  try{if(typeof bonsGenererManquants==='function')setTimeout(()=>bonsGenererManquants(bons,bulletins,rapports,false,archFact),400)}catch(e){console.warn(e)}
 }
 
 const LIMITE_PIECE_JOINTE_OCTETS=15*1024*1024; // marge sous les ~20 Mo côté Edge Function
@@ -2226,6 +2234,10 @@ const CHAMPS_TYPE = {
     {id:'e-cap',label:'Capacité',type:'number',placeholder:'6',step:'0.5'},
     {id:'e-unite',label:'Unité',type:'select',opts:['kg','L']},
     {id:'e-pression',label:'Pression nominale (bar)',type:'number',placeholder:'15',step:'0.5'},
+    {id:'e-sp-poids',label:'Sparklette — poids relevé (g)',type:'number',placeholder:'61',step:'0.1'},
+    {id:'e-sp-min',label:'Sparklette — poids mini de référence (g)',type:'number',placeholder:'58',step:'0.1'},
+    {id:'e-sp-max',label:'Sparklette — poids maxi de référence (g)',type:'number',placeholder:'64',step:'0.1'},
+    {id:'e-sp-date',label:'Sparklette — date (fabrication / pose)',type:'date'},
   ],
   ria: [
     {id:'e-diametre',label:'Diamètre tuyau (mm)',type:'select',opts:['19','25','33']},
@@ -2399,7 +2411,7 @@ function getChampsPerso(){
 function restoreEquipValues(){
   const d = _equipRestoreData;
   if(!d || !Object.keys(d).length) return;
-  const ids = ['e-mode-press','e-cap','e-unite','e-fab','e-mis','e-agent','e-pression','e-longueur',
+  const ids = ['e-mode-press','e-sp-poids','e-sp-min','e-sp-max','e-sp-date','e-cap','e-unite','e-fab','e-mis','e-agent','e-pression','e-longueur',
     'e-diametre','e-dmf','e-autonomie','e-type-batt','e-flux','e-alim',
     'e-nb-declencheurs','e-nb-sirenes','e-type-det','e-num-centrale',
     'e-classement','e-type-porte','e-ferme-auto','e-type-nacelle','e-hauteur',
@@ -2410,7 +2422,7 @@ function restoreEquipValues(){
 
 function getEquipSpecificData(){
   const data = {};
-  const ids = ['e-mode-press','e-cap','e-unite','e-fab','e-mis','e-agent','e-pression','e-longueur',
+  const ids = ['e-mode-press','e-sp-poids','e-sp-min','e-sp-max','e-sp-date','e-cap','e-unite','e-fab','e-mis','e-agent','e-pression','e-longueur',
     'e-diametre','e-dmf','e-autonomie','e-type-batt','e-flux','e-alim',
     'e-nb-declencheurs','e-nb-sirenes','e-type-det','e-num-centrale',
     'e-classement','e-type-porte','e-ferme-auto','e-type-nacelle','e-hauteur',
