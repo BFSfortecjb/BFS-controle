@@ -2775,6 +2775,7 @@ async function ouvrirVerif(equipId){
   const agent = equip.donnees_specifiques?.['ef-agent']||equip.donnees_specifiques?.['e-agent']||'';
   const modePress = equip.donnees_specifiques?.['ef-mode-press']||equip.donnees_specifiques?.['e-mode-press']||equip.donnees_specifiques?.['mode_press']||'';
   const _ds=equip.donnees_specifiques||{};const spMin=_ds['ef-sp-min']??_ds['e-sp-min']??'',spMax=_ds['ef-sp-max']??_ds['e-sp-max']??'',spDate=_ds['ef-sp-date']??_ds['e-sp-date']??'';
+  const tareCO2=parseFloat(_ds['ef-tare']??_ds['e-tare']);const capCO2=parseFloat(equip.capacite_valeur);
   const capLib = equip.capacite_valeur?(equip.capacite_valeur+(equip.capacite_unite||'')):'';
   const numInterne = equip.numero_entreprise ? ' — N°'+equip.numero_entreprise : '';
   $('verif-equip-nom').textContent=`${equip.types_equipements?.icone||''} ${equip.types_equipements?.libelle||''} — ${equip.numero_identification||'?'}${numInterne}`;
@@ -2839,6 +2840,8 @@ async function ouvrirVerif(equipId){
     let lib=p.libelle.replace(/\s*\[(pp_eau_poudre|pa|co2|quinquennal)\]/gi,'').trim();
     // Extincteur PA : rappel de la fourchette de référence de la sparklette (poids mini / maxi) et de sa date
     if(estPA&&/sparklet/i.test(lib)&&/\(g\)/i.test(lib)&&(spMin!==''||spMax!==''))lib+=` — réf. ${spMin!==''?spMin:'?'} à ${spMax!==''?spMax:'?'} g`+(spDate?` (sparklette du ${new Date(spDate+'T12:00:00').toLocaleDateString('fr-FR')})`:'');
+    // Extincteur CO2 : fourchette de poids total = tare + charge nominale (+0 % / -tolérance %)
+    if(estCO2&&/poids total/i.test(lib)&&!isNaN(tareCO2)&&!isNaN(capCO2))lib+=` — réf. ${(tareCO2+capCO2*(1-CO2_TOLERANCE_MOINS_PCT/100)).toFixed(2)} à ${(tareCO2+capCO2).toFixed(2)} kg`;
     return {...p, libelle: lib};
   });
   // Pour un VGP, l'affichage est géré par le template (sections / énergies) : vgpInit() plus bas.
@@ -2982,6 +2985,26 @@ async function ouvrirVerif(equipId){
     </div>
   `;
 
+  // CO2 : calcul automatique de la charge et de la tolérance à partir de la tare
+  if(estCO2&&!isNaN(tareCO2)&&!isNaN(capCO2)){
+    const ptTot=pointsAffiches.find(p=>/poids total/i.test(p.libelle));
+    const ptTol=pointsAffiches.find(p=>/poids dans tol/i.test(p.libelle));
+    const inp=ptTot&&document.getElementById('pcv-'+ptTot.id);
+    if(inp){
+      let box=document.getElementById('co2-calc');
+      if(!box){box=document.createElement('div');box.id='co2-calc';box.style.cssText='font-size:12.5px;margin-top:6px;padding:8px 10px;border-radius:8px;background:#f1f5f9';inp.insertAdjacentElement('afterend',box)}
+      const calc=()=>{
+        const v=parseFloat(inp.value);
+        if(isNaN(v)){box.textContent=`Tare ${tareCO2} kg · charge nominale ${capCO2} kg · mini ${(tareCO2+capCO2*(1-CO2_TOLERANCE_MOINS_PCT/100)).toFixed(2)} kg · maxi ${(tareCO2+capCO2).toFixed(2)} kg`;box.style.background='#f1f5f9';return}
+        const charge=v-tareCO2,mini=tareCO2+capCO2*(1-CO2_TOLERANCE_MOINS_PCT/100),maxi=tareCO2+capCO2;
+        const ok=v>=mini-0.005&&v<=maxi+0.005;
+        box.innerHTML=`Charge restante : <b>${charge.toFixed(2)} kg</b> (${(charge/capCO2*100).toFixed(1)} % de ${capCO2} kg) — tolérance +0 / -${CO2_TOLERANCE_MOINS_PCT} % → <b>${ok?'DANS la tolérance ✓':'HORS tolérance ✗'}</b>`;
+        box.style.background=ok?'#dcfce7':'#fee2e2';
+        if(ptTol&&typeof selectPC==='function')selectPC(ptTol.id,ok);
+      };
+      inp.addEventListener('input',calc);calc();
+    }
+  }
   if(catVgp)vgpInit(equip,pointsAffichesTous,savedState);
 
   // Réinitialiser et afficher les photos déjà prises pour cette session de vérif
@@ -4968,6 +4991,7 @@ const CHAMPS_TYPE_TERRAIN = {
     {id:'ef-sp-min',label:'Sparklette — poids mini de référence (g)',type:'number',placeholder:'58',step:'0.1'},
     {id:'ef-sp-max',label:'Sparklette — poids maxi de référence (g)',type:'number',placeholder:'64',step:'0.1'},
     {id:'ef-sp-date',label:'Sparklette — date (fabrication / pose)',type:'date'},
+    {id:'ef-tare',label:'Tare à vide gravée (kg) — CO2',type:'number',placeholder:'3.4',step:'0.01'},
   ],
   ria: [
     {id:'ef-diametre',label:'Diamètre tuyau (mm)',type:'select',opts:['19','25','33']},
@@ -5163,7 +5187,7 @@ function onEFTypeChange(){
   container.appendChild(zonePerso);
   // Restaurer
   if(_efRestoreData){
-    const ids=['ef-mode-press','ef-sp-poids','ef-sp-min','ef-sp-max','ef-sp-date','ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-poids-vide','ef-cap-levage','ef-h-levage','ef-charge-hmax','ef-bat-min','ef-bat-max','ef-bat-reel','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
+    const ids=['ef-mode-press','ef-sp-poids','ef-sp-min','ef-sp-max','ef-sp-date','ef-tare','ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-poids-vide','ef-cap-levage','ef-h-levage','ef-charge-hmax','ef-bat-min','ef-bat-max','ef-bat-reel','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
     ids.forEach(id=>{const el=document.getElementById(id);if(el&&_efRestoreData[id])el.value=_efRestoreData[id];});
     if(_efRestoreData['ef-mode-press'])selectRadioEF('ef-mode-press',_efRestoreData['ef-mode-press']);
   }
@@ -5210,7 +5234,7 @@ function getEFChampsPerso(){
 
 function getEFSpecificData(){
   const data={};
-  const ids=['ef-mode-press','ef-sp-poids','ef-sp-min','ef-sp-max','ef-sp-date','ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-poids-vide','ef-cap-levage','ef-h-levage','ef-charge-hmax','ef-bat-min','ef-bat-max','ef-bat-reel','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
+  const ids=['ef-mode-press','ef-sp-poids','ef-sp-min','ef-sp-max','ef-sp-date','ef-tare','ef-cap','ef-unite','ef-fab','ef-mis','ef-agent','ef-pression','ef-longueur','ef-diametre','ef-dmf','ef-autonomie','ef-type-batt','ef-flux','ef-alim','ef-nb-declencheurs','ef-nb-sirenes','ef-type-det','ef-num-centrale','ef-classement','ef-type-porte','ef-type-nacelle','ef-hauteur','ef-energie','ef-type-engin','ef-ptac','ef-poids-vide','ef-cap-levage','ef-h-levage','ef-charge-hmax','ef-bat-min','ef-bat-max','ef-bat-reel','ef-type-ac','ef-norme','ef-date-limite','ef-type-baes'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el&&el.value)data[id]=el.value;});
   const perso=getEFChampsPerso();
   if(perso.length)data['_perso']=perso;
@@ -5240,7 +5264,7 @@ async function ouvrirFicheEquip(id, prevScreenOverride){
   // Données spécifiques
   const spec = equip.donnees_specifiques || {};
   const specRows = Object.entries(spec).filter(([k])=>!k.startsWith('_')&&spec[k]).map(([k,v])=>{
-    const labels={'ef-mode-press':'Pressurisation','ef-sp-poids':'Sparklette — poids (g)','ef-sp-min':'Sparklette — mini (g)','ef-sp-max':'Sparklette — maxi (g)','ef-sp-date':'Sparklette — date','ef-agent':'Agent','ef-cap':'Capacité','ef-unite':'Unité','ef-diametre':'Diamètre','ef-longueur':'Longueur','ef-dmf':'Type DMF','ef-pression':'Pression','ef-mis':'Mise en service','ef-fab':'Fabrication','ef-type-baes':'Type BAES','ef-autonomie':'Autonomie','ef-type-batt':'Batterie','ef-alim':'Alimentation','ef-classement':'Classement CF','ef-hauteur':'Hauteur max','ef-ptac':'PTAC (t)','ef-poids-vide':'Poids à vide (kg)','ef-cap-levage':'Capacité de levage (kg)','ef-h-levage':'Hauteur de levage (m)','ef-charge-hmax':'Charge à hauteur max (kg)','ef-bat-min':'Batterie mini (kg)','ef-bat-max':'Batterie maxi (kg)','ef-bat-reel':'Batterie réelle (kg)','ef-energie':'Énergie','ef-norme':'Norme','ef-date-limite':'Date limite'};
+    const labels={'ef-mode-press':'Pressurisation','ef-sp-poids':'Sparklette — poids (g)','ef-sp-min':'Sparklette — mini (g)','ef-sp-max':'Sparklette — maxi (g)','ef-sp-date':'Sparklette — date','ef-tare':'Tare à vide (kg)','ef-agent':'Agent','ef-cap':'Capacité','ef-unite':'Unité','ef-diametre':'Diamètre','ef-longueur':'Longueur','ef-dmf':'Type DMF','ef-pression':'Pression','ef-mis':'Mise en service','ef-fab':'Fabrication','ef-type-baes':'Type BAES','ef-autonomie':'Autonomie','ef-type-batt':'Batterie','ef-alim':'Alimentation','ef-classement':'Classement CF','ef-hauteur':'Hauteur max','ef-ptac':'PTAC (t)','ef-poids-vide':'Poids à vide (kg)','ef-cap-levage':'Capacité de levage (kg)','ef-h-levage':'Hauteur de levage (m)','ef-charge-hmax':'Charge à hauteur max (kg)','ef-bat-min':'Batterie mini (kg)','ef-bat-max':'Batterie maxi (kg)','ef-bat-reel':'Batterie réelle (kg)','ef-energie':'Énergie','ef-norme':'Norme','ef-date-limite':'Date limite'};
     const cleanK=k.replace('ef-','e-');
     return `<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px"><span style="color:var(--txt-l)">${labels[k]||labels[cleanK]||k}</span><span style="font-weight:600">${v}</span></div>`;
   }).join('');

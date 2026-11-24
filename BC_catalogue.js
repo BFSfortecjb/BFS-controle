@@ -218,6 +218,9 @@ async function affecterNouveauClient(clientId){
   }catch(e){console.warn('Affectation client',e)}
 }
 
+// Tolérance de charge d'un extincteur CO2 à la pesée : +0 / -5 % de la charge nominale (NF S 61-919, confirmé par BFS).
+const CO2_TOLERANCE_MOINS_PCT=5;
+
 // ---- Champs « sparklette » : visibles seulement si l'extincteur est en pression auxiliaire (PA) ----
 function majChampsPA(){
   document.querySelectorAll('input[id*="sp-"]').forEach(el=>{
@@ -225,6 +228,13 @@ function majChampsPA(){
     const mode=document.getElementById(m[1]+'mode-press');
     const fg=el.closest('.fg')||el.parentElement;
     if(fg)fg.style.display=(mode&&String(mode.value).toUpperCase()==='PA')?'':'none';
+  });
+  // Tare : uniquement pour un extincteur CO2
+  document.querySelectorAll('input[id$="tare"]').forEach(el=>{
+    const m=el.id.match(/^(.*?)tare$/);if(!m)return;
+    const ag=document.getElementById(m[1]+'agent');
+    const fg=el.closest('.fg')||el.parentElement;
+    if(fg)fg.style.display=(ag&&String(ag.value).toUpperCase()==='CO2')?'':'none';
   });
 }
 ['change','click','input'].forEach(ev=>document.addEventListener(ev,()=>setTimeout(majChampsPA,0)));

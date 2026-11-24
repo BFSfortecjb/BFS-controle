@@ -2238,6 +2238,7 @@ const CHAMPS_TYPE = {
     {id:'e-sp-min',label:'Sparklette — poids mini de référence (g)',type:'number',placeholder:'58',step:'0.1'},
     {id:'e-sp-max',label:'Sparklette — poids maxi de référence (g)',type:'number',placeholder:'64',step:'0.1'},
     {id:'e-sp-date',label:'Sparklette — date (fabrication / pose)',type:'date'},
+    {id:'e-tare',label:'Tare à vide gravée (kg) — CO2',type:'number',placeholder:'3.4',step:'0.01'},
   ],
   ria: [
     {id:'e-diametre',label:'Diamètre tuyau (mm)',type:'select',opts:['19','25','33']},
@@ -2411,7 +2412,7 @@ function getChampsPerso(){
 function restoreEquipValues(){
   const d = _equipRestoreData;
   if(!d || !Object.keys(d).length) return;
-  const ids = ['e-mode-press','e-sp-poids','e-sp-min','e-sp-max','e-sp-date','e-cap','e-unite','e-fab','e-mis','e-agent','e-pression','e-longueur',
+  const ids = ['e-mode-press','e-sp-poids','e-sp-min','e-sp-max','e-sp-date','e-tare','e-cap','e-unite','e-fab','e-mis','e-agent','e-pression','e-longueur',
     'e-diametre','e-dmf','e-autonomie','e-type-batt','e-flux','e-alim',
     'e-nb-declencheurs','e-nb-sirenes','e-type-det','e-num-centrale',
     'e-classement','e-type-porte','e-ferme-auto','e-type-nacelle','e-hauteur',
@@ -2422,7 +2423,7 @@ function restoreEquipValues(){
 
 function getEquipSpecificData(){
   const data = {};
-  const ids = ['e-mode-press','e-sp-poids','e-sp-min','e-sp-max','e-sp-date','e-cap','e-unite','e-fab','e-mis','e-agent','e-pression','e-longueur',
+  const ids = ['e-mode-press','e-sp-poids','e-sp-min','e-sp-max','e-sp-date','e-tare','e-cap','e-unite','e-fab','e-mis','e-agent','e-pression','e-longueur',
     'e-diametre','e-dmf','e-autonomie','e-type-batt','e-flux','e-alim',
     'e-nb-declencheurs','e-nb-sirenes','e-type-det','e-num-centrale',
     'e-classement','e-type-porte','e-ferme-auto','e-type-nacelle','e-hauteur',
