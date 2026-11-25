@@ -791,6 +791,7 @@ async function ouvrirCommercial(){
       <div style="font-size:12px;font-weight:700;color:${ct.signature_data?'#16a34a':'#d97706'}">${ct.signature_data?'✍ Signé':'⏳ À signer'}</div>
     </div>
     <div style="display:flex;gap:8px;margin-top:10px">
+    <button class="btn btn-s btn-sm" onclick="envoyerContratSecretariat('${ct.id}')" title="Envoyer au secrétariat (même sans signature)">📨 Secrétariat</button>
     ${ct.signature_data
       ?`<button class="btn btn-s btn-sm" style="flex:1" onclick="ouvrirAvenant('${ct.id}')">➕ Avenant</button>`
       :`<button class="btn btn-p btn-sm" style="flex:1" onclick="signerContrat('${ct.id}')">✍ Faire signer</button>

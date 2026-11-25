@@ -124,8 +124,7 @@ function setMarqueModele(type,prefix,marque,modele){
 // adresses (API Adresse officielle data.gouv.fr) : à vol d'oiseau × 1,3 pour approcher la route.
 // ============================================================
 const ZONES_DEPLACEMENT=[
-  {code:'Z1',max:15,lib:"jusqu'à 15 km"},{code:'Z2',max:30,lib:'15 à 30 km'},{code:'Z3',max:50,lib:'30 à 50 km'},
-  {code:'Z4',max:80,lib:'50 à 80 km'},{code:'Z5',max:Infinity,lib:'plus de 80 km'}];
+  {code:'Z1',max:30,lib:"jusqu'à 30 km"},{code:'Z2',max:50,lib:'31 à 50 km'},{code:'Z3',max:Infinity,lib:'51 à 100 km'}];
 const COEF_ROUTE_DEPLACEMENT=1.3;
 const GEO_AGENCE_DEPLACEMENT={briec:'Briec 29510',sevremont:'Saint-Michel-Mont-Mercure 85700'};
 const _geoCacheDepl={};

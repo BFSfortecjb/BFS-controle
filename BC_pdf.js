@@ -589,6 +589,22 @@ async function exportContratPDF(id){
 // contrat n'était que téléchargé, jamais stocké — utile en secours/traçabilité),
 // puis ouvre la modale d'envoi mail avec le PDF en pièce jointe (v2 de
 // envoyer-mail) et le lien archivé en complément.
+// Envoi du contrat au secrétariat (signé ou non : le secrétariat reçoit le PDF tel quel)
+async function envoyerContratSecretariat(id){
+  try{
+    toast('Préparation du PDF…');
+    let ab=await pdfContratFige(id),c;
+    if(ab){const {data:cc}=await db.from('contrats').select('*,clients(*)').eq('id',id).single();c=cc}
+    else{const res=await construireContratPDF(id);if(!res){toast('Contrat introuvable','err');return}c=res.c;ab=res.doc.output('arraybuffer')}
+    if(!c){toast('Contrat introuvable','err');return}
+    const cl=c.clients||{},signe=!!c.signature_data;
+    const texte=`Bonjour,\n\nContrat de maintenance n° ${c.numero_contrat||''} — ${cl.raison_sociale||''}${cl.ville?' ('+cl.ville+')':''}.\nStatut : ${signe?'SIGNÉ par le client'+(c.signe_le?' le '+new Date(c.signe_le).toLocaleDateString('fr-FR'):''):'NON SIGNÉ par le client (à faire signer)'}.\n${c.tarif_annuel?'Tarif annuel : '+(+c.tarif_annuel).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})+' HT.\n':''}\nLe contrat est en pièce jointe.\n\nBFS Contrôle`;
+    const nomPJ=`Contrat_${(c.numero_contrat||id).replace(/[^\w.-]+/g,'_')}${signe?'':'_non_signe'}.pdf`;
+    const {data,error}=await db.functions.invoke('envoyer-mail',{body:{a:['contact@bfs-prevention.fr'],sujet:`BFS — Contrat ${c.numero_contrat||''} — ${cl.raison_sociale||''}${signe?'':' (non signé)'}`,texte,pieces_jointes:[{nom:nomPJ,base64:(()=>{const b=new Uint8Array(ab);let t='';for(let i=0;i<b.length;i+=0x8000)t+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));return btoa(t)})()}]}});
+    if(error||!data?.envoye){console.warn('Mail contrat secrétariat',error||data);toast('⚠️ Mail au secrétariat non envoyé','err');return}
+    toast('📨 Contrat envoyé au secrétariat ✓');
+  }catch(e){console.warn(e);toast('⚠️ Mail au secrétariat non envoyé','err')}
+}
 async function envoyerContratMail(id){
   toast('Préparation du PDF…');
   let arrayBuffer=await pdfContratFige(id),c;
@@ -1136,9 +1152,9 @@ function bfRegime(client,contrats){
 }
 function bfZoneCode(client){
   const z=String(client?.zone_deplacement||'').match(/[1-5]/);
-  if(z)return 'DEPL_Z'+z[0];
+  if(z)return 'DEPL_Z'+Math.min(+z[0],3); // barème à 3 zones (anciennes zones 4 et 5 -> zone 3)
   const d=parseFloat(client?.distance_km);
-  if(!isNaN(d))return d<=15?'DEPL_Z1':d<=30?'DEPL_Z2':d<=50?'DEPL_Z3':d<=80?'DEPL_Z4':'DEPL_Z5';
+  if(!isNaN(d))return d<=30?'DEPL_Z1':d<=50?'DEPL_Z2':'DEPL_Z3';
   return 'DEPLACEMENT';
 }
 function bfNorm(t){return String(t||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim()}

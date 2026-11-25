@@ -604,7 +604,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   <div class="hdr">
     <button class="hdr-back" onclick="goTo('s-session')">←</button>
     <div style="flex:1;min-width:0">
-      <h1 id="verif-equip-nom" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Vérification</h1>
+      <h1 id="verif-equip-nom" style="white-space:normal;word-break:break-all;line-height:1.2">Vérification</h1>
       <div class="hdr-sub" id="verif-equip-loc"></div>
     </div>
   </div>
@@ -660,6 +660,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <div id="sig-placeholder-tech" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;pointer-events:none">Le technicien signe ici</div>
     </div>
     <button class="btn btn-s btn-sm" onclick="effacerSignatureTech()" style="margin-bottom:14px">🗑 Effacer</button>
+    <label style="display:flex;gap:10px;align-items:center;background:#fef3c7;border:1.5px solid #fcd34d;border-radius:10px;padding:12px;margin-bottom:14px;font-size:14px;font-weight:600"><input type="checkbox" id="sig-indispo" onchange="majIndispoClient()" style="width:20px;height:20px"> Client indisponible / absent — valider sans sa signature</label>
+    <div id="sig-client-bloc">
     <div class="fg" style="margin-bottom:14px">
       <label>Nom du signataire (client) *</label>
       <input type="text" id="sig-nom" placeholder="Nom et prénom du client / responsable">
@@ -670,6 +672,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <div id="sig-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;pointer-events:none">Le client signe ici</div>
     </div>
     <button class="btn btn-s btn-sm" onclick="effacerSignature()">🗑 Effacer la signature</button>
+    </div>
     <div id="sig-ct-bloc" style="display:none;margin-top:18px">
       <div class="sec">3. Signature du CLIENT — contrat de maintenance</div>
       <div id="sig-ct-recap" style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:13px;line-height:1.5"></div>
@@ -2789,8 +2792,8 @@ async function ouvrirVerif(equipId){
   const tareCO2=parseFloat(_ds['ef-tare']??_ds['e-tare']);const capCO2=parseFloat(equip.capacite_valeur);
   const capLib = equip.capacite_valeur?(equip.capacite_valeur+(equip.capacite_unite||'')):'';
   const numInterne = equip.numero_entreprise ? ' — N°'+equip.numero_entreprise : '';
-  $('verif-equip-nom').textContent=`${equip.types_equipements?.icone||''} ${equip.types_equipements?.libelle||''} — ${equip.numero_identification||'?'}${numInterne}`;
-  $('verif-equip-loc').textContent=[equip.marque,equip.modele,agent,capLib,equip.localisation,equip.etage_zone].filter(Boolean).join(' · ');
+  $('verif-equip-nom').textContent=`${equip.types_equipements?.icone||''} ${equip.numero_identification||'Non numéroté'}${numInterne}`;
+  $('verif-equip-loc').textContent=[equip.types_equipements?.libelle,equip.marque,equip.modele,agent,capLib,equip.localisation,equip.etage_zone].filter(Boolean).join(' · ');
 
   // Charger points de contrôle avec filtrage PP/PA/CO2
   const marque=(equip.marque||'').toLowerCase();const modele=(equip.modele||'').toLowerCase();
@@ -3983,6 +3986,12 @@ function setChkRegl(i, val){
   if(btnNon){btnNon.style.background=val==='non'?'#fee2e2':'#fff';btnNon.style.borderColor=val==='non'?'#dc2626':'#e5e7eb';btnNon.style.color=val==='non'?'#dc2626':'var(--txt)';}
 }
 
+function majIndispoClient(){
+  const ind=document.getElementById('sig-indispo').checked;
+  const b=document.getElementById('sig-client-bloc');if(b)b.style.display=ind?'none':'block';
+  const ct=document.getElementById('sig-ct-bloc');if(ct)ct.style.display=(!ind&&window._ctASigner)?'block':'none';
+  if(!ind)setTimeout(initSignatureCanvas,50);
+}
 async function validerChecklistEtSigner(){
   // Récupérer les observations
   window._chkObservations = document.getElementById('chk-observations')?.value?.trim()||'';
@@ -3990,6 +3999,7 @@ async function validerChecklistEtSigner(){
   if(currentSession?.regularisation){cloturerRegularisation();return}
   // Aller à la signature
   document.getElementById('sig-nom').value='';
+  const _ind=document.getElementById('sig-indispo');if(_ind){_ind.checked=false;const b=document.getElementById('sig-client-bloc');if(b)b.style.display='block'}
   // Contrat de maintenance créé mais pas encore signé pour ce client : il se signe au même moment que le bon
   window._ctASigner=null;
   try{
@@ -4183,6 +4193,8 @@ function genererPdfSession(signatureDataUrl, signataireNom, signatureTechDataUrl
   if(signatureDataUrl){
     doc.addImage(signatureDataUrl,'PNG',18,sigY+6,76,18);
     if(signataireNom)doc.text(signataireNom,14+42,sigY+26,{align:'center'});
+  }else{
+    doc.setFont('helvetica','italic');doc.text('Client indisponible — signature non obtenue',14+42,sigY+16,{align:'center',maxWidth:78});doc.setFont('helvetica','normal');
   }
   if(signatureTechDataUrl){
     doc.addImage(signatureTechDataUrl,'PNG',113,sigY+6,74,18);
@@ -4338,7 +4350,7 @@ function choisirDestinatairesBon(titre){
       <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px;margin-bottom:10px;font-size:13.5px"><b>📒 Rappel : registre de sécurité</b><br>Faire signer le registre de sécurité par le client avant de partir.
         <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="dd-registre" style="width:18px;height:18px"> Registre de sécurité signé</label></div>
       <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:10px;margin-bottom:10px;font-size:13.5px"><b>🚗 Frais de déplacement à facturer</b>
-        <select id="dd-depl" style="width:100%;margin-top:6px;padding:9px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px"><option value="">Selon le contrat / la fiche client (automatique)</option><option value="AUCUN">Aucun (inclus ou offert)</option><option value="FORFAIT">Forfait déplacement</option><option value="Z1">Zone 1 — jusqu'à 15 km</option><option value="Z2">Zone 2 — 15 à 30 km</option><option value="Z3">Zone 3 — 30 à 50 km</option><option value="Z4">Zone 4 — 50 à 80 km</option><option value="Z5">Zone 5 — plus de 80 km</option></select>
+        <select id="dd-depl" style="width:100%;margin-top:6px;padding:9px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:14px"><option value="">Selon le contrat / la fiche client (automatique)</option><option value="AUCUN">Aucun (inclus ou offert)</option><option value="FORFAIT">Forfait déplacement</option><option value="Z1">Zone 1 — jusqu'à 30 km (25 €)</option><option value="Z2">Zone 2 — 31 à 50 km (40 €)</option><option value="Z3">Zone 3 — 51 à 100 km (60 €)</option></select>
         <div style="font-size:11.5px;color:#6b7280;margin-top:4px">Le secrétariat verra ce choix sur le bon de facturation.</div></div>
       <label style="display:flex;gap:8px;align-items:center;padding:10px;background:#f3f4f6;border-radius:8px;font-size:14px"><input type="checkbox" checked disabled style="width:18px;height:18px"> <b>Secrétariat</b> (toujours)</label>
       <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:14px"><input type="checkbox" id="dd-client" style="width:18px;height:18px"${mail0?' checked':''}> Envoyer aussi au client</label>
@@ -4370,7 +4382,7 @@ async function notifierSecretariatBon(pdfBlob,{titre,numero,detail,docs,destClie
     const sujet=`BFS — ${titre} ${numero||''} — ${c.raison_sociale||''}`.replace(/\s+/g,' ').trim();
     const texte=`Bonjour,\n\nUn ${titre.toLowerCase()} signé vient d'être enregistré.\n\nClient : ${c.raison_sociale||'—'}${c.ville?' ('+c.ville+')':''}\nTechnicien : ${ME.prenom||''} ${ME.nom||''}\nDate : ${new Date().toLocaleDateString('fr-FR')}${numero?'\nN° : '+numero:''}${detail?'\n'+detail:''}\n\nPièces jointes : bon signé, bulletin simple, bulletin détaillé et BON DE FACTURATION (codes Galaxy, régime contrat du client) — ce dernier est interne, ne pas le transmettre au client.\n\nBFS Contrôle`;
     const body={a:[EMAIL_SECRETARIAT],sujet,texte};
-    if(destClient&&typeof destClient.deplacement!=='undefined'){const DL={AUCUN:'aucun (inclus / offert)',FORFAIT:'forfait déplacement',Z1:'zone 1 (jusqu\'à 15 km)',Z2:'zone 2 (15 à 30 km)',Z3:'zone 3 (30 à 50 km)',Z4:'zone 4 (50 à 80 km)',Z5:'zone 5 (plus de 80 km)'};body.texte+=`\n\nFrais de déplacement à facturer : ${destClient.deplacement?DL[destClient.deplacement]:'selon contrat / fiche client'}`}
+    if(destClient&&typeof destClient.deplacement!=='undefined'){const DL={AUCUN:'aucun (inclus / offert)',FORFAIT:'forfait déplacement',Z1:'zone 1 (jusqu\'à 30 km)',Z2:'zone 2 (31 à 50 km)',Z3:'zone 3 (51 à 100 km)'};body.texte+=`\n\nFrais de déplacement à facturer : ${destClient.deplacement?DL[destClient.deplacement]:'selon contrat / fiche client'}`}
     if(destClient&&typeof destClient.registre==='boolean')body.texte+=`\n\nRegistre de sécurité : ${destClient.registre?'signé par le client':'À FAIRE SIGNER (non signé au départ du technicien)'}`;
     if(pdfBlob&&pdfBlob.size<=15*1024*1024){
       body.pieces_jointes=[{nom:`${titre}_${numero||Date.now()}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await blobVersBase64(pdfBlob)}];
@@ -4403,16 +4415,17 @@ async function cloturerRegularisation(){
 }
 
 async function _validerSignatureEtCloturerInterne(){
-  const nom=document.getElementById('sig-nom').value.trim();
+  const indispo=!!document.getElementById('sig-indispo')?.checked;
+  const nom=indispo?'Client indisponible (signature non obtenue)':document.getElementById('sig-nom').value.trim();
   if(!nom){toast('Nom du signataire obligatoire','err');return}
   if(!_sigs['sig-canvas-tech']?.has){toast('Signature du technicien obligatoire','err');return}
-  if(!_sigs['sig-canvas']?.has){toast('Signature du client obligatoire','err');return}
-  if(window._ctASigner&&!_sigs['sig-canvas-ct']?.has){toast('Le client doit aussi signer le contrat (3e signature)','err');return}
+  if(!indispo&&!_sigs['sig-canvas']?.has){toast('Signature du client obligatoire','err');return}
+  if(!indispo&&window._ctASigner&&!_sigs['sig-canvas-ct']?.has){toast('Le client doit aussi signer le contrat (3e signature)','err');return}
 
   const btn=document.getElementById('btn-valider-signature');
   btn.disabled=true;btn.textContent='⏳ Clôture en cours…';
 
-  const signatureDataUrl=_sigs['sig-canvas'].canvas.toDataURL('image/png');
+  const signatureDataUrl=indispo?null:_sigs['sig-canvas'].canvas.toDataURL('image/png');
   const signatureTechDataUrl=_sigs['sig-canvas-tech'].canvas.toDataURL('image/png');
 
   // Générer le PDF avec les deux signatures
@@ -4474,7 +4487,7 @@ async function _validerSignatureEtCloturerInterne(){
     try{docsBon=await bonsDocsTerrain(bonId)}catch(e){console.warn('Bulletins',e)}
   }
   // Contrat de maintenance signé en même temps que le bon (2e signature du client)
-  if(bonEnregistre&&window._ctASigner&&_sigs['sig-canvas-ct']?.has){
+  if(bonEnregistre&&!indispo&&window._ctASigner&&_sigs['sig-canvas-ct']?.has){
     try{
       const ct=window._ctASigner,upd={signature_data:_sigs['sig-canvas-ct'].canvas.toDataURL('image/png'),signataire_nom:nom,signe_le:new Date().toISOString()};
       if(!ct.date_debut){const d0=new Date().toISOString().slice(0,10),df=new Date(d0+'T12:00:00');df.setFullYear(df.getFullYear()+(+ct.duree_engagement||1));upd.date_debut=d0;upd.date_fin=df.toISOString().slice(0,10)}
@@ -4487,7 +4500,7 @@ async function _validerSignatureEtCloturerInterne(){
     }catch(e){console.warn('Signature contrat',e);toast('⚠️ Contrat NON signé','err')}
   }
   window._ctASigner=null;
-  if(bonEnregistre)await notifierSecretariatBon(pdfBlob,{titre:"Bon d'intervention",docs:docsBon,destClient:destBon,numero:currentSession?.numero,detail:(currentSession?.nature==='installation'?'Installation / mise en service — ':'')+`Équipements vérifiés : ${nbVerifies}`});
+  if(bonEnregistre)await notifierSecretariatBon(pdfBlob,{titre:"Bon d'intervention",docs:docsBon,destClient:destBon,numero:currentSession?.numero,detail:(indispo?'⚠️ CLIENT INDISPONIBLE : bon NON signé par le client — à lui faire signer / transmettre. ':'')+(currentSession?.nature==='installation'?'Installation / mise en service — ':'')+`Équipements vérifiés : ${nbVerifies}`});
 
   // Clôturer la session — toujours exécuté
   if(currentSession){
