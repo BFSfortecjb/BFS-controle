@@ -441,6 +441,8 @@ async function construireContratPDF(id){
   if(c.signature_data){
     try{doc.addImage(c.signature_data,'PNG',L+8,y+11,72,18)}catch(e){}
   }
+  // Tampon BFS (agence du contrat)
+  try{if(typeof tamponBFS==='function')tamponBFS(doc,(c.agences&&c.agences.code)||'briec',L+94+4,y+10,80,21)}catch(e){}
   y+=46;
 
   // ======== Adresses de vérification ========

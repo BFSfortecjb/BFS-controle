@@ -670,8 +670,19 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <div id="sig-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;pointer-events:none">Le client signe ici</div>
     </div>
     <button class="btn btn-s btn-sm" onclick="effacerSignature()">🗑 Effacer la signature</button>
+    <div id="sig-ct-bloc" style="display:none;margin-top:18px">
+      <div class="sec">3. Signature du CLIENT — contrat de maintenance</div>
+      <div id="sig-ct-recap" style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:13px;line-height:1.5"></div>
+      <div style="font-size:12.5px;color:var(--txt-l);margin-bottom:8px">Le client fait précéder sa signature de la mention manuscrite « Lu et approuvé, bon pour accord ».</div>
+      <div style="background:#fff;border:2px dashed #d1d5db;border-radius:12px;position:relative;margin-bottom:8px">
+        <canvas id="sig-canvas-ct" style="width:100%;height:180px;display:block;touch-action:none"></canvas>
+        <div id="sig-placeholder-ct" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;pointer-events:none">Le client signe le contrat ici</div>
+      </div>
+      <button class="btn btn-s btn-sm" onclick="effacerSigne('sig-canvas-ct')">🗑 Effacer la signature du contrat</button>
+    </div>
   </div>
   <div class="footer">
+    <button class="btn btn-s" onclick="mettreEnPause()" style="margin-bottom:8px;width:100%">⏸ Le client signera plus tard (mettre en pause)</button>
     <button class="btn btn-vert" onclick="validerSignatureEtCloturer()" id="btn-valider-signature">✅ Valider et clôturer</button>
   </div>
 </div>
@@ -3972,13 +3983,25 @@ function setChkRegl(i, val){
   if(btnNon){btnNon.style.background=val==='non'?'#fee2e2':'#fff';btnNon.style.borderColor=val==='non'?'#dc2626':'#e5e7eb';btnNon.style.color=val==='non'?'#dc2626':'var(--txt)';}
 }
 
-function validerChecklistEtSigner(){
+async function validerChecklistEtSigner(){
   // Récupérer les observations
   window._chkObservations = document.getElementById('chk-observations')?.value?.trim()||'';
   // Rattrapage d'installation : bon déjà signé → clôture directe, sans signature ni nouveau bon
   if(currentSession?.regularisation){cloturerRegularisation();return}
   // Aller à la signature
   document.getElementById('sig-nom').value='';
+  // Contrat de maintenance créé mais pas encore signé pour ce client : il se signe au même moment que le bon
+  window._ctASigner=null;
+  try{
+    if(!currentSession?.nature||currentSession.nature!=='installation'){
+      const {data:cts}=await db.from('contrats').select('id,numero_contrat,type_contrat,date_debut,date_fin,tarif_annuel,duree_engagement,lignes').eq('client_id',currentClient.id).is('signature_data',null).eq('statut','actif').order('created_at',{ascending:false}).limit(1);
+      if(cts&&cts[0])window._ctASigner=cts[0];
+    }
+  }catch(e){console.warn('Contrat à signer',e)}
+  const ct=window._ctASigner,bloc=document.getElementById('sig-ct-bloc');
+  if(bloc){bloc.style.display=ct?'block':'none';
+    if(ct){const eur=n=>(+n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+      document.getElementById('sig-ct-recap').innerHTML=`<b>Contrat n° ${ct.numero_contrat||'—'}</b> · ${ct.type_contrat||''}<br>${Array.isArray(ct.lignes)?ct.lignes.length:0} ligne(s)${ct.tarif_annuel?' — <b>'+eur(ct.tarif_annuel)+' HT par an</b>':''}${ct.duree_engagement?' — engagement '+ct.duree_engagement+' an'+(ct.duree_engagement>1?'s':''):''}`}}
   goTo('s-signature');
   setTimeout(initSignatureCanvas,100);
 }
@@ -4287,6 +4310,7 @@ function setupSigCanvas(cid,pid){
 function initSignatureCanvas(){
   setupSigCanvas('sig-canvas-tech','sig-placeholder-tech');
   setupSigCanvas('sig-canvas','sig-placeholder');
+  if(window._ctASigner)setupSigCanvas('sig-canvas-ct','sig-placeholder-ct');
 }
 function effacerSigne(cid){
   const st=_sigs[cid];if(!st)return;
@@ -4323,6 +4347,9 @@ function choisirDestinatairesBon(titre){
       <button id="dd-ok" class="btn btn-p" style="width:100%;margin-top:14px;padding:12px">📨 Envoyer</button></div>`;
     document.body.appendChild(ov);
     const cb=ov.querySelector('#dd-client'),inp=ov.querySelector('#dd-mail');
+    if(!ENVOI_CLIENT_ACTIF){ // envoi client suspendu : on masque l'option
+      cb.checked=false;cb.closest('label').style.display='none';inp.style.display='none';ov.querySelector('#dd-note').textContent="Envoi au client suspendu pour le moment (le secrétariat reçoit les documents).";
+    }
     inp.addEventListener('input',()=>{if(inp.value.trim())cb.checked=true});
     ov.querySelector('#dd-ok').onclick=async()=>{
       let email=null;
@@ -4348,14 +4375,14 @@ async function notifierSecretariatBon(pdfBlob,{titre,numero,detail,docs,destClie
     if(pdfBlob&&pdfBlob.size<=15*1024*1024){
       body.pieces_jointes=[{nom:`${titre}_${numero||Date.now()}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await blobVersBase64(pdfBlob)}];
       let tot=pdfBlob.size;
-      for(const [nom,b] of [['Bulletin',docs?.bulletin],['Bulletin_detaille',docs?.detail],['Bon_facturation_Galaxy',docs?.facturation]]){
+      for(const [nom,b] of [['Bulletin',docs?.bulletin],['Bulletin_detaille',docs?.detail],['Bon_facturation_Galaxy',docs?.facturation],['Contrat_signe',docs?.contrat]]){
         if(b&&tot+b.size<=15*1024*1024){tot+=b.size;body.pieces_jointes.push({nom:`${nom}_${numero||Date.now()}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await blobVersBase64(b)})}
       }
     }else{body.texte+='\n\n(PDF trop volumineux pour la pièce jointe : à consulter dans les bons à facturer.)'}
     const {data,error}=await db.functions.invoke('envoyer-mail',{body});
     if(error||!data?.envoye){console.warn('Mail secrétariat non envoyé',error||data);toast('⚠️ Mail au secrétariat non envoyé (le bon est bien enregistré)','err');return false}
     // Client : uniquement si le technicien l'a coché dans la boîte de dialogue
-    if(destClient?.client&&destClient.email&&typeof venteMailClientBon==='function'){
+    if(ENVOI_CLIENT_ACTIF&&destClient?.client&&destClient.email&&typeof venteMailClientBon==='function'){
       const okC=await venteMailClientBon(pdfBlob,{titre,numero,client:{...c,contact_email:destClient.email},docs,sansContrat:true});
       if(okC===true)toast('📨 Envoyé au client');else toast('⚠️ Mail au client non envoyé','err');
     }
@@ -4380,6 +4407,7 @@ async function _validerSignatureEtCloturerInterne(){
   if(!nom){toast('Nom du signataire obligatoire','err');return}
   if(!_sigs['sig-canvas-tech']?.has){toast('Signature du technicien obligatoire','err');return}
   if(!_sigs['sig-canvas']?.has){toast('Signature du client obligatoire','err');return}
+  if(window._ctASigner&&!_sigs['sig-canvas-ct']?.has){toast('Le client doit aussi signer le contrat (3e signature)','err');return}
 
   const btn=document.getElementById('btn-valider-signature');
   btn.disabled=true;btn.textContent='⏳ Clôture en cours…';
@@ -4445,6 +4473,20 @@ async function _validerSignatureEtCloturerInterne(){
     toast('Génération du bulletin et du détaillé…');
     try{docsBon=await bonsDocsTerrain(bonId)}catch(e){console.warn('Bulletins',e)}
   }
+  // Contrat de maintenance signé en même temps que le bon (2e signature du client)
+  if(bonEnregistre&&window._ctASigner&&_sigs['sig-canvas-ct']?.has){
+    try{
+      const ct=window._ctASigner,upd={signature_data:_sigs['sig-canvas-ct'].canvas.toDataURL('image/png'),signataire_nom:nom,signe_le:new Date().toISOString()};
+      if(!ct.date_debut){const d0=new Date().toISOString().slice(0,10),df=new Date(d0+'T12:00:00');df.setFullYear(df.getFullYear()+(+ct.duree_engagement||1));upd.date_debut=d0;upd.date_fin=df.toISOString().slice(0,10)}
+      const {error:ctErr}=await db.from('contrats').update(upd).eq('id',ct.id);
+      if(ctErr){toast('⚠️ Contrat NON signé : '+ctErr.message,'err')}
+      else{
+        toast('Contrat signé ✓');
+        try{const res=await construireContratPDF(ct.id);if(res){const ab=res.doc.output('arraybuffer');docsBon.contrat=new Blob([ab],{type:'application/pdf'});try{await figerPdfContratSigne(ct.id,ab)}catch(e){console.warn('Archivage contrat',e)}}}catch(e){console.warn('PDF contrat',e)}
+      }
+    }catch(e){console.warn('Signature contrat',e);toast('⚠️ Contrat NON signé','err')}
+  }
+  window._ctASigner=null;
   if(bonEnregistre)await notifierSecretariatBon(pdfBlob,{titre:"Bon d'intervention",docs:docsBon,destClient:destBon,numero:currentSession?.numero,detail:(currentSession?.nature==='installation'?'Installation / mise en service — ':'')+`Équipements vérifiés : ${nbVerifies}`});
 
   // Clôturer la session — toujours exécuté

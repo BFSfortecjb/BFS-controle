@@ -1056,7 +1056,10 @@ async function prochainNumeroContrat(){
 // ============================================================
 const LIB_PERIOD={annuelle:'Annuelle (1 visite par an)',semestrielle:'Semestrielle (2 visites par an)',trimestrielle:'Trimestrielle (4 visites par an)',mensuelle:'Mensuelle (12 visites par an)'};
 function periodiciteContrat(){return $('nk-period')?.value||'annuelle'}
-function grillePrix(type,per){const r=_grille.find(g=>g.type_equipement_code===type&&g.periodicite===per);return r?+r.prix_ref_5ans:null}
+const PASSAGES_PERIOD={annuelle:1,semestrielle:2,trimestrielle:4,mensuelle:12};
+// Prix de la grille ; à défaut pour cette périodicité : tarif annuel × nombre de passages (le prix s'affiche d'office, rien à saisir)
+function grillePrix(type,per){const r=_grille.find(g=>g.type_equipement_code===type&&g.periodicite===per);if(r)return +r.prix_ref_5ans;
+  const a=_grille.find(g=>g.type_equipement_code===type&&g.periodicite==='annuelle');return a?Math.round(+a.prix_ref_5ans*(PASSAGES_PERIOD[per]||1)*100)/100:null}
 function majPrixLigne(){
   const info=$('lk-pu-info'),pu=$('lk-pu'),bloc=$('lk-tarif-bloc');if(!info||!pu)return;
   if(_ligneCible==='avenant'){pu.readOnly=false;if(bloc)bloc.style.display='';info.innerHTML='';return}

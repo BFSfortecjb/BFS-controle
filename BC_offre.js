@@ -155,6 +155,7 @@ function _offreDoc(o,client,agenceCode,techNom,k){
   doc.setDrawColor(150);doc.setLineWidth(.2);doc.rect(M,y,87,bh);doc.rect(M+93,y,87,bh);
   doc.setFontSize(S(8.5));doc.text('Pour BFS'+(techNom?' — '+techNom:''),M+2,y+4.5);doc.text('Le Client (nom, qualité, date, signature)',M+95,y+4.5);
   doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.text('Mention « Bon pour accord » manuscrite',M+95,y+9);
+  try{if(typeof tamponBFS==='function')tamponBFS(doc,agenceCode,M+3,y+6,81,bh-8)}catch(e){}
   if(o.signature_data){try{doc.addImage(o.signature_data,'PNG',M+97,y+10,55,Math.max(10,bh-15))}catch(e){}
     doc.setFontSize(8);doc.text((o.signataire_nom||'')+(o.signe_le?' — '+fmt(o.signe_le):''),M+95,y+bh-1.5)}
   doc.setFontSize(7);doc.setTextColor(120);
@@ -196,7 +197,7 @@ async function offreNotifierFacturation(o,client,techNom,blob,extra={}){
       txt+=`\nCONTRAT DE MAINTENANCE${c.reprise?' (reprise d\'un parc / contrat existant)':''} — ${extra.contrat?'contrat n° '+(extra.contrat.numero_contrat||'')+' signé sur place par le client (PDF joint)':'contrat distinct à établir et à faire signer'}. Il n'est pas facturé en tant que tel : on facture les articles de vérification / maintenance, par site, à chaque visite.\nDurée ${c.duree} an(s) — ${np} visite(s) par an. À facturer à chaque visite :\n${c.lignes.map(l=>{const ac=OFFRE_ARTICLE_CONTRAT[l.type],ar=ac?(tf||[]).find(t=>t.code===ac):null;const visite=_r2((+l.quantite||0)*(+l.pu_annuel||0)/np);return `- ${l.libelle||l.type} : ${l.quantite} appareil(s) x ${_eurO(l.pu_annuel)} HT/an = ${_eurO(visite)} HT par visite — Code Galaxy : ${ar&&ar.code_galaxy?ar.code_galaxy+' ('+ac+')':'à renseigner (article vérification de ce type d\'équipement)'}`}).join('\n')}\nTotal annuel : ${_eurO(offreContratTotal(c))} HT. Frais de déplacement : ${c.deplacement||'en sus à chaque passage, au tarif en vigueur'}.\n`;
     }
     if(o.notes)txt+=`\nRemarques : ${o.notes}\n`;
-    txt+=`\n${extra.clientMailOk===true?'Le client a reçu ses documents par mail ('+extra.email+').':extra.clientMailOk===false?'⚠️ Le mail au client n\'a pas pu être envoyé : à lui transmettre.':'Aucune adresse mail client : les documents ne lui ont pas été envoyés par mail.'}\n\nL'offre signée${extra.contrat?' et le contrat signé sont':' est'} en pièce jointe.\n\nBFS Contrôle`;
+    txt+=`\n${extra.clientMailOk===true?'Le client a reçu ses documents par mail ('+extra.email+').':extra.clientMailOk===false?'⚠️ Le mail au client n\'a pas pu être envoyé : à lui transmettre.':(typeof ENVOI_CLIENT_ACTIF!=='undefined'&&!ENVOI_CLIENT_ACTIF)?'Envoi au client suspendu pour le moment : documents à lui transmettre manuellement (pièces jointes ci-dessous).':'Aucune adresse mail client : les documents ne lui ont pas été envoyés par mail.'}\n\nL'offre signée${extra.contrat?' et le contrat signé sont':' est'} en pièce jointe.\n\nBFS Contrôle`;
     const body={a:[OFFRE_EMAIL_FACTURATION],sujet:`BFS — Offre acceptée à facturer ${o.numero} — ${cl.raison_sociale||''}`.trim(),texte:txt};
     const pjs=[];
     if(blob&&blob.size<=15*1024*1024)pjs.push({nom:`Offre_${o.numero}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await _offreBlobB64(blob)});
@@ -245,6 +246,7 @@ async function venteCreerContrat(offre,client,{debut,sig,nom}){
   return {contrat:ct,blob};
 }
 async function venteMailClient(offre,client,{email,contrat,offreBlob,contratBlob,agenceNom}){
+  if(!ENVOI_CLIENT_ACTIF)return null; // envoi aux clients suspendu
   if(!email||!VENTE_EMAIL_RE.test(email))return null;
   try{
     const pjs=[{nom:`Offre_${offre.numero}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await _offreBlobB64(offreBlob)}];
@@ -258,6 +260,7 @@ async function venteMailClient(offre,client,{email,contrat,offreBlob,contratBlob
 }
 // Mail du bon d'intervention au client (appelé par le terrain à la validation du bon, avec le contrat signé le jour même s'il existe)
 async function venteMailClientBon(pdfBlob,{titre,numero,client,docs,sansContrat}){
+  if(!ENVOI_CLIENT_ACTIF)return null; // envoi aux clients suspendu
   try{
     const email=(client&&client.contact_email||'').trim();if(!email||!VENTE_EMAIL_RE.test(email)||!pdfBlob)return null;
     const pjs=[{nom:`${titre}_${numero||Date.now()}.pdf`.replace(/[^\w.-]+/g,'_'),base64:await _offreBlobB64(pdfBlob)}];
@@ -449,7 +452,7 @@ async function offreValider(){
         okC=await venteMailClient(saved,currentClient,{email:emailClient,contrat:ctRes?.contrat,offreBlob:blob,contratBlob:ctRes?.blob,agenceNom:agNom});
       }
       const okM=await offreNotifierFacturation(saved,currentClient,tech,blob,{contrat:ctRes?.contrat,contratBlob:ctRes?.blob,clientMailOk:okC,email:emailClient});
-      toast((okC?'📨 Documents envoyés au client. ':emailClient?'⚠️ Mail client non envoyé. ':'')+(okM?'📨 Secrétariat prévenu pour facturation.':'⚠️ Mail secrétariat non envoyé — relance depuis la liste des offres.'),okM&&okC!==false?'ok':'err');
+      toast((okC?'📨 Documents envoyés au client. ':okC===false?'⚠️ Mail client non envoyé. ':'')+(okM?'📨 Secrétariat prévenu pour facturation.':'⚠️ Mail secrétariat non envoyé — relance depuis la liste des offres.'),okM&&okC!==false?'ok':'err');
     }
     try{offreTelecharger(blob,`BFS_offre_${saved.numero}.pdf`)}catch(e){console.warn('Téléchargement offre',e)}
     toast('Offre '+saved.numero+' créée ✓'+(ctRes?' — contrat '+ctRes.contrat.numero_contrat+' signé ✓':''));
